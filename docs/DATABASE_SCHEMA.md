@@ -204,6 +204,7 @@ CREATE TABLE events (
   idempotency_key     text UNIQUE,         -- client-provided idempotency key
   record_hash         text NOT NULL,       -- SHA-256 of stable event serialization
   prev_hash           text NOT NULL,       -- hash of previous event in org's chain (or 'GENESIS')
+  hash_version        smallint NOT NULL DEFAULT 1, -- 1 = legacy request-shaped hash, 2 = canonical
   status              text NOT NULL DEFAULT 'active',     -- active | amended | void
   supersedes_event_id uuid REFERENCES events(id),        -- if this is an amendment
   void_reason         text,
@@ -219,6 +220,15 @@ CREATE INDEX idx_events_location ON events(location_id);
 CREATE INDEX idx_events_compliance_gaps ON events(organization_id, has_compliance_gaps) WHERE has_compliance_gaps = true;
 CREATE INDEX idx_events_recorded_by ON events(recorded_by);
 ```
+
+**Hash versions** (`events.hash_version`) — the verifier dispatches on this column:
+
+| Value | Meaning | Verifiable? |
+|-------|---------|-------------|
+| `1` | Legacy: hash built from request-shaped objects (JS numbers, request link order, raw datetime string). Default for all rows created before the canonical serializer. | Chain linkage only — the payload cannot be reconstructed from persisted rows. |
+| `2` | Canonical: `backend/src/utils/hashChain.js` builds the payload from persisted values (quantities cast through `numeric(15,4)`, links sorted by `lot_id`, datetime normalized to ISO-8601 UTC). | Yes — payload + chain linkage. |
+
+Never rewrite historical `record_hash` values in place; a re-seal requires an explicit, audited migration with archived old values.
 
 ---
 

@@ -1,6 +1,10 @@
 const db = require('../../db/knex');
 const { v4: uuidv4 } = require('uuid');
-const { computeEventHash } = require('../../utils/hashChain');
+const {
+  computeEventHash,
+  buildCanonicalEventPayloadForWrite,
+  CURRENT_HASH_VERSION,
+} = require('../../utils/hashChain');
 const AppError = require('../../utils/AppError');
 const crc32 = require('crc-32');
 const { invalidateTraceCache } = require('../trace/trace.service');
@@ -57,7 +61,7 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
     const prevHash = prevEvent ? prevEvent.record_hash : 'GENESIS';
     const complianceGaps = await checkComplianceGaps(data, organizationId);
     
-    const eventPayload = {
+    const eventPayload = await buildCanonicalEventPayloadForWrite(trx, {
       eventType: data.eventType,
       locationId: data.locationId,
       eventDatetime: data.eventDatetime,
@@ -66,7 +70,7 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
       counterpartyInfo: data.counterpartyInfo,
       inputs: data.inputs,
       outputs: data.outputs,
-    };
+    });
 
     const recordHash = computeEventHash(eventPayload, prevHash);
     const eventId = uuidv4();
@@ -86,6 +90,7 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
       idempotency_key: data.idempotencyKey || null,
       record_hash: recordHash,
       prev_hash: prevHash,
+      hash_version: CURRENT_HASH_VERSION,
       status: overrideStatus,
       supersedes_event_id: supersedesEventId,
     }).returning('*');

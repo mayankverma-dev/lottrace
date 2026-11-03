@@ -7,7 +7,11 @@ const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const env = require('../../config/env');
 const { parse } = require('csv-parse');
 const { v4: uuidv4 } = require('uuid');
-const { computeEventHash } = require('../../utils/hashChain');
+const {
+  computeEventHash,
+  buildCanonicalEventPayloadForWrite,
+  CURRENT_HASH_VERSION,
+} = require('../../utils/hashChain');
 const { invalidateTraceCache } = require('../../modules/trace/trace.service');
 const logger = require('../../utils/logger');
 const crc32 = require('crc-32');
@@ -190,7 +194,8 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
   }
 
   // 4. Compute Hash & Create Event
-  const recordHash = computeEventHash(eventPayload, prevHash);
+  const canonicalPayload = await buildCanonicalEventPayloadForWrite(trx, eventPayload);
+  const recordHash = computeEventHash(canonicalPayload, prevHash);
 
   const [event] = await trx('events').insert({
     id: eventId,
@@ -205,6 +210,7 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
     notes: (firstRow.notes || '').trim() || null,
     record_hash: recordHash,
     prev_hash: prevHash,
+    hash_version: CURRENT_HASH_VERSION,
     status: 'active',
     idempotency_key: idempotencyKey,
   }).returning('*');

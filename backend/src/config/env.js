@@ -26,7 +26,7 @@ const envSchema = z.object({
   EMAIL_DRY_RUN: z.coerce.boolean().default(false), // skip Resend API entirely, just log
 
   // App
-  NODE_ENV: z.enum(['development', 'staging', 'production']).default('development'),
+  NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().default(3000),
   FRONTEND_URL: z.string().default('http://localhost:3001'),
   SCAN_PWA_URL: z.string().default('http://localhost:3002'),
