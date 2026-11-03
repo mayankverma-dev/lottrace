@@ -59,7 +59,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 | ID | Severity | Title | Status |
 |----|----------|-------|--------|
-| P0-01 | P0 | Hash verification fails for every event with lot links (number vs decimal string) | Open |
+| P0-01 | P0 | Hash verification fails for every event with lot links (number vs decimal string) | Fixed (2026-11-03, f0e743f) |
 | P0-02 | P0 | Hash chain ordering is non-deterministic under concurrency | Open |
 | P0-03 | P0 | Event creation accepts lots from other organizations | Open |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Open |
@@ -108,7 +108,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-01 — Hash verification fails for every event with lot links
 
-- **Severity:** P0 · **Area:** backend / data integrity · **Status:** Open
+- **Severity:** P0 · **Area:** backend / data integrity · **Status:** Fixed (2026-11-03, f0e743f)
 - **Evidence:** `backend/src/modules/events/events.service.js:62-84` (hash built from request objects), `:108-121` (links inserted), `backend/src/jobs/workers/hash-verifier.js:33-41` (hash rebuilt from DB rows), migration `event_lot_links.quantity` is `decimal`.
 - **What happens:** The create path hashes `input.quantity` as a JavaScript number (`1`). PostgreSQL returns `decimal` as a string (`"1.000"`), so the verifier hashes `"1.000"`. Three independent mismatches exist:
   1. **Quantity type/scale:** `1` vs `"1.000"`. This alone affects every event that has any input or output.
@@ -407,7 +407,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Evidence:** `backend/src/modules/events/events.service.js:62-72` (payload fields), `backend/src/utils/hashChain.js` (plain SHA-256), `backend/src/jobs/workers/hash-verifier.js`.
 - **What happens:** The hash covers only `eventType`, `locationId`, `eventDatetime`, `source`, `kdePayload`, `counterpartyInfo`, and lot links. It excludes `notes`, `status`, `recorded_by`, `supersedes_event_id`, `void_reason`, and attachment metadata — all fields an auditor relies on. It is also **unkeyed**: anyone who can write to the database can recompute a valid chain from `GENESIS` after editing data. Verification failures are only logged; there is no alert or notification.
 - **Real-world impact:** The "tamper-evident" claim is weak: notes and statuses can be changed undetected, and a motivated insider with DB access can forge the entire chain. Failures may go unnoticed for months.
-- **Fix direction:** Introduce `hash_version = 2` with the full immutable field set and **HMAC-SHA256** using a secret from env/KMS (never the DB), plus a key ID for rotation. Keep the verifier able to validate v1 rows (or run an approved re-seal). On verification failure, create an admin notification and emit a Sentry event; add a scheduled daily verification job with a health metric. Document the trust boundary: DB-only access must not be enough to forge.
+- **Fix direction:** Introduce `hash_version = 3` with the full immutable field set and **HMAC-SHA256** using a secret from env/KMS (never the DB), plus a key ID for rotation. Keep the verifier able to validate v1 rows (or run an approved re-seal). On verification failure, create an admin notification and emit a Sentry event; add a scheduled daily verification job with a health metric. Document the trust boundary: DB-only access must not be enough to forge.
 - **Compatibility warning:** Existing v1 hashes cannot be made keyed retroactively without recomputation. This requires an explicit migration/re-seal decision with the user, plus an archive of the old values.
 - **Verification:** Tamper with `notes` in a test DB → verifier flags the event. Tamper and recompute with the DB but without `HASH_CHAIN_SECRET` → verifier still flags. Rotate the key ID and verify old rows still validate.
 
