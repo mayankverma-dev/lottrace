@@ -251,11 +251,42 @@ const buildEventPayloadForVerification = (eventRow, linkRows = []) => {
   throw new Error(`Unsupported event hash_version: ${eventRow.hash_version}`);
 };
 
+/**
+ * Reads the current chain tip for an organization.
+ *
+ * MUST be called inside the same transaction that holds the organization's
+ * advisory lock (`pg_advisory_xact_lock`). Without the lock, two writers can read
+ * the same tip and fork the chain.
+ *
+ * Ordering is by `chain_seq`, never by `created_at`: `created_at` is the transaction
+ * start time, so it can be inverted relative to the order in which hashes were chained
+ * (P0-02). The extra columns are tiebreakers that only matter if the data is anomalous.
+ *
+ * @param {import('knex').Knex | import('knex').Knex.Transaction} qb
+ * @param {string} organizationId
+ * @returns {Promise<Object|undefined>} the tip row, or undefined for an empty chain
+ */
+const getChainTip = async (qb, organizationId) => qb('events')
+  .where({ organization_id: organizationId })
+  .orderBy('chain_seq', 'desc')
+  .orderBy('created_at', 'desc')
+  .orderBy('id', 'desc')
+  .first();
+
+/**
+ * Computes the chain position for the next event.
+ * @param {Object|undefined} tip - row returned by getChainTip
+ * @returns {number} next chain_seq (1 for an empty chain)
+ */
+const nextChainSeq = (tip) => (tip ? Number(tip.chain_seq) + 1 : 1);
+
 module.exports = {
   HASH_VERSION_LEGACY,
   HASH_VERSION_CANONICAL,
   CURRENT_HASH_VERSION,
   computeEventHash,
+  getChainTip,
+  nextChainSeq,
   normalizeJsonValue,
   buildCanonicalEventPayload,
   buildCanonicalEventPayloadForWrite,

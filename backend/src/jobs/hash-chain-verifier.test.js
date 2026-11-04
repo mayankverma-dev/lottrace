@@ -243,7 +243,7 @@ describeDb('P0-01 canonical event hashing', () => {
   it('chain-checks legacy rows without false tamper alerts and fails closed when relabelled', async () => {
     const tip = await db('events')
       .where({ organization_id: orgId })
-      .orderBy('created_at', 'desc')
+      .orderBy('chain_seq', 'desc')
       .first();
 
     const legacyId = uuidv4();
@@ -272,6 +272,7 @@ describeDb('P0-01 canonical event hashing', () => {
       kde_payload: JSON.stringify({}),
       record_hash: legacyHash,
       prev_hash: tip.record_hash,
+      chain_seq: Number(tip.chain_seq) + 1,
       hash_version: 1,
       status: 'active',
     });

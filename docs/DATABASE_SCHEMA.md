@@ -204,6 +204,7 @@ CREATE TABLE events (
   idempotency_key     text UNIQUE,         -- client-provided idempotency key
   record_hash         text NOT NULL,       -- SHA-256 of stable event serialization
   prev_hash           text NOT NULL,       -- hash of previous event in org's chain (or 'GENESIS')
+  chain_seq           bigint NOT NULL,     -- monotonic per-org chain position (see note below)
   hash_version        smallint NOT NULL DEFAULT 1, -- 1 = legacy request-shaped hash, 2 = canonical
   status              text NOT NULL DEFAULT 'active',     -- active | amended | void
   supersedes_event_id uuid REFERENCES events(id),        -- if this is an amendment
@@ -219,7 +220,28 @@ CREATE INDEX idx_events_org_status ON events(organization_id, status);
 CREATE INDEX idx_events_location ON events(location_id);
 CREATE INDEX idx_events_compliance_gaps ON events(organization_id, has_compliance_gaps) WHERE has_compliance_gaps = true;
 CREATE INDEX idx_events_recorded_by ON events(recorded_by);
+-- Chain order + tip lookup. Unique per organization; never order the chain by created_at.
+CREATE UNIQUE INDEX idx_events_org_chain_seq ON events(organization_id, chain_seq);
 ```
+
+**Chain ordering (`events.chain_seq`)** — the hash chain is ordered by `chain_seq`, **never** by
+`created_at`. `created_at` defaults to `CURRENT_TIMESTAMP`, which PostgreSQL evaluates once per
+transaction (transaction start time), so a transaction that waits on the organization advisory lock
+can be stamped earlier than the event it follows. Writers must:
+
+1. `SELECT pg_advisory_xact_lock(org_lock_id)` inside the transaction,
+2. read the tip with `getChainTip()` from `backend/src/utils/hashChain.js`
+   (`ORDER BY chain_seq DESC`),
+3. insert with `chain_seq = nextChainSeq(tip)`.
+
+The verifier reads with `ORDER BY chain_seq ASC`. `chain_seq` is metadata: it is **not** part of the
+hash payload, so adding it does not invalidate existing `record_hash` values.
+
+The migration backfills existing rows by following `prev_hash` from `GENESIS` (distance from the
+root), **not** by `created_at`: ordering by the value that is tied or inverted under concurrency
+would assign positions that disagree with the hashes. `created_at` and `id` only break ties for rows
+that are not reachable from `GENESIS` (fork, orphan, cycle). Those chains were already unverifiable
+before the migration and are still reported as failures; the backfill never hides a break.
 
 **Hash versions** (`events.hash_version`) — the verifier dispatches on this column:
 

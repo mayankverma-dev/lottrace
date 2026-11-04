@@ -20,7 +20,7 @@ const {
  *   eventsChecked: number,
  *   canonicalVerified: number,
  *   legacySkipped: number,
- *   failures: Array<{ organizationId: string, eventId: string, reason: string, expectedHash: string|null, storedHash: string|null }>
+ *   failures: Array<{ organizationId: string, eventId: string, chainSeq: number, reason: string, expectedHash: string|null, storedHash: string|null }>
  * }>}
  */
 const verifyHashChain = async ({ organizationId } = {}) => {
@@ -40,10 +40,12 @@ const verifyHashChain = async ({ organizationId } = {}) => {
     summary.organizationsChecked += 1;
     logger.info(`Starting hash verification for org: ${org.id}`);
 
-    // Fetch events ordered by created_at asc
+    // Fetch events in chain order. chain_seq is the only total order for an
+    // organization: created_at is the transaction start time and can be inverted
+    // relative to the order in which hashes were chained (P0-02).
     const events = await db('events')
       .where({ organization_id: org.id })
-      .orderBy('created_at', 'asc');
+      .orderBy('chain_seq', 'asc');
 
     let expectedPrevHash = 'GENESIS';
     let failedEvent = null;
@@ -56,6 +58,7 @@ const verifyHashChain = async ({ organizationId } = {}) => {
       if (event.prev_hash !== expectedPrevHash) {
         failedEvent = {
           eventId: event.id,
+          chainSeq: Number(event.chain_seq),
           reason: 'chain_link_mismatch',
           expectedHash: expectedPrevHash,
           storedHash: event.prev_hash,
@@ -89,6 +92,7 @@ const verifyHashChain = async ({ organizationId } = {}) => {
         if (recordHash !== event.record_hash) {
           failedEvent = {
             eventId: event.id,
+            chainSeq: Number(event.chain_seq),
             reason: 'hash_mismatch',
             expectedHash: recordHash,
             storedHash: event.record_hash,
@@ -101,6 +105,7 @@ const verifyHashChain = async ({ organizationId } = {}) => {
       } catch (err) {
         failedEvent = {
           eventId: event.id,
+          chainSeq: Number(event.chain_seq),
           reason: `verification_error: ${err.message}`,
           expectedHash: null,
           storedHash: event.record_hash,

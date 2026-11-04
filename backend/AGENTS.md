@@ -171,14 +171,22 @@ const computeEventHash = (event, prevHash, lotLinks) => {
 };
 
 const getPrevHash = async (organizationId, trx = db) => {
+  // Chain order is chain_seq, NEVER created_at/recorded_at (P0-02: those are
+  // transaction-start timestamps and can be inverted or tied).
   const lastEvent = await trx('events')
     .where({ organization_id: organizationId })
-    .orderBy('recorded_at', 'desc')
-    .select('record_hash')
+    .orderBy('chain_seq', 'desc')
     .first();
-  return lastEvent?.record_hash ?? 'GENESIS';
+  return lastEvent
+    ? { prevHash: lastEvent.record_hash, chainSeq: Number(lastEvent.chain_seq) + 1 }
+    : { prevHash: 'GENESIS', chainSeq: 1 };
 };
 ```
+
+> **P0-02:** every event insert must set `chain_seq` and must read the tip with
+> `getChainTip()` / `nextChainSeq()` from `backend/src/utils/hashChain.js`, inside the
+> transaction that holds `pg_advisory_xact_lock(org_lock_id)`. `chain_seq` is metadata and
+> is **not** part of the hash payload.
 
 ---
 
