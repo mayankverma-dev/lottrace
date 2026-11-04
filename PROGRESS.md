@@ -2,8 +2,8 @@
 
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
-**Last Updated:** 2026-07-14
-**Last Session:**
+**Last Updated:** 2026-11-04
+**Last Session:** P0-02 (deterministic hash chain ordering) implemented, verified end to end, and committed in `0833537`. The migration backfills by hash linkage from `GENESIS`, not by `created_at`.
 
 ---
 
@@ -54,6 +54,15 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P0-02 — deterministic hash chain ordering (0833537):
+- `backend/src/db/migrations/20261103000001_add_chain_seq_to_events.js` (new)
+- `backend/src/utils/hashChain.js` (`getChainTip`, `nextChainSeq`)
+- `backend/src/modules/events/events.service.js` (sets `chain_seq`; `checkComplianceGaps` now runs on the caller's transaction)
+- `backend/src/jobs/workers/import-processor.js` (sets `chain_seq`)
+- `backend/src/jobs/hash-chain-verifier.js` (orders by `chain_seq`)
+- Tests: `backend/src/modules/events/events.chain-seq.test.js`, `backend/src/db/chain-seq-migration.test.js`, `backend/src/test/dbGuard.js`
+- Docs: `docs/DATABASE_SCHEMA.md`, `backend/AGENTS.md`, `docs/AUDIT_REPORT.md`
 
 ---
 

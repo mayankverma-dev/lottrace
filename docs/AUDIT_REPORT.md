@@ -60,7 +60,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | ID | Severity | Title | Status |
 |----|----------|-------|--------|
 | P0-01 | P0 | Hash verification fails for every event with lot links (number vs decimal string) | Fixed (2026-11-03, f0e743f) |
-| P0-02 | P0 | Hash chain ordering is non-deterministic under concurrency | Open |
+| P0-02 | P0 | Hash chain ordering is non-deterministic under concurrency | Fixed (2026-11-04, 0833537) |
 | P0-03 | P0 | Event creation accepts lots from other organizations | Open |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Open |
 | P0-05 | P0 | Row Level Security is inert at runtime | Open |
@@ -122,13 +122,14 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-02 — Hash chain ordering is non-deterministic under concurrency
 
-- **Severity:** P0 · **Area:** backend / data integrity · **Status:** Open
+- **Severity:** P0 · **Area:** backend / data integrity · **Status:** Fixed (2026-11-04, 0833537)
 - **Evidence:** `backend/src/modules/events/events.service.js:48-57` (transaction starts, then advisory lock, then `orderBy('created_at','desc')`), migration `events.created_at` defaults to `knex.fn.now()`; `backend/src/jobs/workers/hash-verifier.js:13-16` orders by `created_at ASC`.
 - **What happens:** PostgreSQL `now()` is the **transaction start** timestamp, not the statement time. Two transactions can begin in the same millisecond, then serialize on the advisory lock; both rows get the same `created_at`. `ORDER BY created_at` alone is then ambiguous, so the second transaction may pick the wrong `prev_hash`, and the verifier may read the rows in the opposite order. Under any real concurrency (import worker + manual entry, two operators), the chain can fork.
 - **Real-world impact:** Hash verification fails intermittently and non-reproducibly — the worst possible failure mode for an audit tool. Restoring a database can change physical order and surface failures that did not exist before.
-- **Fix direction:** Add a monotonic per-organization `chain_seq BIGINT NOT NULL` (unique on `(organization_id, chain_seq)`), assigned inside the same transaction **after** acquiring the advisory lock: `SELECT COALESCE(MAX(chain_seq),0)+1`. Order chain reads by `chain_seq`, never by `created_at`. Add an index on `(organization_id, chain_seq)`. Backfill existing rows in `created_at, id` order.
+- **Fix direction:** Add a monotonic per-organization `chain_seq BIGINT NOT NULL` (unique on `(organization_id, chain_seq)`), assigned inside the same transaction **after** acquiring the advisory lock: `SELECT COALESCE(MAX(chain_seq),0)+1`. Order chain reads by `chain_seq`, never by `created_at`. Add an index on `(organization_id, chain_seq)`. Backfill existing rows by following `prev_hash` from `GENESIS`; use `created_at, id` only to break ties for rows unreachable from the root (fork, orphan, cycle), which stay reported as failures.
 - **Compatibility warning:** `chain_seq` is metadata and does not need to be part of the hash, so existing hashes stay valid. Do not add it to the hash payload without a `hash_version` bump.
 - **Verification:** Fire 50 concurrent event creations for one org with `Promise.all`; verify `chain_seq` values are unique and strictly increasing in the order the verifier reads them, and that the verifier reports zero failures. Repeat with two orgs to confirm per-org sequencing. (Rollbacks may leave gaps; gaps are harmless, duplicates and inversions are not.)
+- **Verification finding (2026-11-04, resolved):** The first backfill used `created_at, id` order. When `created_at` is tied or inverted relative to the hash linkage, that order disagrees with `prev_hash`/`record_hash`, so a valid chain verified as `chain_link_mismatch`. Reproduced with 6 events sharing one timestamp: pre-migration verifier 0 failures, post-migration verifier 1 failure. The backfill now follows `prev_hash` from `GENESIS`; the same tied fixture, an inverted fixture, and the 50-concurrent-create fixture all verify with 0 failures. Chains that were already broken (orphan, fork) still report exactly one `chain_link_mismatch`; the migration does not abort on them, because the pre-fix writer could create historical forks under concurrency.
 
 ## P0-03 — Event creation accepts lots from other organizations
 
