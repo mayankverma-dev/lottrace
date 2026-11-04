@@ -42,6 +42,17 @@ pnpm knex migrate:latest
 pnpm knex seed:run
 ```
 
+The seed is safe by default:
+
+- It refuses `NODE_ENV=production`.
+- Local hosts (`localhost`, `127.0.0.1`, `::1`, `postgres`) run directly.
+- Remote hosts require `ALLOW_DESTRUCTIVE_SEED=true` plus interactive confirmation.
+  In a non-interactive shell, also set `SEED_CONFIRM_REMOTE=true`.
+- It no longer truncates. Reruns preserve existing rows and passwords.
+- On first insert it prints a generated super-admin password once. Set
+  `SEED_SUPER_ADMIN_PASSWORD` to choose the password instead. Setting it on a
+  later run resets the password.
+
 ### 5. Start all services
 ```bash
 # From project root:
@@ -142,7 +153,7 @@ cd backend
 pnpm knex migrate:latest          # run pending migrations
 pnpm knex migrate:rollback        # roll back last batch
 pnpm knex migrate:status          # show migration status
-pnpm knex seed:run                # seed dev data
+pnpm knex seed:run                # seed dev data (refuses production; no truncate)
 pnpm knex migrate:make <name>     # create new migration
 
 # Lint + format
@@ -182,7 +193,9 @@ lottrace/
 
 ## Seeded Development Data
 
-After `pnpm knex seed:run`, the following test accounts are available:
+After `pnpm knex seed:run`, the current seed creates only the system super admin.
+
+> The demo accounts below are stale and tracked by `P2-08`. Do not rely on them.
 
 | Email | Password | Role |
 |-------|---------|------|
@@ -190,10 +203,12 @@ After `pnpm knex seed:run`, the following test accounts are available:
 | compliance@demo.com | Password123! | compliance_manager |
 | operator@demo.com | Password123! | operator |
 | auditor@demo.com | Password123! | auditor |
-| superadmin@lottrace.com | Password123! | super_admin |
+| admin@lottrace.com | Printed once at seed time, or `SEED_SUPER_ADMIN_PASSWORD` | super_admin |
 
-Org: **Demo Food Co** (slug: `demo-food-co`)
-Seeded: 5 locations, 10 products, 50 lots, ~200 events, trace chain spanning 4 hops
+Org: **LotTrace System** (slug: `lottrace-system`)
+
+The seed is idempotent. It preserves existing rows and does not reset an existing
+password unless `SEED_SUPER_ADMIN_PASSWORD` is set.
 
 ---
 
