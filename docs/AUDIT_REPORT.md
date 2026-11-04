@@ -86,7 +86,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-13 | P1 | Notification 404 builds an invalid AppError | Open |
 | P1-14 | P1 | Rate limiting collapses all users behind a proxy | Open |
 | P1-15 | P1 | `EMAIL_DRY_RUN=false` enables dry-run | Open |
-| P1-16 | P1 | Seed script truncates any database it is pointed at | Open |
+| P1-16 | P1 | Seed script truncates any database it is pointed at | Fixed (2026-11-04, d43a755) |
 | P1-17 | P1 | Database TLS disables certificate verification | Open |
 | P1-18 | P1 | Hash coverage and keying are insufficient for tamper evidence | Open |
 | P1-19 | P1 | Trace cache invalidation misses upstream lots | Open |
@@ -386,7 +386,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-16 — Seed script truncates any database it is pointed at
 
-- **Severity:** P1 · **Area:** backend / ops · **Status:** Open
+- **Severity:** P1 · **Area:** backend / ops · **Status:** Fixed (2026-11-04, d43a755)
 - **Evidence:** `backend/src/db/seeds/01_seed_super_admin.js:9` (`TRUNCATE TABLE organizations, users CASCADE`); `backend/knexfile.js` reads `DATABASE_URL` from `.env` (currently Neon); `package.json` seed script.
 - **What happens:** `npm run seed` deletes every organization, user, and (via `CASCADE`) all tenant data, then inserts a demo org and a super admin with password `admin123`. There is no `NODE_ENV` guard, no confirmation, and no host check. Because `backend/.env` points at Neon, a developer running the documented seed command destroys the shared database.
 - **Real-world impact:** One command wipes production/staging data. This is the highest-impact operational landmine in the repo, even though it is "only" a script.
