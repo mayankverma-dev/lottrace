@@ -1,5 +1,40 @@
 const { z } = require('zod');
 
+const TRUE_VALUES = ['true', '1'];
+const FALSE_VALUES = ['false', '0'];
+
+/**
+ * Parses a boolean environment variable from an explicit allowlist.
+ *
+ * `z.coerce.boolean()` is unusable here: it applies JavaScript truthiness to the
+ * string value, so `"false"`, `"0"`, `"no"` and `"off"` all become `true`.
+ *
+ * Accepted: true|false|1|0, case-insensitive, trimmed. Unset or empty falls back
+ * to `defaultValue`. Anything else fails validation at boot instead of silently
+ * picking a direction.
+ *
+ * @param {boolean} [defaultValue]
+ * @returns {import('zod').ZodEffects<import('zod').ZodOptional<import('zod').ZodString>, boolean, string | undefined>}
+ */
+const booleanEnv = (defaultValue = false) =>
+  z
+    .string()
+    .optional()
+    .superRefine((raw, ctx) => {
+      if (raw === undefined || raw.trim() === '') return;
+      const normalized = raw.trim().toLowerCase();
+      if (![...TRUE_VALUES, ...FALSE_VALUES].includes(normalized)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Must be one of: true, false, 1, 0',
+        });
+      }
+    })
+    .transform((raw) => {
+      if (raw === undefined || raw.trim() === '') return defaultValue;
+      return TRUE_VALUES.includes(raw.trim().toLowerCase());
+    });
+
 const envSchema = z.object({
   // Database
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
@@ -23,7 +58,7 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().min(1, 'RESEND_API_KEY is required'),
   EMAIL_FROM: z.string().default('LotTrace <onboarding@resend.dev>'),
   DEV_EMAIL_OVERRIDE: z.string().email().optional(), // Redirect ALL emails to this address in dev
-  EMAIL_DRY_RUN: z.coerce.boolean().default(false), // skip Resend API entirely, just log
+  EMAIL_DRY_RUN: booleanEnv(false), // skip Resend API entirely, just log
 
   // App
   NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
