@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-04
-**Last Session:** P0-02 (deterministic hash chain ordering) implemented, verified end to end, and committed in `0833537`. The migration backfills by hash linkage from `GENESIS`, not by `created_at`.
+**Last Session:** P1-15 (boolean env parsing) implemented, verified, and committed in `067226c`: `EMAIL_DRY_RUN=false` now disables dry-run, invalid values fail boot, and the resolved value is logged at startup.
 
 ---
 
@@ -54,6 +54,13 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P1-15 — boolean env parsing (067226c):
+- `backend/src/config/env.js` (`booleanEnv` helper; `EMAIL_DRY_RUN` no longer uses `z.coerce.boolean()`)
+- `backend/src/server.js` (logs resolved `emailDryRun` at startup; production dry-run warning)
+- `backend/.env.example` (documents accepted values)
+- Tests: `backend/src/config/env.test.js`, `backend/src/utils/email.test.js`
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P0-02 — deterministic hash chain ordering (0833537):
 - `backend/src/db/migrations/20261103000001_add_chain_seq_to_events.js` (new)

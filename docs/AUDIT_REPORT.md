@@ -85,7 +85,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-12 | P1 | User lifecycle breaks on global email uniqueness | Open |
 | P1-13 | P1 | Notification 404 builds an invalid AppError | Open |
 | P1-14 | P1 | Rate limiting collapses all users behind a proxy | Open |
-| P1-15 | P1 | `EMAIL_DRY_RUN=false` enables dry-run | Open |
+| P1-15 | P1 | `EMAIL_DRY_RUN=false` enables dry-run | Fixed (2026-11-04, 067226c) |
 | P1-16 | P1 | Seed script truncates any database it is pointed at | Fixed (2026-11-04, d43a755) |
 | P1-17 | P1 | Database TLS disables certificate verification | Open |
 | P1-18 | P1 | Hash coverage and keying are insufficient for tamper evidence | Open |
@@ -377,12 +377,13 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-15 — `EMAIL_DRY_RUN=false` enables dry-run
 
-- **Severity:** P1 · **Area:** backend / config · **Status:** Open
+- **Severity:** P1 · **Area:** backend / config · **Status:** Fixed (2026-11-04, 067226c)
 - **Evidence:** `backend/src/config/env.js:26` (`z.coerce.boolean()`).
 - **What happens:** `z.coerce.boolean()` uses JavaScript truthiness. The string `"false"` is truthy, so `EMAIL_DRY_RUN=false` parses to `true`. Any deployment that explicitly disables dry-run to send real invite/reset/compliance emails instead logs them and sends nothing. The inverse (`"true"`) works by accident.
 - **Real-world impact:** Silent email outage. Invited users never receive invites, password resets never arrive, and compliance-gap alerts are never delivered — while logs claim the email was "sent" in dry-run mode.
 - **Fix direction:** Replace with an explicit parser that accepts `true/false/1/0` case-insensitively (e.g. `z.string().optional().default('false').transform(v => ['true','1'].includes(v.toLowerCase()))`, or `z.stringbool()` if the Zod version supports it). Apply the same pattern to every boolean env var. Log the resolved value at boot (not secrets) so operators can confirm. Add a config test for `"true"`, `"false"`, `"1"`, `"0"`, and unset.
 - **Verification:** Boot with `EMAIL_DRY_RUN=false`; send an invite and confirm the Resend API is called (or a real email arrives in staging). Boot with `true`; confirm it logs and does not call the API.
+- **Verification finding (2026-11-04, 067226c):** `backend/src/config/env.js` now parses booleans from an explicit allowlist (`true|false|1|0`, case-insensitive, trimmed). Unset and empty fall back to `false`; any other value fails boot with a Zod issue on `EMAIL_DRY_RUN`. `backend/src/server.js` logs the resolved `emailDryRun` at startup and warns when it is enabled in production. Runtime repro before the fix, `EMAIL_DRY_RUN=false node -r dotenv/config -e "console.log(require('./src/config/env').EMAIL_DRY_RUN)"`, printed `true`; it now prints `false`. Tests: `backend/src/config/env.test.js` (13 cases) and `backend/src/utils/email.test.js` (5 cases, mocked Resend) pass; full `npm test` is 73 passed, 19 skipped (DB suites self-skip).
 
 ## P1-16 — Seed script truncates any database it is pointed at
 
