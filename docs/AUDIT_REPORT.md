@@ -83,7 +83,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-10 | P1 | Attachment keys are client-trusted; no download or list | Open |
 | P1-11 | P1 | Refresh-token rotation races log users out | Open |
 | P1-12 | P1 | User lifecycle breaks on global email uniqueness | Open |
-| P1-13 | P1 | Notification 404 builds an invalid AppError | Open |
+| P1-13 | P1 | Notification 404 builds an invalid AppError | Fixed (2026-11-07, 56bc42e) |
 | P1-14 | P1 | Rate limiting collapses all users behind a proxy | Open |
 | P1-15 | P1 | `EMAIL_DRY_RUN=false` enables dry-run | Fixed (2026-11-04, 067226c) |
 | P1-16 | P1 | Seed script truncates any database it is pointed at | Fixed (2026-11-04, d43a755) |
@@ -359,7 +359,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-13 — Notification 404 builds an invalid AppError
 
-- **Severity:** P1 · **Area:** backend / errors · **Status:** Open
+- **Severity:** P1 · **Area:** backend / errors · **Status:** Fixed (2026-11-07, 56bc42e)
 - **Evidence:** `backend/src/modules/notifications/notifications.controller.js:22` (`new AppError('Notification not found', 404)`); `backend/src/utils/AppError.js:14-18` (signature is `message, code, statusCode`); `backend/src/middleware/errorHandler.js` defaults `statusCode` to 500. Same bug at `backend/src/modules/events/events.service.js:267,277` (attachment paths).
 - **What happens:** `404` is passed as the **code** and `statusCode` is `undefined`, so the error handler returns **500** with `code: 404`. Clients treat a missing/foreign notification or event as a server outage, and monitoring pages on false 5xx alerts. Cross-tenant attachment access also returns 500 instead of 404.
 - **Real-world impact:** Wrong status codes break client error handling, pollute error tracking, and make a normal "not found" look like an incident. The API standards require 404 for cross-tenant access.
