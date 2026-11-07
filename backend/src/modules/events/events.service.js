@@ -274,7 +274,7 @@ const generateAttachmentUploadUrl = async (eventId, organizationId, filename, co
   
   // Verify event belongs to org
   const event = await db('events').where({ id: eventId, organization_id: organizationId }).first();
-  if (!event) throw new AppError('Event not found', 404);
+  if (!event) throw new AppError('Event not found', 'NOT_FOUND', 404);
 
   const key = `attachments/org_${organizationId}/events/${eventId}/${Date.now()}_${filename.replace(/\s+/g, '_')}`;
   
@@ -284,7 +284,7 @@ const generateAttachmentUploadUrl = async (eventId, organizationId, filename, co
 
 const addAttachment = async (eventId, data, organizationId, userId) => {
   const event = await db('events').where({ id: eventId, organization_id: organizationId }).first();
-  if (!event) throw new AppError('Event not found', 404);
+  if (!event) throw new AppError('Event not found', 'NOT_FOUND', 404);
 
   const [attachment] = await db('attachments').insert({
     organization_id: organizationId,
