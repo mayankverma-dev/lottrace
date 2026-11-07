@@ -38,6 +38,9 @@ const booleanEnv = (defaultValue = false) =>
 const envSchema = z.object({
   // Database
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  DB_SSL_CA: z.string().optional(),
+  DB_SSL_CA_PATH: z.string().optional(),
+  DB_TLS_INSECURE: booleanEnv(false),
 
   // Redis
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
@@ -72,6 +75,14 @@ const envSchema = z.object({
 
   // Sentry
   SENTRY_DSN: z.string().optional(),
+}).superRefine((value, ctx) => {
+  if (value.DB_SSL_CA && value.DB_SSL_CA_PATH) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['DB_SSL_CA_PATH'],
+      message: 'Set only one of DB_SSL_CA or DB_SSL_CA_PATH',
+    });
+  }
 });
 
 /**

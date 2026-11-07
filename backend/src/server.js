@@ -7,25 +7,56 @@ const logger = require('./utils/logger');
 const env = require('./config/env');
 
 const app = require('./app');
+const db = require('./db/knex');
 const { startWorkers } = require('./jobs');
 
 const PORT = env.PORT;
 const HOST = '0.0.0.0'
 
-const server = app.listen(PORT, HOST, () => {
-  logger.info(
-    { emailDryRun: env.EMAIL_DRY_RUN, emailOverride: Boolean(env.DEV_EMAIL_OVERRIDE) },
-    `Server running on port ${PORT} in ${env.NODE_ENV} mode`
-  );
-  if (env.NODE_ENV === 'production' && env.EMAIL_DRY_RUN) {
-    logger.warn('EMAIL_DRY_RUN is enabled in production — outbound email is suppressed');
+let server;
+
+const start = async () => {
+  if (env.NODE_ENV === 'production') {
+    try {
+      await db.raw('select 1');
+    } catch (err) {
+      logger.fatal({ err }, 'Database connection failed during startup');
+      process.exit(1);
+    }
   }
-  startWorkers();
+
+  server = app.listen(PORT, HOST, () => {
+    logger.info(
+      {
+        emailDryRun: env.EMAIL_DRY_RUN,
+        emailOverride: Boolean(env.DEV_EMAIL_OVERRIDE),
+        databaseTlsInsecure: env.DB_TLS_INSECURE,
+        databaseCaConfigured: Boolean(env.DB_SSL_CA || env.DB_SSL_CA_PATH),
+      },
+      `Server running on port ${PORT} in ${env.NODE_ENV} mode`
+    );
+    if (env.NODE_ENV === 'production' && env.EMAIL_DRY_RUN) {
+      logger.warn('EMAIL_DRY_RUN is enabled in production — outbound email is suppressed');
+    }
+    if (env.DB_TLS_INSECURE) {
+      logger.warn('DB_TLS_INSECURE is enabled — database TLS certificate verification is disabled');
+    }
+    startWorkers();
+  });
+};
+
+start().catch((err) => {
+  logger.fatal({ err }, 'Server startup failed');
+  process.exit(1);
 });
 
 // ─── Graceful Shutdown ─────────────────────────────────────
 const gracefulShutdown = (signal) => {
   logger.info(`${signal} received. Starting graceful shutdown...`);
+  if (!server) {
+    process.exit(0);
+  }
+
   server.close(() => {
     logger.info('HTTP server closed');
     process.exit(0);
@@ -53,4 +84,4 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-module.exports = server;
+module.exports = { start };

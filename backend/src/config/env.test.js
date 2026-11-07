@@ -17,7 +17,14 @@ const REQUIRED_ENV = {
   RESEND_API_KEY: 're_test_key',
 };
 
-const MANAGED_KEYS = [...Object.keys(REQUIRED_ENV), 'EMAIL_DRY_RUN', 'PORT'];
+const MANAGED_KEYS = [
+  ...Object.keys(REQUIRED_ENV),
+  'EMAIL_DRY_RUN',
+  'PORT',
+  'DB_TLS_INSECURE',
+  'DB_SSL_CA',
+  'DB_SSL_CA_PATH',
+];
 const ORIGINAL = {};
 
 /**
@@ -45,6 +52,9 @@ beforeEach(() => {
   });
   delete process.env.EMAIL_DRY_RUN;
   delete process.env.PORT;
+  delete process.env.DB_TLS_INSECURE;
+  delete process.env.DB_SSL_CA;
+  delete process.env.DB_SSL_CA_PATH;
 });
 
 afterAll(() => {
@@ -147,5 +157,61 @@ describe('env schema still coerces other types', () => {
     process.env.PORT = '4321';
 
     expect(loadEnv().PORT).toBe(4321);
+  });
+});
+
+describe('database TLS environment variables', () => {
+  it('defaults DB_TLS_INSECURE to false', () => {
+    expect(loadEnv().DB_TLS_INSECURE).toBe(false);
+  });
+
+  it.each(['true', '1', 'TRUE'])('resolves DB_TLS_INSECURE=%s to true', (value) => {
+    process.env.DB_TLS_INSECURE = value;
+
+    expect(loadEnv().DB_TLS_INSECURE).toBe(true);
+  });
+
+  it.each(['false', '0', 'FALSE'])('resolves DB_TLS_INSECURE=%s to false', (value) => {
+    process.env.DB_TLS_INSECURE = value;
+
+    expect(loadEnv().DB_TLS_INSECURE).toBe(false);
+  });
+
+  it('rejects an invalid DB_TLS_INSECURE value', () => {
+    process.env.DB_TLS_INSECURE = 'yes';
+
+    expect(() => loadEnv()).toThrow(/DB_TLS_INSECURE/);
+  });
+
+  it('accepts DB_SSL_CA', () => {
+    process.env.DB_SSL_CA = 'inline-ca';
+
+    expect(loadEnv().DB_SSL_CA).toBe('inline-ca');
+  });
+
+  it('accepts DB_SSL_CA_PATH', () => {
+    process.env.DB_SSL_CA_PATH = '/certs/ca.pem';
+
+    expect(loadEnv().DB_SSL_CA_PATH).toBe('/certs/ca.pem');
+  });
+
+  it('rejects both CA sources at once', () => {
+    process.env.DB_SSL_CA = 'inline-ca';
+    process.env.DB_SSL_CA_PATH = '/certs/ca.pem';
+
+    let error;
+    try {
+      loadEnv();
+    } catch (err) {
+      error = err;
+    }
+
+    expect(error).toBeDefined();
+    expect(error.issues).toEqual([
+      expect.objectContaining({
+        path: ['DB_SSL_CA_PATH'],
+        message: 'Set only one of DB_SSL_CA or DB_SSL_CA_PATH',
+      }),
+    ]);
   });
 });
