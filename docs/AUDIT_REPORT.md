@@ -87,7 +87,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-14 | P1 | Rate limiting collapses all users behind a proxy | Open |
 | P1-15 | P1 | `EMAIL_DRY_RUN=false` enables dry-run | Fixed (2026-11-04, 067226c) |
 | P1-16 | P1 | Seed script truncates any database it is pointed at | Fixed (2026-11-04, d43a755) |
-| P1-17 | P1 | Database TLS disables certificate verification | Open |
+| P1-17 | P1 | Database TLS disables certificate verification | Fixed (2026-11-07, 66e372d) |
 | P1-18 | P1 | Hash coverage and keying are insufficient for tamper evidence | Open |
 | P1-19 | P1 | Trace cache invalidation misses upstream lots | Open |
 | P1-20 | P1 | No tests, CI, Dockerfiles, or frontend SPA rewrite | Open |
@@ -396,7 +396,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-17 — Database TLS disables certificate verification
 
-- **Severity:** P1 · **Area:** backend / security · **Status:** Open
+- **Severity:** P1 · **Area:** backend / security · **Status:** Fixed (2026-11-07, 66e372d)
 - **Evidence:** `backend/knexfile.js:10` and `:46` (`ssl: { rejectUnauthorized: false }`); production connection override at `:38-44`.
 - **What happens:** All TLS connections accept any certificate, including an attacker's. Production **always** uses this object, even for non-Neon hosts. This makes the encrypted connection vulnerable to man-in-the-middle attacks on database credentials and all tenant data. `isNeon` detection by substring is also brittle (staging URLs, pooled hosts).
 - **Real-world impact:** A network attacker on the same VPC/host can intercept or alter supply-chain records. This undermines every other security control.
