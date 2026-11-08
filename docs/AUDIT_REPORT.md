@@ -30,7 +30,7 @@ Issues marked **Fixed** are done. Do not re-implement or re-audit them unless a 
 
 **Fix protocol for every issue (mandatory):**
 
-1. Read `AGENTS.md`, `docs/API_STANDARDS.md`, `docs/CONVENTIONS.md`, `docs/DATABASE_SCHEMA.md`, `docs/VALIDATION_RULES.md`, and this file.
+1. Read `AGENTS.md`, `PROGRESS.md`, `docs/API_STANDARDS.md`, `docs/CONVENTIONS.md`, `docs/DATABASE_SCHEMA.md`, `docs/VALIDATION_RULES.md`, and this file.
 2. Produce a plan first: files to change, exact behavior change, schema/migration changes (greenfield: no backfill or compatibility work), and test plan. **Wait for approval** (root `AGENTS.md` rule 11).
 3. Implement only the requested issue ID. Do not opportunistically refactor unrelated code.
 4. Add or update automated tests for the issue. Tests build their own data; never depend on pre-existing rows.
@@ -631,59 +631,143 @@ Use one issue (or one declared batch) per session. The prompts below are deliber
 ## Prompt 1 — Plan only (always start here)
 
 ```text
-Read AGENTS.md, docs/API_STANDARDS.md, docs/CONVENTIONS.md,
-docs/DATABASE_SCHEMA.md, docs/VALIDATION_RULES.md, and docs/AUDIT_REPORT.md.
+You are working in the LotTrace repository (the current working directory).
 
-We are fixing issue P0-01 only. Do not edit any files yet.
+Before doing anything, read:
+- AGENTS.md
+- PROGRESS.md (status claims may be stale; trust the code and this report)
+- docs/API_STANDARDS.md
+- docs/CONVENTIONS.md
+- docs/DATABASE_SCHEMA.md
+- docs/VALIDATION_RULES.md
+- docs/AUDIT_REPORT.md — read the fix protocol and the entry for <ID>.
 
-Produce a plan that includes:
-1. The exact files and functions you will change.
-2. The behavior change and any API/schema/migration impact.
-3. Schema/migration changes. Assume greenfield: no backward compatibility,
-   no data preservation, no backfills. State what you will delete, recreate,
-   or reset.
-4. The tests you will add and the exact commands you will run.
-5. Manual verification steps.
-6. Risks and anything you need me to decide.
+Task: fix <ID> — <TITLE>.
 
-Wait for my approval before writing code.
+This session is PLAN ONLY. Do not edit files, do not run migrations,
+do not run seed, and do not change any database.
+
+Greenfield policy:
+- LotTrace is pre-production: no backward compatibility, no legacy data,
+  no backfills, and no data-preserving migrations.
+- Assume the development database can be dropped and recreated at any time.
+- Prefer deleting obsolete columns, tables, endpoints, hash versions, and
+  dead code over keeping compatibility paths.
+- Keep the final invariants: tenant isolation, append-only audit trail,
+  hash verification, and RBAC.
+
+Rules:
+- Fix only <ID>. If you notice another problem, report it as a new issue;
+  do not fix it.
+- Verify the report's evidence against the current code. Line numbers may
+  have moved since the audit.
+- Use a disposable local Postgres for any DB work. Never use the Neon
+  DATABASE_URL from backend/.env.
+- Follow repository conventions: JavaScript only, Knex or parameterized SQL,
+  organization_id from the JWT, and the standard API response helpers.
+- Do not propose /api/v2, dual response shapes, feature flags, or
+  compatibility shims. Update the single current contract.
+
+Give me:
+1. Confirmed root cause with current file:line evidence.
+2. Exact files and functions you will change, and obsolete code/schema you
+   will delete.
+3. Exact behavior change, including API/schema/migration impact under the
+   single current contract.
+4. Greenfield database plan: exact migration/schema changes, what will be
+   dropped, recreated, or reset, and confirmation that no backfill,
+   dual-write, or compatibility work is needed. Rollback is a code revert
+   plus a dev-database reset, not data preservation.
+5. Tests to add, with specific cases and exact commands. Tests build their
+   own data; do not depend on seeded rows.
+6. Manual verification steps.
+7. Risks and anything you need me to decide.
+
+Stop and wait for my approval. Do not write code yet.
 ```
 
 ## Prompt 2 — Implement after approval
 
 ```text
-Approved. Implement P0-01 exactly as planned. Do not change unrelated code.
+Approved. Implement <ID> exactly as planned.
 
-Rules:
-- Follow the fix protocol in docs/AUDIT_REPORT.md.
-- Add the tests you described and make them pass.
-- Run node --check on changed backend files, both builds, and the tests.
-- The development database is disposable: reset it and run migrations from
-  scratch whenever that is simpler. Do not write backfill or compatibility
-  migrations. Never point destructive commands at a shared staging or
-  production database.
-- If you discover a new issue, stop and report it; do not fix it silently.
-- Update the P0-01 Status line in docs/AUDIT_REPORT.md when done.
-- Give me a short manual verification checklist.
+Constraints:
+- Touch only the files needed for <ID>.
+- Greenfield only: no backward-compatibility code, legacy branches,
+  dual-write paths, feature flags, backfills, or data-preserving migrations.
+  Delete obsolete code/schema instead of keeping it.
+- Add the tests we agreed on and make them pass. Tests create their own data.
+- Before any database command, print the resolved database host and confirm
+  it is a local disposable database, not Neon.
+- Do not run migrations against Neon.
+- Prefer tests that create their own data over running the seed script. If
+  seed is required, run it only against the confirmed local disposable
+  database.
+- Run node --check on changed backend files, the agreed test command, and
+  both builds if frontend or scan-pwa changed.
+- Do not commit yet.
+- If anything unexpected appears, stop and report it. Do not expand scope.
+- After tests pass, update <ID>'s Status in docs/AUDIT_REPORT.md to
+  "Fixed (commit pending)".
+
+Show me:
+- git diff --stat
+- the full test output
+- the manual verification checklist
 ```
 
-## Prompt 3 — Verify and close
+## Prompt 3 — Verify, no commit
 
 ```text
-Walk me through the manual verification for P0-01 step by step.
-Then run the full relevant test suite and the smoke matrix from
-docs/AUDIT_REPORT.md. Report any regression. If everything passes,
-mark P0-01 Fixed with the commit hash and date.
+Verify <ID> now.
+
+1. Walk me through each manual verification step from the report.
+2. Run the relevant rows of the smoke-test matrix in docs/AUDIT_REPORT.md.
+3. Show the full diff and confirm no unrelated files changed.
+4. Confirm the diff contains no backward-compatibility code, backfills,
+   dual-write paths, legacy verifiers, feature flags, or preserved old
+   columns/endpoints.
+5. Confirm the schema change is clean: the original migration was edited or
+   one clean migration was added, and migrate-from-scratch succeeds on a
+   reset development database.
+6. Report pass or fail honestly.
+
+If everything passes:
+- do not commit yet;
+- tell me the exact commit message to use;
+- list any new issues discovered, with proposed IDs, but do not fix them;
+- do not start the next issue.
+
+If anything fails:
+- do not mark it Fixed;
+- explain the root cause and propose a corrected plan;
+- wait for my approval before editing again.
 ```
 
-## Prompt 4 — Batch (only when the report says they are coupled)
+## Prompt 4 — Commit and close
+
+Use this only after you have reviewed the diff and verification passed.
 
 ```text
-Fix Batch 1 from docs/AUDIT_REPORT.md: P0-02, then P0-01, then P0-11.
-Plan the whole batch first and wait for approval. Keep each issue as a
-separate commit. Do not start P1-18; that needs a separate decision about
-key management.
+I approve the verified change for <ID>.
+
+Commit only the files for <ID> with:
+fix(<ID>): <short description>
+
+Then update <ID>'s Status in docs/AUDIT_REPORT.md to
+"Fixed (<today's date>, <commit hash>)" and commit that docs update with:
+docs(audit): mark <ID> fixed
+
+Do not include unrelated files, formatting churn, or a second issue's
+changes. Do not amend or rewrite earlier commits. Do not push.
+
+Show me git log --oneline -2, git status --short, and confirm the working
+tree is clean. Do not start the next issue.
 ```
+
+For a declared batch, run prompts 1–4 once per issue in the order given by
+this report and keep one commit per issue. Do not fold multiple issue IDs into
+one commit.
 
 ## Rules that prevent "fixing one thing and breaking another"
 
