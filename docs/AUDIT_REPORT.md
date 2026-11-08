@@ -75,8 +75,8 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 | ID | Severity | Title | Status |
 |----|----------|-------|--------|
-| P0-01 | P0 | Hash verification fails for every event with lot links (number vs decimal string) | Fixed (2026-11-03, f0e743f) |
-| P0-02 | P0 | Hash chain ordering is non-deterministic under concurrency | Fixed (2026-11-04, 0833537) |
+| P0-01 | P0 | Hash verification fails for every event with lot links (number vs decimal string) | Open |
+| P0-02 | P0 | Hash chain ordering is non-deterministic under concurrency | Open |
 | P0-03 | P0 | Event creation accepts lots from other organizations | Open |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Open |
 | P0-05 | P0 | Row Level Security is inert at runtime | Open |
@@ -85,7 +85,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-08 | P0 | Event detail page crashes when compliance gaps exist | Open |
 | P0-09 | P0 | Event timestamps shift by the browser UTC offset | Open |
 | P0-10 | P0 | Import maps shipping rows to the wrong trace direction | Open |
-| P0-11 | P0 | Trace includes superseded (amended) events | Fixed (2026-11-08, 9185b6b) |
+| P0-11 | P0 | Trace includes superseded (amended) events | Open |
 | P0-12 | P0 | Operators can create events but cannot read them | Open |
 | P1-01 | P1 | Imports never compute compliance gaps | Open |
 | P1-02 | P1 | Export pipeline produces an unreachable file and ignores format | Open |
@@ -99,11 +99,11 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-10 | P1 | Attachment keys are client-trusted; no download or list | Open |
 | P1-11 | P1 | Refresh-token rotation races log users out | Open |
 | P1-12 | P1 | User lifecycle breaks on global email uniqueness | Open |
-| P1-13 | P1 | Notification 404 builds an invalid AppError | Fixed (2026-11-07, 56bc42e) |
+| P1-13 | P1 | Notification 404 builds an invalid AppError | Open |
 | P1-14 | P1 | Rate limiting collapses all users behind a proxy | Open |
-| P1-15 | P1 | `EMAIL_DRY_RUN=false` enables dry-run | Fixed (2026-11-04, 067226c) |
-| P1-16 | P1 | Seed script truncates any database it is pointed at | Fixed (2026-11-04, d43a755) |
-| P1-17 | P1 | Database TLS disables certificate verification | Fixed (2026-11-07, 66e372d) |
+| P1-15 | P1 | `EMAIL_DRY_RUN=false` enables dry-run | Open |
+| P1-16 | P1 | Seed script truncates any database it is pointed at | Open |
+| P1-17 | P1 | Database TLS disables certificate verification | Open |
 | P1-18 | P1 | Hash coverage and keying are insufficient for tamper evidence | Open |
 | P1-19 | P1 | Trace cache invalidation misses upstream lots | Open |
 | P1-20 | P1 | No tests, CI, Dockerfiles, or frontend SPA rewrite | Open |
@@ -124,7 +124,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-01 — Hash verification fails for every event with lot links
 
-- **Severity:** P0 · **Area:** backend / data integrity · **Status:** Fixed (2026-11-03, f0e743f)
+- **Severity:** P0 · **Area:** backend / data integrity · **Status:** Open
 - **Evidence:** `backend/src/modules/events/events.service.js:62-84` (hash built from request objects), `:108-121` (links inserted), `backend/src/jobs/workers/hash-verifier.js:33-41` (hash rebuilt from DB rows), migration `event_lot_links.quantity` is `decimal`.
 - **What happens:** The create path hashes `input.quantity` as a JavaScript number (`1`). PostgreSQL returns `decimal` as a string (`"1.000"`), so the verifier hashes `"1.000"`. Three independent mismatches exist:
   1. **Quantity type/scale:** `1` vs `"1.000"`. This alone affects every event that has any input or output.
@@ -138,14 +138,13 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-02 — Hash chain ordering is non-deterministic under concurrency
 
-- **Severity:** P0 · **Area:** backend / data integrity · **Status:** Fixed (2026-11-04, 0833537)
+- **Severity:** P0 · **Area:** backend / data integrity · **Status:** Open
 - **Evidence:** `backend/src/modules/events/events.service.js:48-57` (transaction starts, then advisory lock, then `orderBy('created_at','desc')`), migration `events.created_at` defaults to `knex.fn.now()`; `backend/src/jobs/workers/hash-verifier.js:13-16` orders by `created_at ASC`.
 - **What happens:** PostgreSQL `now()` is the **transaction start** timestamp, not the statement time. Two transactions can begin in the same millisecond, then serialize on the advisory lock; both rows get the same `created_at`. `ORDER BY created_at` alone is then ambiguous, so the second transaction may pick the wrong `prev_hash`, and the verifier may read the rows in the opposite order. Under any real concurrency (import worker + manual entry, two operators), the chain can fork.
 - **Real-world impact:** Hash verification fails intermittently and non-reproducibly — the worst possible failure mode for an audit tool. Restoring a database can change physical order and surface failures that did not exist before.
 - **Fix direction:** Add a monotonic per-organization `chain_seq BIGINT NOT NULL` (unique on `(organization_id, chain_seq)`), assigned inside the same transaction **after** acquiring the advisory lock: `SELECT COALESCE(MAX(chain_seq),0)+1`. Order chain reads by `chain_seq`, never by `created_at`. Add an index on `(organization_id, chain_seq)`. Under the greenfield policy, no backfill is required: reset the development database and build the chain from scratch.
 - **Greenfield note:** No old hash needs to stay valid. Include `chain_seq` in the hash payload only if it makes the canonical payload cleaner; if the payload changes, bump `hash_version` and reset the development data. There is no compatibility constraint.
 - **Verification:** Fire 50 concurrent event creations for one org with `Promise.all`; verify `chain_seq` values are unique and strictly increasing in the order the verifier reads them, and that the verifier reports zero failures. Repeat with two orgs to confirm per-org sequencing. (Rollbacks may leave gaps; gaps are harmless, duplicates and inversions are not.)
-- **Verification finding (2026-11-04, resolved):** The first backfill used `created_at, id` order. When `created_at` is tied or inverted relative to the hash linkage, that order disagrees with `prev_hash`/`record_hash`, so a valid chain verified as `chain_link_mismatch`. Reproduced with 6 events sharing one timestamp: pre-migration verifier 0 failures, post-migration verifier 1 failure. The backfill now follows `prev_hash` from `GENESIS`; the same tied fixture, an inverted fixture, and the 50-concurrent-create fixture all verify with 0 failures. Chains that were already broken (orphan, fork) still report exactly one `chain_link_mismatch`; the migration does not abort on them, because the pre-fix writer could create historical forks under concurrency.
 
 ## P0-03 — Event creation accepts lots from other organizations
 
@@ -235,13 +234,12 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-11 — Trace includes superseded (amended) events
 
-- **Severity:** P0 · **Area:** backend / trace · **Status:** Fixed (2026-11-08, 9185b6b)
+- **Severity:** P0 · **Area:** backend / trace · **Status:** Open
 - **Evidence:** `backend/src/modules/trace/trace.service.js:110` and `:176` (`AND e.status != 'void'`).
 - **What happens:** Amendment sets the old event to `status = 'amended'` and creates a replacement with `supersedes_event_id`. The trace CTEs exclude only `void`, so **both** the superseded and the replacement event are traversed. Any corrected quantity, location, or input/output set appears twice with conflicting values; cycles are only prevented by lot ID, not event ID.
 - **Real-world impact:** Trace results double-count hops and contain known-wrong data. A recall could include or exclude the wrong lots based on a corrected record. Auditors see two versions of the same event presented as equally valid.
 - **Fix direction:** Filter `e.status = 'active'` in both CTEs. Keep amended/void events available in the audit log and event detail, but never in the live trace graph. Decide and document whether lot-level `status = 'void'` should also be excluded from trace results (currently it is returned with a status flag). Add a test: create event A, amend it to B, trace the lot; only B appears.
 - **Verification:** Trace before and after an amendment; node/edge counts must not double. Confirm the superseded event is still visible via `GET /events/:id` and the audit log.
-- **Fix (2026-11-08, 9185b6b):** Both trace CTEs now filter `e.status = 'active'`; the trace cache namespace was bumped to `trace:v2:` so pre-fix results cannot be served for the 5-minute TTL. Regression suite: `backend/src/modules/trace/trace.amended-events.test.js` (6 passing). Lot-level `status = 'void'` inclusion was intentionally left unchanged.
 
 ## P0-12 — Operators can create events but cannot read them
 
@@ -376,7 +374,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-13 — Notification 404 builds an invalid AppError
 
-- **Severity:** P1 · **Area:** backend / errors · **Status:** Fixed (2026-11-07, 56bc42e)
+- **Severity:** P1 · **Area:** backend / errors · **Status:** Open
 - **Evidence:** `backend/src/modules/notifications/notifications.controller.js:22` (`new AppError('Notification not found', 404)`); `backend/src/utils/AppError.js:14-18` (signature is `message, code, statusCode`); `backend/src/middleware/errorHandler.js` defaults `statusCode` to 500. Same bug at `backend/src/modules/events/events.service.js:267,277` (attachment paths).
 - **What happens:** `404` is passed as the **code** and `statusCode` is `undefined`, so the error handler returns **500** with `code: 404`. Clients treat a missing/foreign notification or event as a server outage, and monitoring pages on false 5xx alerts. Cross-tenant attachment access also returns 500 instead of 404.
 - **Real-world impact:** Wrong status codes break client error handling, pollute error tracking, and make a normal "not found" look like an incident. The API standards require 404 for cross-tenant access.
@@ -394,17 +392,16 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-15 — `EMAIL_DRY_RUN=false` enables dry-run
 
-- **Severity:** P1 · **Area:** backend / config · **Status:** Fixed (2026-11-04, 067226c)
+- **Severity:** P1 · **Area:** backend / config · **Status:** Open
 - **Evidence:** `backend/src/config/env.js:26` (`z.coerce.boolean()`).
 - **What happens:** `z.coerce.boolean()` uses JavaScript truthiness. The string `"false"` is truthy, so `EMAIL_DRY_RUN=false` parses to `true`. Any deployment that explicitly disables dry-run to send real invite/reset/compliance emails instead logs them and sends nothing. The inverse (`"true"`) works by accident.
 - **Real-world impact:** Silent email outage. Invited users never receive invites, password resets never arrive, and compliance-gap alerts are never delivered — while logs claim the email was "sent" in dry-run mode.
 - **Fix direction:** Replace with an explicit parser that accepts `true/false/1/0` case-insensitively (e.g. `z.string().optional().default('false').transform(v => ['true','1'].includes(v.toLowerCase()))`, or `z.stringbool()` if the Zod version supports it). Apply the same pattern to every boolean env var. Log the resolved value at boot (not secrets) so operators can confirm. Add a config test for `"true"`, `"false"`, `"1"`, `"0"`, and unset.
 - **Verification:** Boot with `EMAIL_DRY_RUN=false`; send an invite and confirm the Resend API is called (or a real email arrives in staging). Boot with `true`; confirm it logs and does not call the API.
-- **Verification finding (2026-11-04, 067226c):** `backend/src/config/env.js` now parses booleans from an explicit allowlist (`true|false|1|0`, case-insensitive, trimmed). Unset and empty fall back to `false`; any other value fails boot with a Zod issue on `EMAIL_DRY_RUN`. `backend/src/server.js` logs the resolved `emailDryRun` at startup and warns when it is enabled in production. Runtime repro before the fix, `EMAIL_DRY_RUN=false node -r dotenv/config -e "console.log(require('./src/config/env').EMAIL_DRY_RUN)"`, printed `true`; it now prints `false`. Tests: `backend/src/config/env.test.js` (13 cases) and `backend/src/utils/email.test.js` (5 cases, mocked Resend) pass; full `npm test` is 73 passed, 19 skipped (DB suites self-skip).
 
 ## P1-16 — Seed script truncates any database it is pointed at
 
-- **Severity:** P1 · **Area:** backend / ops · **Status:** Fixed (2026-11-04, d43a755)
+- **Severity:** P1 · **Area:** backend / ops · **Status:** Open
 - **Evidence:** `backend/src/db/seeds/01_seed_super_admin.js:9` (`TRUNCATE TABLE organizations, users CASCADE`); `backend/knexfile.js` reads `DATABASE_URL` from `.env` (currently Neon); `package.json` seed script.
 - **What happens:** `npm run seed` deletes every organization, user, and (via `CASCADE`) all tenant data, then inserts a demo org and a super admin with password `admin123`. There is no `NODE_ENV` guard, no confirmation, and no host check. Because `backend/.env` points at Neon, a developer running the documented seed command destroys the shared database.
 - **Real-world impact:** One command wipes production/staging data. This is the highest-impact operational landmine in the repo, even though it is "only" a script.
@@ -413,7 +410,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-17 — Database TLS disables certificate verification
 
-- **Severity:** P1 · **Area:** backend / security · **Status:** Fixed (2026-11-07, 66e372d)
+- **Severity:** P1 · **Area:** backend / security · **Status:** Open
 - **Evidence:** `backend/knexfile.js:10` and `:46` (`ssl: { rejectUnauthorized: false }`); production connection override at `:38-44`.
 - **What happens:** All TLS connections accept any certificate, including an attacker's. Production **always** uses this object, even for non-Neon hosts. This makes the encrypted connection vulnerable to man-in-the-middle attacks on database credentials and all tenant data. `isNeon` detection by substring is also brittle (staging URLs, pooled hosts).
 - **Real-world impact:** A network attacker on the same VPC/host can intercept or alter supply-chain records. This undermines every other security control.
