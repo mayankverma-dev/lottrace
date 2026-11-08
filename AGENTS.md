@@ -22,8 +22,24 @@ into a seconds-long query.
 7. **NEVER** use `fetch()` — always use the configured `axios` instance from `backend/src/lib/http.js` (backend) or `frontend/src/lib/api.js` (frontend)
 8. **NEVER** write raw string-interpolated SQL — always use Knex query builder or parameterized queries
 9. **NEVER** trust `organization_id` from request body — always derive it from `req.user.organizationId` (JWT)
-10. **NEVER** hard-delete records that are linked to events, lots, or audit trail
+10. **NEVER** hard-delete records that are linked to events, lots, or audit trail in application behavior (resetting the disposable development database is fine)
 11. **ASK for plan first** on any feature > 50 lines — list files + changes, wait for approval, then implement
+12. **Treat the project as greenfield** — no backward compatibility, legacy data, backfills, or compatibility migrations. Reset the dev DB and delete obsolete schema/code instead.
+
+---
+
+## Development Policy — Greenfield
+
+LotTrace is pre-production. There are no production users and no data that must survive a change.
+
+- **No backward compatibility:** do not add legacy code paths, dual formats, feature flags, or compatibility shims.
+- **No data preservation:** do not write backfills, data-repair migrations, or "keep old rows working" logic.
+- **Rewrite freely:** do not preserve an old implementation just because it exists; replace it with the simplest correct design.
+- **Schema changes are direct:** edit the original migration or add a clean one, then reset the development database and reseed.
+- **Delete obsolete things:** remove old columns, tables, endpoints, hash versions, and dead code instead of keeping them "just in case".
+- **Tests build their own data:** never depend on seeded or pre-existing rows.
+- **Keep final invariants:** tenant isolation, append-only audit trail, hash verification, and RBAC must still be correct in the finished system.
+- **One safety rule:** never run destructive commands against a shared staging or production database. The development database is disposable.
 
 ---
 

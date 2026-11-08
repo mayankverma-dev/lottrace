@@ -204,6 +204,8 @@ CREATE TABLE events (
   idempotency_key     text UNIQUE,         -- client-provided idempotency key
   record_hash         text NOT NULL,       -- SHA-256 of stable event serialization
   prev_hash           text NOT NULL,       -- hash of previous event in org's chain (or 'GENESIS')
+  chain_seq           bigint NOT NULL,     -- monotonic per-org chain position (see note below)
+  hash_version        smallint NOT NULL DEFAULT 1, -- payload version; canonical = 2, legacy 1 is disposable
   status              text NOT NULL DEFAULT 'active',     -- active | amended | void
   supersedes_event_id uuid REFERENCES events(id),        -- if this is an amendment
   void_reason         text,
@@ -218,7 +220,38 @@ CREATE INDEX idx_events_org_status ON events(organization_id, status);
 CREATE INDEX idx_events_location ON events(location_id);
 CREATE INDEX idx_events_compliance_gaps ON events(organization_id, has_compliance_gaps) WHERE has_compliance_gaps = true;
 CREATE INDEX idx_events_recorded_by ON events(recorded_by);
+-- Chain order + tip lookup. Unique per organization; never order the chain by created_at.
+CREATE UNIQUE INDEX idx_events_org_chain_seq ON events(organization_id, chain_seq);
 ```
+
+**Chain ordering (`events.chain_seq`)** — the hash chain is ordered by `chain_seq`, **never** by
+`created_at`. `created_at` defaults to `CURRENT_TIMESTAMP`, which PostgreSQL evaluates once per
+transaction (transaction start time), so a transaction that waits on the organization advisory lock
+can be stamped earlier than the event it follows. Writers must:
+
+1. `SELECT pg_advisory_xact_lock(org_lock_id)` inside the transaction,
+2. read the tip with `getChainTip()` from `backend/src/utils/hashChain.js`
+   (`ORDER BY chain_seq DESC`),
+3. insert with `chain_seq = nextChainSeq(tip)`.
+
+The verifier reads with `ORDER BY chain_seq ASC`. `chain_seq` may be included in the hash payload if
+that makes the canonical format cleaner; there is no old-hash compatibility constraint.
+
+Under the greenfield policy, no backfill is required: reset the development database and build the
+chain from scratch. The existing P0-02 migration's `prev_hash`-following backfill is historical, not
+a requirement for future schema changes.
+
+**Hash versions** (`events.hash_version`) — the verifier dispatches on this column. Under the
+greenfield policy only the current version must work:
+
+| Value | Meaning | Verifiable? |
+|-------|---------|-------------|
+| `2` | Canonical: `backend/src/utils/hashChain.js` builds the payload from persisted values (quantities cast through `numeric(15,4)`, links sorted by `lot_id`, datetime normalized to ISO-8601 UTC). | Yes — payload + chain linkage. |
+| `1` | Legacy request-shaped hash. Pre-production only; delete the legacy verifier and reset the development database. | Not required. |
+
+Do not write a re-seal migration or archive old hashes. When the payload changes, bump
+`hash_version`, update the canonical serializer and verifier together, and reset the development
+database.
 
 ---
 

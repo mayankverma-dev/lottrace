@@ -94,6 +94,19 @@ backend/
 
 ---
 
+## Database Migrations (Greenfield)
+
+The project is pre-production; the development database is disposable.
+
+- Edit the original migration or add a clean migration instead of writing a compatibility migration.
+- Never write backfills, data-repair scripts, dual-write migrations, or legacy verifiers.
+- When a schema change is simpler from scratch, reset the database:
+  `pnpm knex migrate:rollback --all`, then `pnpm knex migrate:latest && pnpm knex seed:run`.
+- Delete obsolete columns, tables, and indexes instead of keeping them for old data.
+- Tests create the rows they need; never depend on seeded or pre-existing data.
+
+---
+
 ## Frontend Project Structure
 
 ```

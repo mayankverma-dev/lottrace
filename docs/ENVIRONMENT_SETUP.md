@@ -42,6 +42,23 @@ pnpm knex migrate:latest
 pnpm knex seed:run
 ```
 
+The seed is safe by default:
+
+- It refuses `NODE_ENV=production`.
+- Local hosts (`localhost`, `127.0.0.1`, `::1`, `postgres`) run directly.
+- Remote hosts require `ALLOW_DESTRUCTIVE_SEED=true` plus interactive confirmation.
+  In a non-interactive shell, also set `SEED_CONFIRM_REMOTE=true`.
+- It no longer truncates. Reruns preserve existing rows and passwords.
+- On first insert it prints a generated super-admin password once. Set
+  `SEED_SUPER_ADMIN_PASSWORD` to choose the password instead. Setting it on a
+  later run resets the password.
+
+> **Development database is disposable.** This project is pre-production. When a
+> schema change is simpler from scratch, reset the database
+> (`pnpm knex migrate:rollback --all`, or drop/recreate) and run
+> `pnpm knex migrate:latest && pnpm knex seed:run`. Do not write backfill or
+> compatibility migrations; edit the original migration or add a clean one.
+
 ### 5. Start all services
 ```bash
 # From project root:
@@ -57,6 +74,13 @@ pnpm dev
 ```bash
 # Database
 DATABASE_URL=postgresql://lottrace:lottrace@localhost:5432/lottrace
+# TLS is controlled by DATABASE_URL: use ?sslmode=require (or ?ssl=true) to enable it.
+# Certificate verification is ON by default. Provide the provider CA if it is not
+# in Node's trust store. Set only one of these:
+# DB_SSL_CA_PATH=/path/to/ca.pem
+# DB_SSL_CA="-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+# Local development only. Rejected in staging/production.
+# DB_TLS_INSECURE=false
 
 # Redis
 REDIS_URL=redis://localhost:6379
@@ -142,7 +166,7 @@ cd backend
 pnpm knex migrate:latest          # run pending migrations
 pnpm knex migrate:rollback        # roll back last batch
 pnpm knex migrate:status          # show migration status
-pnpm knex seed:run                # seed dev data
+pnpm knex seed:run                # seed dev data (refuses production; no truncate)
 pnpm knex migrate:make <name>     # create new migration
 
 # Lint + format
@@ -182,7 +206,9 @@ lottrace/
 
 ## Seeded Development Data
 
-After `pnpm knex seed:run`, the following test accounts are available:
+After `pnpm knex seed:run`, the current seed creates only the system super admin.
+
+> The demo accounts below are stale and tracked by `P2-08`. Do not rely on them.
 
 | Email | Password | Role |
 |-------|---------|------|
@@ -190,10 +216,12 @@ After `pnpm knex seed:run`, the following test accounts are available:
 | compliance@demo.com | Password123! | compliance_manager |
 | operator@demo.com | Password123! | operator |
 | auditor@demo.com | Password123! | auditor |
-| superadmin@lottrace.com | Password123! | super_admin |
+| admin@lottrace.com | Printed once at seed time, or `SEED_SUPER_ADMIN_PASSWORD` | super_admin |
 
-Org: **Demo Food Co** (slug: `demo-food-co`)
-Seeded: 5 locations, 10 products, 50 lots, ~200 events, trace chain spanning 4 hops
+Org: **LotTrace System** (slug: `lottrace-system`)
+
+The seed is idempotent. It preserves existing rows and does not reset an existing
+password unless `SEED_SUPER_ADMIN_PASSWORD` is set.
 
 ---
 

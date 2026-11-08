@@ -2,8 +2,8 @@
 
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
-**Last Updated:** 2026-07-14
-**Last Session:**
+**Last Updated:** 2026-11-09
+**Last Session:** 2026-11-09 — docs-only: adopted the greenfield development policy (no backward compatibility, legacy data, or data-preserving migrations). Previous: P0-11 (trace excludes superseded events) implemented and verified on 2026-11-08. Both trace CTEs now filter `e.status = 'active'`, the trace cache key is versioned (`trace:v2:`), and the P0-11 regression suite passes.
 
 ---
 
@@ -50,10 +50,32 @@ _Scale & Integrate (3.1 - 3.18)_
 | Setup | JavaScript not TypeScript | Team preference; JSDoc used for critical type hints |
 | Setup | pnpm workspaces | Monorepo with shared configs |
 | Setup | BullMQ for jobs | Redis-native, used anyway for caching; handles import/export/hash jobs |
+| 2026-11-09 | Greenfield development policy | Pre-production: no backward compatibility, legacy data, backfills, or data-preserving migrations. Reset the dev DB and delete obsolete schema/code instead. |
 
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P0-11 — trace excludes superseded events:
+- `backend/src/modules/trace/trace.service.js` (both CTEs filter `e.status = 'active'`; cache namespace `trace:v2:`)
+- Tests: `backend/src/modules/trace/trace.amended-events.test.js` (new, 6 passing against a disposable local Postgres)
+- Docs: `docs/ARCHITECTURE.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
+
+P1-15 — boolean env parsing (067226c):
+- `backend/src/config/env.js` (`booleanEnv` helper; `EMAIL_DRY_RUN` no longer uses `z.coerce.boolean()`)
+- `backend/src/server.js` (logs resolved `emailDryRun` at startup; production dry-run warning)
+- `backend/.env.example` (documents accepted values)
+- Tests: `backend/src/config/env.test.js`, `backend/src/utils/email.test.js`
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
+
+P0-02 — deterministic hash chain ordering (0833537):
+- `backend/src/db/migrations/20261103000001_add_chain_seq_to_events.js` (new)
+- `backend/src/utils/hashChain.js` (`getChainTip`, `nextChainSeq`)
+- `backend/src/modules/events/events.service.js` (sets `chain_seq`; `checkComplianceGaps` now runs on the caller's transaction)
+- `backend/src/jobs/workers/import-processor.js` (sets `chain_seq`)
+- `backend/src/jobs/hash-chain-verifier.js` (orders by `chain_seq`)
+- Tests: `backend/src/modules/events/events.chain-seq.test.js`, `backend/src/db/chain-seq-migration.test.js`, `backend/src/test/dbGuard.js`
+- Docs: `docs/DATABASE_SCHEMA.md`, `backend/AGENTS.md`, `docs/AUDIT_REPORT.md`
 
 ---
 

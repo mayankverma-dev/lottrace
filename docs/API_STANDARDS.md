@@ -11,6 +11,8 @@
 ```
 All routes versioned. Future breaking changes go to `/api/v2/...`
 
+> **Pre-production policy:** Only `/api/v1` exists. Breaking changes are made in place — update the backend and every client in the same change. Do not add `/api/v2`, deprecation shims, or compatibility aliases until the project has real production consumers.
+
 ---
 
 ## Authentication

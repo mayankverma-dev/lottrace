@@ -76,6 +76,12 @@ await db.transaction(async (trx) => {
 });
 ```
 
+### Development Database (Greenfield)
+- The development database is disposable. Reset it with `pnpm knex migrate:rollback --all` (or drop/recreate) and run `pnpm knex migrate:latest && pnpm knex seed:run` whenever a schema change is simpler from scratch.
+- Never write backfill, data-repair, or compatibility migrations. Edit the original migration or add a clean one.
+- Delete legacy columns, tables, hash versions, and code paths; do not keep them for old data.
+- Tests create their own fixtures; never depend on seeded or pre-existing rows.
+
 ### Module File Pattern (4 files, always)
 Every module has exactly these 4 files:
 
@@ -149,36 +155,30 @@ module.exports = { createLotSchema };
 
 ## Special: Hash Chain Computation
 
-When saving an event, ALWAYS compute the hash chain:
+Never hand-roll the hash payload. Use the canonical serializer from `backend/src/utils/hashChain.js` on both the write and verify paths:
 ```javascript
-// utils/hashChain.js
-const crypto = require('crypto');
+const {
+  buildCanonicalEventPayloadForWrite,
+  buildEventPayloadForVerification,
+  computeEventHash,
+  getChainTip,
+  nextChainSeq,
+} = require('../../utils/hashChain');
 
-const computeEventHash = (event, prevHash, lotLinks) => {
-  const payload = JSON.stringify({
-    version: 1,
-    id: event.id,
-    org: event.organization_id,
-    type: event.event_type,
-    location: event.location_id,
-    datetime: new Date(event.event_datetime).toISOString(),
-    kde: event.kde_payload,
-    // Sort for stability
-    lots: [...lotLinks].sort((a, b) => a.lot_id.localeCompare(b.lot_id))
-                       .map(l => ({ lotId: l.lot_id, direction: l.direction })),
-  });
-  return crypto.createHash('sha256').update(payload).digest('hex');
-};
-
-const getPrevHash = async (organizationId, trx = db) => {
-  const lastEvent = await trx('events')
-    .where({ organization_id: organizationId })
-    .orderBy('recorded_at', 'desc')
-    .select('record_hash')
-    .first();
-  return lastEvent?.record_hash ?? 'GENESIS';
-};
+// Inside the event transaction, after pg_advisory_xact_lock(org_lock_id):
+const tip = await getChainTip(trx, organizationId);
+const chainSeq = nextChainSeq(tip);
+const prevHash = tip ? tip.record_hash : 'GENESIS';
+const payload = await buildCanonicalEventPayloadForWrite(trx, event);
+const recordHash = computeEventHash(payload, prevHash);
 ```
+
+> **P0-01/P0-02:** every event insert must set `chain_seq` and must read the tip with
+> `getChainTip()` / `nextChainSeq()` inside the transaction that holds
+> `pg_advisory_xact_lock(org_lock_id)`. The verifier must call
+> `buildEventPayloadForVerification()` from the same module. Under the greenfield policy
+> there is no legacy hash support: delete `HASH_VERSION_LEGACY` handling when touching
+> this area and reset the development database.
 
 ---
 
