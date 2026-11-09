@@ -61,7 +61,7 @@ Issues marked **Fixed** are done. Do not re-implement or re-audit them unless a 
 
 ## Executive summary
 
-The codebase is structurally clean and both frontend apps build, but **`PROGRESS.md` and `docs/FEATURE_MAP.md` overstate readiness**. Phase 2 is not complete: the audit found **12 P0**, **21 P1**, and **10 P2** issues.
+The codebase is structurally clean and both frontend apps build, but **`PROGRESS.md` and `docs/FEATURE_MAP.md` overstate readiness**. Phase 2 is not complete: the audit found **12 P0**, **21 P1**, and **11 P2** issues.
 
 The three most dangerous themes:
 
@@ -118,6 +118,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-08 | P2 | Documentation claims completion that the code does not deliver | Open |
 | P2-09 | P2 | Attachment upload flow leaves orphaned objects | Open |
 | P2-10 | P2 | Minor API/UX inconsistencies (status codes, empty states) | Open |
+| P2-11 | P2 | Expected 4xx errors are logged at ERROR level | Fixed (2026-11-09, 315e54b) |
 
 ---
 
@@ -549,6 +550,15 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Fix direction:** Add an in-shell 404 page; use a router navigation (or a modal) on session expiry and preserve a return URL; read `env.NODE_ENV` everywhere; show the timezone (or an explicit "local time" label) next to timestamps in audit/compliance views. Add these to the UI review checklist.
 - **Verification:** Unknown route shows the styled 404 inside the layout. Session expiry redirects without a full reload and returns to the original page after login. Audit timestamps show an explicit timezone.
 
+## P2-11 — Expected 4xx errors are logged at ERROR level
+
+- **Severity:** P2 · **Area:** backend / observability · **Status:** Fixed (2026-11-09, 315e54b)
+- **Evidence:** `backend/src/middleware/errorHandler.js:13` logged every error with `logger.error` before mapping it, including operational `AppError` instances that carry a 4xx status code.
+- **What happens:** Every expected client response — a missing record, a foreign-tenant ID, a validation failure thrown as `AppError` — writes an ERROR line with a stack trace. The response itself is correct (404/409/422); only the log level is wrong. The audit's P1-13 verification produced 9 ERROR lines for requests that were all correct 404s.
+- **Real-world impact:** Error dashboards, alerts, and log searches fill with noise from normal traffic. Real 5xx failures and incidents become harder to spot, and alert thresholds either fire constantly or get muted.
+- **Fix direction:** Log operational errors with `statusCode < 500` at `warn`; keep `error` for 5xx and unknown or non-operational failures. Do not change the response envelope or the status-code mapping.
+- **Verification:** Unit tests assert `warn` for operational 400/401/403/404/409/422 and `error` for an operational 500 and an unknown error. A live run against a disposable local database produced two expected 404s with `WARN ... Request failed` and zero `ERROR` lines; both responses stayed `404 NOT_FOUND`.
+
 ---
 
 # Recommended fix order
@@ -864,8 +874,8 @@ Run this after every batch. Reset the development database from scratch first. N
 
 - **P0:** 12
 - **P1:** 21
-- **P2:** 10
-- **Total:** 43
+- **P2:** 11
+- **Total:** 44
 
 > This report is a snapshot. Re-verify each issue against the current working tree before fixing it, and update the status as you go.
 
