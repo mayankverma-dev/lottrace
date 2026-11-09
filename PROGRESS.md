@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-09
-**Last Session:** 2026-11-09 — P1-16 (seed safety) implemented: the seed no longer truncates, refuses production, guards remote hosts, idempotently upserts the system org/super admin, and generates a password once. 36 focused tests pass (32 guard/unit, 4 against a disposable local Postgres). Previous: docs-only greenfield policy adoption.
+**Last Session:** 2026-11-09 — P1-15 (boolean env parsing) implemented: `EMAIL_DRY_RUN` now accepts only true/false/1/0, invalid values fail startup, and the resolved value is logged at boot. 23 focused config and email-transport tests pass. Previous: P1-16 seed safety (36 tests).
 
 ---
 
@@ -68,8 +68,8 @@ P0-11 — trace excludes superseded events:
 - Tests: `backend/src/modules/trace/trace.amended-events.test.js` (new, 6 passing against a disposable local Postgres)
 - Docs: `docs/ARCHITECTURE.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
-P1-15 — boolean env parsing (067226c):
-- `backend/src/config/env.js` (`booleanEnv` helper; `EMAIL_DRY_RUN` no longer uses `z.coerce.boolean()`)
+P1-15 — boolean env parsing:
+- `backend/src/config/env.js` (`booleanEnv` explicit allowlist; `EMAIL_DRY_RUN` no longer uses `z.coerce.boolean()`; `NODE_ENV=test` accepted for Jest)
 - `backend/src/server.js` (logs resolved `emailDryRun` at startup; production dry-run warning)
 - `backend/.env.example` (documents accepted values)
 - Tests: `backend/src/config/env.test.js`, `backend/src/utils/email.test.js`
