@@ -4,7 +4,7 @@
  */
 exports.up = async function (knex) {
   return knex.schema.alterTable('users', (table) => {
-    table.dropIndex([], 'idx_users_email_org');
+    table.dropUnique([], 'idx_users_email_org');
     table.dropIndex([], 'idx_users_email');
     table.unique('email', { indexName: 'users_email_unique' });
   });
