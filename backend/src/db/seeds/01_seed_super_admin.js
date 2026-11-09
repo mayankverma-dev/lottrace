@@ -1,45 +1,37 @@
-const uuid = require('uuid');
-const argon2 = require('argon2');
+const readline = require('node:readline/promises');
+const { seedSuperAdmin } = require('../seed-super-admin');
+
+/**
+ * Requires the operator to type the exact remote host.
+ * @param {{ host: string, display: string }} target
+ * @returns {Promise<boolean>}
+ */
+const confirmRemoteHost = async (target) => {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+  try {
+    const answer = await rl.question(
+      `Type "${target.host}" to confirm seeding remote database ${target.display}: `
+    );
+    return answer.trim() === target.host;
+  } finally {
+    rl.close();
+  }
+};
 
 /**
  * @param { import("knex").Knex } knex
- * @returns { Promise<void> } 
+ * @returns { Promise<void> }
  */
 exports.seed = async function(knex) {
-  // Deletes ALL existing entries
-  await knex.raw('TRUNCATE TABLE organizations, users CASCADE');
-
-  const orgId = uuid.v4();
-  const userId = uuid.v4();
-  
-  const passwordHash = await argon2.hash('admin123', {
-    type: argon2.argon2id,
-    memoryCost: 19456,
-    timeCost: 2,
-    parallelism: 1
+  await seedSuperAdmin(knex, {
+    databaseUrl: process.env.DATABASE_URL,
+    nodeEnv: process.env.NODE_ENV,
+    allowDestructiveSeed: process.env.ALLOW_DESTRUCTIVE_SEED,
+    confirmRemote: process.env.SEED_CONFIRM_REMOTE,
+    superAdminPassword: process.env.SEED_SUPER_ADMIN_PASSWORD,
+    isInteractive: Boolean(process.stdin.isTTY),
+    confirmHost: confirmRemoteHost,
+    log: (message) => process.stdout.write(`${message}\n`),
   });
-
-  await knex('organizations').insert([
-    {
-      id: orgId,
-      name: 'LotTrace System',
-      slug: 'lottrace-system',
-      industry_vertical: 'software',
-      plan_tier: 'enterprise',
-      status: 'active'
-    }
-  ]);
-
-  await knex('users').insert([
-    {
-      id: userId,
-      organization_id: orgId,
-      first_name: 'Super',
-      last_name: 'Admin',
-      email: 'admin@lottrace.com',
-      password_hash: passwordHash,
-      role: 'super_admin',
-      status: 'active'
-    }
-  ]);
 };

@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-09
-**Last Session:** 2026-11-09 — docs-only: adopted the greenfield development policy (no backward compatibility, legacy data, or data-preserving migrations). Previous: P0-11 (trace excludes superseded events) implemented and verified on 2026-11-08. Both trace CTEs now filter `e.status = 'active'`, the trace cache key is versioned (`trace:v2:`), and the P0-11 regression suite passes.
+**Last Session:** 2026-11-09 — P1-16 (seed safety) implemented: the seed no longer truncates, refuses production, guards remote hosts, idempotently upserts the system org/super admin, and generates a password once. 36 focused tests pass (32 guard/unit, 4 against a disposable local Postgres). Previous: docs-only greenfield policy adoption.
 
 ---
 
@@ -55,6 +55,13 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P1-16 — seed safety and idempotence:
+- `backend/src/db/seeds/01_seed_super_admin.js` (thin Knex seed wrapper; no truncate)
+- `backend/src/db/seed-super-admin.js` (production/remote guard, idempotent org + super-admin upsert, generated password)
+- `backend/.env.example` (seed safety variables)
+- Tests: `backend/src/db/seed-super-admin.test.js` (36 passing: 32 guard/unit, 4 against a disposable local Postgres)
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P0-11 — trace excludes superseded events:
 - `backend/src/modules/trace/trace.service.js` (both CTEs filter `e.status = 'active'`; cache namespace `trace:v2:`)
