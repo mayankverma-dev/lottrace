@@ -61,7 +61,7 @@ Issues marked **Fixed** are done. Do not re-implement or re-audit them unless a 
 
 ## Executive summary
 
-The codebase is structurally clean and both frontend apps build, but **`PROGRESS.md` and `docs/FEATURE_MAP.md` overstate readiness**. Phase 2 is not complete: the audit found **12 P0**, **20 P1**, and **10 P2** issues.
+The codebase is structurally clean and both frontend apps build, but **`PROGRESS.md` and `docs/FEATURE_MAP.md` overstate readiness**. Phase 2 is not complete: the audit found **12 P0**, **21 P1**, and **10 P2** issues.
 
 The three most dangerous themes:
 
@@ -107,6 +107,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-18 | P1 | Hash coverage and keying are insufficient for tamper evidence | Open |
 | P1-19 | P1 | Trace cache invalidation misses upstream lots | Open |
 | P1-20 | P1 | No tests, CI, Dockerfiles, or frontend SPA rewrite | Open |
+| P1-21 | P1 | Fresh database migration fails on unique-constraint index | Fixed (2026-11-09, 85b091e) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Open |
 | P2-02 | P2 | API response pagination shape is inconsistent | Open |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Open |
@@ -444,6 +445,15 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Real-world impact:** Every fix risks breaking another flow, and every deploy is manual and unverifiable. Deep links (including email links to events) break in production.
 - **Fix direction:** Add a minimal but real test stack: Vitest + Supertest for the backend against a disposable Postgres (docker compose service), React Testing Library for critical frontend flows, and at least the P0 regression tests. Add CI that runs `node --check`, tests, both builds, and a migration-from-scratch check. Add Dockerfiles for API/web/PWA and a compose profile for the full stack. Add `frontend/vercel.json` with `{"rewrites":[{"source":"/(.*)","destination":"/index.html"}]}` (verify it does not swallow `/api`). Write a migration/rollback runbook.
 - **Verification:** CI is green on a fresh clone. A deep link refresh works on the deployed frontend. `docker compose up` brings up the full stack and a smoke script passes.
+
+## P1-21 — Fresh database migration fails on unique-constraint index
+
+- **Severity:** P1 · **Area:** backend / database migrations · **Status:** Fixed (2026-11-09, 85b091e)
+- **Evidence:** `backend/src/db/migrations/20240101000002_create_users.js:21` creates `idx_users_email_org` with `table.unique(...)`; `backend/src/db/migrations/20260702172631_enforce_global_unique_email.js:7` used `table.dropIndex([], 'idx_users_email_org')`.
+- **What happens:** `knex migrate:latest` fails on a fresh database: `drop index "idx_users_email_org" - cannot drop index idx_users_email_org because constraint idx_users_email_org on table users requires it`. The batch rolls back, so a new environment, CI database, or greenfield reset never reaches the final schema.
+- **Real-world impact:** No fresh deployment or disposable test database can be provisioned. Every migration-from-scratch verification is blocked, including the reset required by this report.
+- **Fix direction:** Drop the object PostgreSQL created: `table.dropUnique([], 'idx_users_email_org')`. Keep `dropIndex` for `idx_users_email`, which is a plain index. No compatibility migration or data repair is needed; the corrected migration runs from scratch.
+- **Verification:** Drop and recreate a local disposable database; `knex migrate:latest` completes all 20 migrations. `knex migrate:rollback --all` then `knex migrate:latest` also succeeds.
 
 ---
 
@@ -853,9 +863,9 @@ Run this after every batch. Reset the development database from scratch first. N
 ## Counts
 
 - **P0:** 12
-- **P1:** 20
+- **P1:** 21
 - **P2:** 10
-- **Total:** 42
+- **Total:** 43
 
 > This report is a snapshot. Re-verify each issue against the current working tree before fixing it, and update the status as you go.
 
