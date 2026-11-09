@@ -9,8 +9,13 @@ const logger = require('../utils/logger');
  */
 // eslint-disable-next-line no-unused-vars
 const errorHandler = (err, req, res, _next) => {
-  // Log the error
-  logger.error({ err, requestId: req.id }, 'Request error');
+  // Expected client errors are part of normal operation. Log them at warn so
+  // real server failures stay visible at error level.
+  if (err.isOperational && err.statusCode < 500) {
+    logger.warn({ err, requestId: req.id }, 'Request failed');
+  } else {
+    logger.error({ err, requestId: req.id }, 'Request error');
+  }
 
   // Knex: unique constraint violation
   if (err.code === '23505') {
