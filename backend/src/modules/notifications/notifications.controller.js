@@ -19,7 +19,7 @@ const markAsRead = async (req, res) => {
   );
 
   if (!notification) {
-    throw new AppError('Notification not found', 404);
+    throw new AppError('Notification not found', 'NOT_FOUND', 404);
   }
 
   return apiResponse.success(res, notification, 'Notification marked as read');
