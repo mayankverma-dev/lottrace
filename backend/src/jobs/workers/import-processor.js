@@ -7,7 +7,7 @@ const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const env = require('../../config/env');
 const { parse } = require('csv-parse');
 const { v4: uuidv4 } = require('uuid');
-const { computeEventHash } = require('../../utils/hashChain');
+const { computeEventHash, getChainTip, nextChainSeq } = require('../../utils/hashChain');
 const { invalidateTraceCache } = require('../../modules/trace/trace.service');
 const logger = require('../../utils/logger');
 const crc32 = require('crc-32');
@@ -92,7 +92,7 @@ const buildLookupCaches = async (organizationId) => {
  * Process a grouped event. 
  * Group is an array of { row, rowNum } sharing the same transaction_id.
  */
-const processEventGroup = async (trx, group, trxId, cteType, organizationId, userId, productMap, locationMap, prevHash) => {
+const processEventGroup = async (trx, group, trxId, cteType, organizationId, userId, productMap, locationMap, prevHash, chainSeq) => {
   const idempotencyKey = `import_${organizationId}_${trxId}`;
   
   // Check idempotency
@@ -205,6 +205,7 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
     notes: (firstRow.notes || '').trim() || null,
     record_hash: recordHash,
     prev_hash: prevHash,
+    chain_seq: chainSeq,
     status: 'active',
     idempotency_key: idempotencyKey,
   }).returning('*');
@@ -316,14 +317,11 @@ const importWorker = new Worker(
             // Acquire advisory lock for hash chain consistency
             await trx.raw('SELECT pg_advisory_xact_lock(?)', [lockId]);
 
-            // Get prev hash
-            const prevEvent = await trx('events')
-              .where({ organization_id: organizationId })
-              .orderBy('created_at', 'desc')
-              .first();
-            const prevHash = prevEvent ? prevEvent.record_hash : 'GENESIS';
+            // Chain order comes from chain_seq, never created_at (P0-02)
+            const chainTip = await getChainTip(trx, organizationId);
+            const prevHash = chainTip ? chainTip.record_hash : 'GENESIS';
 
-            await processEventGroup(trx, group, trxId, cteType, organizationId, userId, productMap, locationMap, prevHash);
+            await processEventGroup(trx, group, trxId, cteType, organizationId, userId, productMap, locationMap, prevHash, nextChainSeq(chainTip));
           });
 
           validGroupsCount += group.length; // Count rows processed

@@ -531,10 +531,12 @@ This serializes all concurrent event-creation requests for the same organization
 ```sql
 SELECT record_hash FROM events
 WHERE organization_id = ?
-ORDER BY created_at DESC
+ORDER BY chain_seq DESC
 LIMIT 1
 ```
-If no events exist yet → `prevHash = 'GENESIS'`.
+If no events exist yet → `prevHash = 'GENESIS'` and `chain_seq = 1`.
+Order by `chain_seq`, never `created_at`: `created_at` is the transaction start time
+and can be tied or inverted under concurrency.
 
 **7d. Compliance gap detection**
 - Joins the lots in `inputs` and `outputs` to their products.

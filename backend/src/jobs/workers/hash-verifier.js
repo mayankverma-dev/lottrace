@@ -4,16 +4,20 @@ const logger = require('../../utils/logger');
 const { connection } = require('../queues');
 const { computeEventHash } = require('../../utils/hashChain');
 
-const verifyHashChain = async () => {
-  const organizations = await db('organizations').select('id', 'name');
+const verifyHashChain = async ({ organizationId } = {}) => {
+  const organizations = organizationId
+    ? await db('organizations').where({ id: organizationId }).select('id', 'name')
+    : await db('organizations').select('id', 'name');
   
   for (const org of organizations) {
     logger.info(`Starting hash verification for org: ${org.id}`);
     
-    // Fetch events ordered by created_at asc
+    // Fetch events in chain order. chain_seq is the only total order for an
+    // organization: created_at is the transaction start time and can be
+    // inverted relative to the order in which hashes were chained (P0-02).
     const events = await db('events')
       .where({ organization_id: org.id })
-      .orderBy('created_at', 'asc');
+      .orderBy('chain_seq', 'asc');
       
     let prevHash = 'GENESIS';
     let failedEvent = null;
@@ -76,3 +80,4 @@ worker.on('failed', (job, err) => {
 });
 
 module.exports = worker;
+module.exports.verifyHashChain = verifyHashChain;

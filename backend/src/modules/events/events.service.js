@@ -1,17 +1,20 @@
 const db = require('../../db/knex');
 const { v4: uuidv4 } = require('uuid');
-const { computeEventHash } = require('../../utils/hashChain');
+const { computeEventHash, getChainTip, nextChainSeq } = require('../../utils/hashChain');
 const AppError = require('../../utils/AppError');
 const crc32 = require('crc-32');
 const { invalidateTraceCache } = require('../trace/trace.service');
 
 const getAdvisoryLockId = (orgId) => Math.abs(crc32.str(orgId));
 
-const checkComplianceGaps = async (data, organizationId) => {
+// `qb` is the caller's transaction. It must NOT fall back to the global pool:
+// the caller already holds a connection for its transaction, so a second
+// connection here exhausts the pool under concurrent event creation.
+const checkComplianceGaps = async (qb, data, organizationId) => {
   const lotIds = [...(data.inputs || []), ...(data.outputs || [])].map(l => l.lotId);
   if (lotIds.length === 0) return null;
   
-  const lots = await db('lots')
+  const lots = await qb('lots')
     .join('products', 'lots.product_id', 'products.id')
     .whereIn('lots.id', lotIds)
     .andWhere('lots.organization_id', organizationId)
@@ -49,13 +52,12 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
     // Acquire org-level lock to prevent concurrent hash chain generation
     await trx.raw('SELECT pg_advisory_xact_lock(?)', [lockId]);
 
-    const prevEvent = await trx('events')
-      .where({ organization_id: organizationId })
-      .orderBy('created_at', 'desc')
-      .first();
-
-    const prevHash = prevEvent ? prevEvent.record_hash : 'GENESIS';
-    const complianceGaps = await checkComplianceGaps(data, organizationId);
+    // Chain order comes from chain_seq, never created_at (P0-02). Safe to
+    // read here: the advisory lock serializes every writer for this org.
+    const chainTip = await getChainTip(trx, organizationId);
+    const prevHash = chainTip ? chainTip.record_hash : 'GENESIS';
+    const chainSeq = nextChainSeq(chainTip);
+    const complianceGaps = await checkComplianceGaps(trx, data, organizationId);
     
     const eventPayload = {
       eventType: data.eventType,
@@ -86,6 +88,7 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
       idempotency_key: data.idempotencyKey || null,
       record_hash: recordHash,
       prev_hash: prevHash,
+      chain_seq: chainSeq,
       status: overrideStatus,
       supersedes_event_id: supersedesEventId,
     }).returning('*');

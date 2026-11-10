@@ -23,4 +23,31 @@ const computeEventHash = (eventPayload, prevHash) => {
   return crypto.createHash('sha256').update(dataToHash).digest('hex');
 };
 
-module.exports = { computeEventHash };
+/**
+ * Reads the current chain tip for an organization.
+ *
+ * MUST be called inside the transaction that holds the organization's advisory
+ * lock (`pg_advisory_xact_lock`). Without the lock, two writers can read the
+ * same tip and fork the chain.
+ *
+ * Ordering is by `chain_seq`, never by `created_at`. `created_at` defaults to
+ * the transaction start time and can be tied or inverted under concurrency.
+ *
+ * @param {import('knex').Knex | import('knex').Knex.Transaction} qb
+ * @param {string} organizationId
+ * @returns {Promise<Object|undefined>} tip row, or undefined for an empty chain
+ */
+const getChainTip = async (qb, organizationId) => qb('events')
+  .where({ organization_id: organizationId })
+  .select('id', 'chain_seq', 'record_hash')
+  .orderBy('chain_seq', 'desc')
+  .first();
+
+/**
+ * Computes the chain position for the next event.
+ * @param {Object|undefined} tip - row returned by getChainTip
+ * @returns {number} next chain_seq (1 for an empty chain)
+ */
+const nextChainSeq = (tip) => (tip ? Number(tip.chain_seq) + 1 : 1);
+
+module.exports = { computeEventHash, getChainTip, nextChainSeq };

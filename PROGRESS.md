@@ -2,8 +2,8 @@
 
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
-**Last Updated:** 2026-11-09
-**Last Session:** 2026-11-09 — P1-15 (boolean env parsing) implemented: `EMAIL_DRY_RUN` now accepts only true/false/1/0, invalid values fail startup, and the resolved value is logged at boot. 23 focused config and email-transport tests pass. Previous: P1-16 seed safety (36 tests).
+**Last Updated:** 2026-11-10
+**Last Session:** 2026-11-10 — P0-02 (deterministic chain ordering) implemented: `events.chain_seq` is assigned per organization inside the advisory-lock transaction; tip lookup, import writer, and verifier use `chain_seq` instead of `created_at`. 10 focused tests pass (50-concurrent create, two-org sequencing, created_at inversion, tamper detection, schema uniqueness). Previous: P1-15 boolean env parsing.
 
 ---
 
@@ -75,14 +75,14 @@ P1-15 — boolean env parsing:
 - Tests: `backend/src/config/env.test.js`, `backend/src/utils/email.test.js`
 - Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
-P0-02 — deterministic hash chain ordering (0833537):
-- `backend/src/db/migrations/20261103000001_add_chain_seq_to_events.js` (new)
+P0-02 — deterministic hash chain ordering:
+- `backend/src/db/migrations/20240101000007_create_events.js` (adds `chain_seq`, check constraint, unique per-org index)
 - `backend/src/utils/hashChain.js` (`getChainTip`, `nextChainSeq`)
 - `backend/src/modules/events/events.service.js` (sets `chain_seq`; `checkComplianceGaps` now runs on the caller's transaction)
 - `backend/src/jobs/workers/import-processor.js` (sets `chain_seq`)
-- `backend/src/jobs/hash-chain-verifier.js` (orders by `chain_seq`)
-- Tests: `backend/src/modules/events/events.chain-seq.test.js`, `backend/src/db/chain-seq-migration.test.js`, `backend/src/test/dbGuard.js`
-- Docs: `docs/DATABASE_SCHEMA.md`, `backend/AGENTS.md`, `docs/AUDIT_REPORT.md`
+- `backend/src/jobs/workers/hash-verifier.js` (orders by `chain_seq`)
+- Tests: `backend/src/modules/events/events.chain-seq.test.js`, `backend/src/utils/hashChain.chain-seq.test.js`, `backend/src/test/dbGuard.js`
+- Docs: `docs/AUDIT_REPORT.md`, `docs/BACKEND_ARCHITECTURE.md`
 
 ---
 

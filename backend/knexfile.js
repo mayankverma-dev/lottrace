@@ -27,6 +27,10 @@ module.exports = {
     ...commonConfig,
   },
 
+  test: {
+    ...commonConfig,
+  },
+
   staging: {
     ...commonConfig,
     pool: {

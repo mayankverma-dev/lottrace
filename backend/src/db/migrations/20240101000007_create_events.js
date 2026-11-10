@@ -19,6 +19,7 @@ exports.up = async (knex) => {
     table.text('idempotency_key').unique();
     table.text('record_hash').notNullable();
     table.text('prev_hash').notNullable();
+    table.bigInteger('chain_seq').notNullable(); // monotonic per-org chain position
     table.text('status').notNullable().defaultTo('active'); // active | amended | void
     table.uuid('supersedes_event_id').references('id').inTable('events');
     table.text('void_reason');
@@ -37,6 +38,16 @@ exports.up = async (knex) => {
     ALTER TABLE events
     ADD COLUMN has_compliance_gaps boolean NOT NULL
     GENERATED ALWAYS AS (compliance_gaps IS NOT NULL AND jsonb_array_length(compliance_gaps) > 0) STORED
+  `);
+
+  // Chain order and tip lookup. Unique per organization; never order the chain
+  // by created_at because that is the transaction start time (P0-02).
+  await knex.raw(`
+    CREATE UNIQUE INDEX idx_events_org_chain_seq ON events(organization_id, chain_seq)
+  `);
+  await knex.raw(`
+    ALTER TABLE events
+    ADD CONSTRAINT events_chain_seq_positive CHECK (chain_seq >= 1)
   `);
 
   // Indexes that need raw SQL
