@@ -2,7 +2,12 @@ const { Worker } = require('bullmq');
 const db = require('../../db/knex');
 const logger = require('../../utils/logger');
 const { connection } = require('../queues');
-const { computeEventHash } = require('../../utils/hashChain');
+const {
+  HASH_VERSION,
+  GENESIS_HASH,
+  computeEventHash,
+  loadEventHashPayload,
+} = require('../../utils/hashChain');
 
 const verifyHashChain = async ({ organizationId } = {}) => {
   const organizations = organizationId
@@ -19,41 +24,42 @@ const verifyHashChain = async ({ organizationId } = {}) => {
       .where({ organization_id: org.id })
       .orderBy('chain_seq', 'asc');
       
-    let prevHash = 'GENESIS';
+    let prevHash = GENESIS_HASH;
     let failedEvent = null;
-    let expectedHash = null;
-    
+    let failureMetadata = null;
+
     for (const event of events) {
       if (event.prev_hash !== prevHash) {
         failedEvent = event;
+        failureMetadata = { reason: 'chain_link_mismatch' };
         break;
       }
-      
-      const links = await db('event_lot_links')
-        .where({ event_id: event.id })
-        .orderBy('lot_id', 'asc');
-        
-      const eventPayload = {
-        eventType: event.event_type,
-        locationId: event.location_id,
-        eventDatetime: new Date(event.event_datetime).toISOString(),
-        source: event.source,
-        kdePayload: typeof event.kde_payload === 'string' ? JSON.parse(event.kde_payload) : event.kde_payload,
-        counterpartyInfo: event.counterparty_info ? (typeof event.counterparty_info === 'string' ? JSON.parse(event.counterparty_info) : event.counterparty_info) : null,
-        inputs: links.filter(l => l.direction === 'input').map(l => ({ lotId: l.lot_id, quantity: l.quantity, uom: l.uom })),
-        outputs: links.filter(l => l.direction === 'output').map(l => ({ lotId: l.lot_id, quantity: l.quantity, uom: l.uom })),
-      };
-      
-      const recordHash = computeEventHash(eventPayload, prevHash);
+
+      if (event.hash_version !== HASH_VERSION) {
+        failedEvent = event;
+        failureMetadata = {
+          reason: 'unsupported_hash_version',
+          expected_version: HASH_VERSION,
+          found_version: event.hash_version,
+        };
+        break;
+      }
+
+      // Same canonical serializer as the write and import paths: the hash is
+      // rebuilt from the persisted row and links, never from a request body
+      // (P0-01).
+      const payload = await loadEventHashPayload(db, event.id);
+      const recordHash = computeEventHash(payload, prevHash);
+
       if (recordHash !== event.record_hash) {
         failedEvent = event;
-        expectedHash = recordHash;
+        failureMetadata = { reason: 'payload_mismatch', expected: recordHash };
         break;
       }
-      
+
       prevHash = recordHash;
     }
-    
+
     if (failedEvent) {
       logger.error(`Hash verification failed for event ${failedEvent.id} in org ${org.id}`);
       await db('audit_log').insert({
@@ -62,7 +68,11 @@ const verifyHashChain = async ({ organizationId } = {}) => {
         action: 'hash.verify_failed',
         entity_type: 'event',
         entity_id: failedEvent.id,
-        metadata: JSON.stringify({ expected: expectedHash, found: failedEvent.record_hash, prev_hash: failedEvent.prev_hash }),
+        metadata: JSON.stringify({
+          ...failureMetadata,
+          found: failedEvent.record_hash,
+          prev_hash: failedEvent.prev_hash,
+        }),
       });
     } else {
       logger.info(`Hash verification successful for org: ${org.id}`);

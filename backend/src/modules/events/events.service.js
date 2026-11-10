@@ -1,6 +1,13 @@
 const db = require('../../db/knex');
 const { v4: uuidv4 } = require('uuid');
-const { computeEventHash, getChainTip, nextChainSeq } = require('../../utils/hashChain');
+const {
+  HASH_VERSION,
+  GENESIS_HASH,
+  PENDING_RECORD_HASH,
+  getChainTip,
+  nextChainSeq,
+  sealEventHash,
+} = require('../../utils/hashChain');
 const AppError = require('../../utils/AppError');
 const crc32 = require('crc-32');
 const { invalidateTraceCache } = require('../trace/trace.service');
@@ -55,25 +62,13 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
     // Chain order comes from chain_seq, never created_at (P0-02). Safe to
     // read here: the advisory lock serializes every writer for this org.
     const chainTip = await getChainTip(trx, organizationId);
-    const prevHash = chainTip ? chainTip.record_hash : 'GENESIS';
+    const prevHash = chainTip ? chainTip.record_hash : GENESIS_HASH;
     const chainSeq = nextChainSeq(chainTip);
     const complianceGaps = await checkComplianceGaps(trx, data, organizationId);
-    
-    const eventPayload = {
-      eventType: data.eventType,
-      locationId: data.locationId,
-      eventDatetime: data.eventDatetime,
-      source: data.source,
-      kdePayload: data.kdePayload,
-      counterpartyInfo: data.counterpartyInfo,
-      inputs: data.inputs,
-      outputs: data.outputs,
-    };
 
-    const recordHash = computeEventHash(eventPayload, prevHash);
     const eventId = uuidv4();
 
-    const [event] = await trx('events').insert({
+    await trx('events').insert({
       id: eventId,
       organization_id: organizationId,
       event_type: data.eventType,
@@ -86,12 +81,15 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
       compliance_gaps: complianceGaps,
       notes: data.notes || null,
       idempotency_key: data.idempotencyKey || null,
-      record_hash: recordHash,
+      // The hash covers persisted values, so it is sealed after the row and
+      // its links exist (P0-01). Same transaction; never rewritten later.
+      record_hash: PENDING_RECORD_HASH,
       prev_hash: prevHash,
       chain_seq: chainSeq,
+      hash_version: HASH_VERSION,
       status: overrideStatus,
       supersedes_event_id: supersedesEventId,
-    }).returning('*');
+    });
 
     const links = [];
     if (data.inputs) {
@@ -123,6 +121,8 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
     if (links.length > 0) {
       await trx('event_lot_links').insert(links);
     }
+
+    const sealedEvent = await sealEventHash(trx, eventId, prevHash);
 
     // Invalidate trace cache for all affected lots
     const affectedLotIds = [...new Set(links.map(l => l.lot_id))];
@@ -156,7 +156,7 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
       }
     }
 
-    return event;
+    return sealedEvent;
   });
 };
 

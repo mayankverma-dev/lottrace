@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-10
-**Last Session:** 2026-11-10 — P2-12 (stable event list pagination) implemented: `GET /events` adds `chain_seq DESC` as tiebreaker after `created_at DESC`, so tied transaction timestamps no longer duplicate or drop rows across pages. 2 regression tests pass; live HTTP paging returned `[5,4] [3,2] [1]`. Previous: P0-02 deterministic chain ordering (10 tests).
+**Last Session:** 2026-11-10 — P0-01 (canonical event hash) implemented: `backend/src/utils/hashChain.js` builds one canonical payload from persisted rows/links (`numeric(15,4)` text, links sorted by `lot_id`, ISO-8601 UTC). Writers insert `record_hash = 'PENDING'` then `sealEventHash()` in the same transaction; the verifier calls the same serializer. `events.hash_version` added. 7 unit + 9 DB tests pass; live check: clean event verifies, tampered link quantity detected. Previous: P2-12 stable event list pagination (2 tests).
 
 ---
 
@@ -55,6 +55,15 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P0-01 — canonical event hash (verification passes for events with lot links):
+- `backend/src/utils/hashChain.js` (`HASH_VERSION`, `GENESIS_HASH`, `PENDING_RECORD_HASH`, `buildEventHashPayload`, `loadEventHashPayload`, `sealEventHash`; one serializer for write/import/verify)
+- `backend/src/modules/events/events.service.js` (`createEvent` inserts `record_hash = 'PENDING'` + `hash_version`, seals after links)
+- `backend/src/jobs/workers/import-processor.js` (same seal path; payload no longer built from CSV rows)
+- `backend/src/jobs/workers/hash-verifier.js` (`loadEventHashPayload`; `hash.verify_failed` reasons `chain_link_mismatch` / `unsupported_hash_version` / `payload_mismatch`)
+- `backend/src/db/migrations/20240101000007_create_events.js` (`events.hash_version smallint NOT NULL DEFAULT 2`)
+- Tests: `backend/src/utils/hashChain.canonical-payload.test.js` (7 unit), `backend/src/modules/events/events.hash-canonical.test.js` (9 against a disposable local Postgres)
+- Docs: `docs/AUDIT_REPORT.md`, `docs/DATABASE_SCHEMA.md`, `docs/ARCHITECTURE.md`, `docs/JOBS.md`, `backend/AGENTS.md`, `PROGRESS.md`
 
 P1-16 — seed safety and idempotence:
 - `backend/src/db/seeds/01_seed_super_admin.js` (thin Knex seed wrapper; no truncate)

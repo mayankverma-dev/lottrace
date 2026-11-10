@@ -75,7 +75,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 | ID | Severity | Title | Status |
 |----|----------|-------|--------|
-| P0-01 | P0 | Hash verification fails for every event with lot links (number vs decimal string) | Open |
+| P0-01 | P0 | Hash verification fails for every event with lot links (number vs decimal string) | Fixed (commit pending) |
 | P0-02 | P0 | Hash chain ordering is non-deterministic under concurrency | Fixed (2026-11-10, 6118815) |
 | P0-03 | P0 | Event creation accepts lots from other organizations | Open |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Open |
@@ -127,10 +127,10 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-01 — Hash verification fails for every event with lot links
 
-- **Severity:** P0 · **Area:** backend / data integrity · **Status:** Open
+- **Severity:** P0 · **Area:** backend / data integrity · **Status:** Fixed (commit pending)
 - **Evidence:** `backend/src/modules/events/events.service.js:62-84` (hash built from request objects), `:108-121` (links inserted), `backend/src/jobs/workers/hash-verifier.js:33-41` (hash rebuilt from DB rows), migration `event_lot_links.quantity` is `decimal`.
-- **What happens:** The create path hashes `input.quantity` as a JavaScript number (`1`). PostgreSQL returns `decimal` as a string (`"1.000"`), so the verifier hashes `"1.000"`. Three independent mismatches exist:
-  1. **Quantity type/scale:** `1` vs `"1.000"`. This alone affects every event that has any input or output.
+- **What happens:** The create path hashes `input.quantity` as a JavaScript number (`1`). `event_lot_links.quantity` is `numeric(15,4)`, so PostgreSQL returns a string with four fractional digits (`"1.0000"`), and the verifier hashes `"1.0000"`. Three independent mismatches exist:
+  1. **Quantity type/scale:** `1` vs `"1.0000"`. This alone affects every event that has any input or output.
   2. **Link order:** create hashes links in request order; verifier sorts by `lot_id ASC` only (ties are also non-deterministic). Any request whose link order is not already sorted by UUID fails.
   3. **Datetime precision:** create hashes the raw request string, which may be `2026-01-01T10:00:00Z`; the verifier hashes `new Date(...).toISOString()`, which is `2026-01-01T10:00:00.000Z`. The web UI sends milliseconds, but API clients and imports are not guaranteed to.
   > Note: KDE payload and counterparty defaults are **not** a mismatch — validation defaults `kdePayload` to `{}` and `stableStringify(undefined)` and `null` both serialize to `null`. Do not "fix" those.
@@ -138,6 +138,8 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Fix direction:** Create one canonical serializer used by **both** paths. It must take a persisted event row plus its links and produce: ISO-8601 UTC datetime, quantities normalized to a fixed decimal string (or numbers with explicit scale), links sorted deterministically (direction, lot_id), `kdePayload` defaulted to `{}`, `counterpartyInfo` defaulted to `null`, and every optional field explicitly included. Hash only this canonical object. Add `hash_version` so future canonicalization changes do not silently invalidate history. The verifier must call the same function, not re-implement it.
 - **Greenfield note:** No legacy verifier and no re-seal migration. Do not add legacy hash support; if the code already has it, treat it as disposable and remove it when touching this area. `hash_version` exists to version future format changes, not to keep old rows verifiable.
 - **Verification:** Create an event with two inputs, two outputs, no KDE payload, and a datetime without milliseconds; reverse the link order in a second request; run the verifier and confirm zero failures. Create ten events in a loop and verify the whole chain. Tamper with a hashed field (e.g. `event_datetime`) in a test DB copy and confirm detection. `notes` is not hashed yet — see P1-18.
+- **Fix (commit pending):** `backend/src/utils/hashChain.js` now owns one canonical serializer. Writers insert with `record_hash = 'PENDING'`, insert links, then `sealEventHash()` hashes the persisted row + links (quantity as `numeric(15,4)` text, links sorted by `lot_id`, ISO-8601 UTC datetime) inside the same transaction. `events.hash_version` (`smallint NOT NULL DEFAULT 2`) added to the original migration; the verifier calls `loadEventHashPayload()` and fails with `reason = 'unsupported_hash_version'` on any other value. Manual create, import worker, and verifier share the same code; no legacy hash support, no backfill.
+- **Verified:** `backend/src/utils/hashChain.canonical-payload.test.js` (7 unit tests) and `backend/src/modules/events/events.hash-canonical.test.js` (9 tests against a disposable local Postgres: link order, decimal text, 10-event chain, import-style seal, link/datetime tamper, unsupported version, schema).
 
 ## P0-02 — Hash chain ordering is non-deterministic under concurrency
 

@@ -220,44 +220,35 @@ await Queues.HASH_VERIFY.add('nightly-verify', {}, {
   jobId: 'nightly-hash-verify', // prevents duplicate cron jobs
 });
 
-const worker = new Worker('hash-verify', async (job) => {
+const worker = new Worker('hash-verify-queue', async (job) => {
   // Walk chain per org
-  const orgs = await db('organizations').where({ status: 'active' }).select('id');
+  const orgs = await db('organizations').select('id');
 
   for (const org of orgs) {
+    // chain_seq is the only total order; created_at is the transaction start time.
     const events = await db('events')
       .where({ organization_id: org.id })
-      .whereNot({ status: 'void' })
-      .orderBy('recorded_at', 'asc')
-      .select('*');
+      .orderBy('chain_seq', 'asc');
 
-    let prevHash = 'GENESIS';
-    const failures = [];
+    let prevHash = GENESIS_HASH;
 
     for (const event of events) {
-      const lots = await db('event_lot_links').where({ event_id: event.id });
-      const expectedHash = computeEventHash(event, prevHash, lots);
+      if (event.prev_hash !== prevHash) break;              // chain_link_mismatch
+      if (event.hash_version !== HASH_VERSION) break;       // unsupported_hash_version
 
-      if (event.record_hash !== expectedHash) {
-        failures.push({ eventId: event.id, recordedAt: event.recorded_at });
-      }
-      prevHash = event.record_hash;
-    }
+      const payload = await loadEventHashPayload(db, event.id);
+      const expectedHash = computeEventHash(payload, prevHash);
 
-    if (failures.length > 0) {
-      // Alert org admins
-      await Queues.EMAIL.add('hash-verify-failure', {
-        type: 'integrity_failure',
-        organizationId: org.id,
-        data: { failures, verifiedAt: new Date() },
-      });
-      // Log to audit
-      await writeAudit({ organizationId: org.id, action: 'hash_chain.verification_failed',
-        metadata: { failures } });
+      if (expectedHash !== event.record_hash) break;        // payload_mismatch
+      prevHash = expectedHash;
     }
   }
 }, { connection });
 ```
+
+On the first failing event the worker writes `audit_log` with
+`action = 'hash.verify_failed'` and `metadata.reason` set to
+`chain_link_mismatch`, `unsupported_hash_version`, or `payload_mismatch`.
 
 ---
 

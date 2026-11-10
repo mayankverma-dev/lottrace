@@ -7,7 +7,14 @@ const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const env = require('../../config/env');
 const { parse } = require('csv-parse');
 const { v4: uuidv4 } = require('uuid');
-const { computeEventHash, getChainTip, nextChainSeq } = require('../../utils/hashChain');
+const {
+  HASH_VERSION,
+  GENESIS_HASH,
+  PENDING_RECORD_HASH,
+  getChainTip,
+  nextChainSeq,
+  sealEventHash,
+} = require('../../utils/hashChain');
 const { invalidateTraceCache } = require('../../modules/trace/trace.service');
 const logger = require('../../utils/logger');
 const crc32 = require('crc-32');
@@ -117,17 +124,6 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
   if (firstRow.counterparty_lot_code) counterpartyInfo.lotCode = firstRow.counterparty_lot_code.trim();
   const hasCounterparty = Object.keys(counterpartyInfo).length > 0;
 
-  const eventPayload = {
-    eventType: cteType,
-    locationId: location.id,
-    eventDatetime: new Date(firstRow.event_datetime.trim()).toISOString(),
-    source: 'import',
-    kdePayload: {},
-    counterpartyInfo: hasCounterparty ? counterpartyInfo : null,
-    inputs: [],
-    outputs: [],
-  };
-
   const eventId = uuidv4();
   const affectedLotIds = new Set();
   const eventLotLinks = [];
@@ -180,19 +176,12 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
       uom,
     });
 
-    if (direction === 'input') {
-      eventPayload.inputs.push({ lotId: lot.id, quantity, uom });
-    } else {
-      eventPayload.outputs.push({ lotId: lot.id, quantity, uom });
-    }
-
     affectedLotIds.add(lot.id);
   }
 
-  // 4. Compute Hash & Create Event
-  const recordHash = computeEventHash(eventPayload, prevHash);
-
-  const [event] = await trx('events').insert({
+  // 4. Create Event. The hash covers persisted values, so it is sealed after
+  // the row and its links exist (P0-01).
+  await trx('events').insert({
     id: eventId,
     organization_id: organizationId,
     event_type: cteType,
@@ -203,24 +192,27 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
     source: 'import',
     kde_payload: JSON.stringify({}),
     notes: (firstRow.notes || '').trim() || null,
-    record_hash: recordHash,
+    record_hash: PENDING_RECORD_HASH,
     prev_hash: prevHash,
     chain_seq: chainSeq,
+    hash_version: HASH_VERSION,
     status: 'active',
     idempotency_key: idempotencyKey,
-  }).returning('*');
+  });
 
   // 5. Bulk insert links
   if (eventLotLinks.length > 0) {
     await trx('event_lot_links').insert(eventLotLinks);
   }
 
+  const sealedEvent = await sealEventHash(trx, eventId, prevHash);
+
   // 6. Invalidate cache
   for (const lid of affectedLotIds) {
     try { await invalidateTraceCache(organizationId, lid); } catch (_) { /* non-fatal */ }
   }
 
-  return event;
+  return sealedEvent;
 };
 
 // ─── Worker Definition ──────────────────────────────────────
@@ -319,7 +311,7 @@ const importWorker = new Worker(
 
             // Chain order comes from chain_seq, never created_at (P0-02)
             const chainTip = await getChainTip(trx, organizationId);
-            const prevHash = chainTip ? chainTip.record_hash : 'GENESIS';
+            const prevHash = chainTip ? chainTip.record_hash : GENESIS_HASH;
 
             await processEventGroup(trx, group, trxId, cteType, organizationId, userId, productMap, locationMap, prevHash, nextChainSeq(chainTip));
           });

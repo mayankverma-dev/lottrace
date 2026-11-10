@@ -155,30 +155,39 @@ module.exports = { createLotSchema };
 
 ## Special: Hash Chain Computation
 
-Never hand-roll the hash payload. Use the canonical serializer from `backend/src/utils/hashChain.js` on both the write and verify paths:
+Never hand-roll the hash payload. Use the canonical serializer from `backend/src/utils/hashChain.js` on every path — manual create, import, and verification:
 ```javascript
 const {
-  buildCanonicalEventPayloadForWrite,
-  buildEventPayloadForVerification,
-  computeEventHash,
+  HASH_VERSION,
+  GENESIS_HASH,
+  PENDING_RECORD_HASH,
   getChainTip,
   nextChainSeq,
+  sealEventHash,
 } = require('../../utils/hashChain');
 
 // Inside the event transaction, after pg_advisory_xact_lock(org_lock_id):
 const tip = await getChainTip(trx, organizationId);
 const chainSeq = nextChainSeq(tip);
-const prevHash = tip ? tip.record_hash : 'GENESIS';
-const payload = await buildCanonicalEventPayloadForWrite(trx, event);
-const recordHash = computeEventHash(payload, prevHash);
+const prevHash = tip ? tip.record_hash : GENESIS_HASH;
+
+// Insert the event with record_hash: PENDING_RECORD_HASH and hash_version:
+// HASH_VERSION, insert its event_lot_links, then seal the hash from the
+// persisted row and links. Same transaction.
+const event = await sealEventHash(trx, eventId, prevHash);
 ```
 
-> **P0-01/P0-02:** every event insert must set `chain_seq` and must read the tip with
-> `getChainTip()` / `nextChainSeq()` inside the transaction that holds
-> `pg_advisory_xact_lock(org_lock_id)`. The verifier must call
-> `buildEventPayloadForVerification()` from the same module. Under the greenfield policy
-> there is no legacy hash support: delete `HASH_VERSION_LEGACY` handling when touching
-> this area and reset the development database.
+> **P0-01/P0-02:** the hash covers **persisted values only** (`numeric(15,4)` text
+> such as `"1.0000"`, ISO-8601 UTC datetime, links sorted by `lot_id`, explicit
+> `null`/`{}` defaults), never the request body or CSV row. Both writers call
+> `sealEventHash()`; the verifier calls `loadEventHashPayload()` — never
+> re-implement the payload in a caller. Every insert sets `chain_seq` and
+> `hash_version`, and reads the tip with `getChainTip()` / `nextChainSeq()`
+> inside the transaction that holds `pg_advisory_xact_lock(org_lock_id)`.
+> There is no legacy hash version support: to change the format, bump
+> `HASH_VERSION`, update the serializer and verifier together, and reset the
+> development database.
+
 
 ---
 

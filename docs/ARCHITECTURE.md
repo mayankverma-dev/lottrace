@@ -199,25 +199,33 @@ Mirror of forward: swap `input`/`output` directions.
 
 ### Hash Chain Design (events table)
 Each event stores:
-- `record_hash`: SHA-256 of stable serialization of this event's content
+- `record_hash`: SHA-256 of the canonical payload of this event, chained with `prev_hash`
 - `prev_hash`: `record_hash` of the previous event in this org's chain (or `'GENESIS'` for first)
+- `chain_seq`: monotonic per-org position; the chain is ordered by it, never by `created_at`
+- `hash_version`: canonical payload version (currently `2`)
 
-**Stable serialization** (version-locked, not raw row):
+**Canonical serialization** — built from the persisted row and its `event_lot_links` rows, so the
+write path and the verifier hash identical values (`backend/src/utils/hashChain.js`):
 ```js
-const payload = JSON.stringify({
-  version: 1,
-  id: event.id,
-  org: event.organization_id,
-  type: event.event_type,
-  location: event.location_id,
-  datetime: event.event_datetime.toISOString(),
-  kde: event.kde_payload,
-  lots: sortedLotLinks,  // sorted by lot_id for stability
-});
-const hash = crypto.createHash('sha256').update(payload).digest('hex');
+const payload = {
+  eventType: event.event_type,
+  locationId: event.location_id ?? null,
+  eventDatetime: new Date(event.event_datetime).toISOString(),
+  source: event.source,
+  kdePayload: event.kde_payload ?? {},
+  counterpartyInfo: event.counterparty_info ?? null,
+  inputs: sortedByLotId(inputLinks),   // quantity stays PostgreSQL numeric(15,4) text
+  outputs: sortedByLotId(outputLinks),
+};
+const hash = sha256(`${prevHash}|${stableStringify(payload)}`);
 ```
 
-Hash verification job re-walks the chain nightly.
+Writers insert with `record_hash = 'PENDING'`, insert the links, then seal the hash in the same
+transaction. `notes`, `recorded_by`, `recorded_at`, `id`, `organization_id`, and `chain_seq` are not
+covered yet (P1-18).
+
+Hash verification job re-walks the chain nightly, ordered by `chain_seq`, and records an
+`audit_log` row with `action = 'hash.verify_failed'` on the first mismatch.
 
 ---
 

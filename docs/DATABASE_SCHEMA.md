@@ -205,7 +205,7 @@ CREATE TABLE events (
   record_hash         text NOT NULL,       -- SHA-256 of stable event serialization
   prev_hash           text NOT NULL,       -- hash of previous event in org's chain (or 'GENESIS')
   chain_seq           bigint NOT NULL,     -- monotonic per-org chain position (see note below)
-  hash_version        smallint NOT NULL DEFAULT 1, -- payload version; canonical = 2, legacy 1 is disposable
+  hash_version        smallint NOT NULL DEFAULT 2, -- payload version; only the current version is verifiable
   status              text NOT NULL DEFAULT 'active',     -- active | amended | void
   supersedes_event_id uuid REFERENCES events(id),        -- if this is an amendment
   void_reason         text,
@@ -241,13 +241,20 @@ Under the greenfield policy, no backfill is required: reset the development data
 chain from scratch. The existing P0-02 migration's `prev_hash`-following backfill is historical, not
 a requirement for future schema changes.
 
-**Hash versions** (`events.hash_version`) — the verifier dispatches on this column. Under the
-greenfield policy only the current version must work:
+**Hash versions** (`events.hash_version`) — writers set the current version and the verifier
+treats any other value as a verification failure (`metadata.reason = 'unsupported_hash_version'`).
+Under the greenfield policy only the current version must work:
 
 | Value | Meaning | Verifiable? |
 |-------|---------|-------------|
-| `2` | Canonical: `backend/src/utils/hashChain.js` builds the payload from persisted values (quantities cast through `numeric(15,4)`, links sorted by `lot_id`, datetime normalized to ISO-8601 UTC). | Yes — payload + chain linkage. |
-| `1` | Legacy request-shaped hash. Pre-production only; delete the legacy verifier and reset the development database. | Not required. |
+| `2` | Canonical: `backend/src/utils/hashChain.js` builds the payload from persisted values (quantities as `numeric(15,4)` text such as `"1.0000"`, links sorted by `lot_id`, datetime normalized to ISO-8601 UTC). | Yes — payload + chain linkage. |
+| `1` | Never implemented in this codebase. No verifier exists. | No. |
+
+**Hash sealing** — the hash covers persisted values, so writers insert the event with
+`record_hash = 'PENDING'`, insert `event_lot_links`, then call `sealEventHash(trx, eventId, prevHash)`
+inside the same transaction, which computes the hash from the persisted row and links and replaces
+the sentinel. A conditional update (`WHERE record_hash = 'PENDING'`) makes the hash seal-once. The
+row is never rewritten after commit; there is no re-seal migration.
 
 Do not write a re-seal migration or archive old hashes. When the payload changes, bump
 `hash_version`, update the canonical serializer and verifier together, and reset the development
