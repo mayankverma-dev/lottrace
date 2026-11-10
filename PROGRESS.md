@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-10
-**Last Session:** 2026-11-10 — P0-02 (deterministic chain ordering) implemented: `events.chain_seq` is assigned per organization inside the advisory-lock transaction; tip lookup, import writer, and verifier use `chain_seq` instead of `created_at`. 10 focused tests pass (50-concurrent create, two-org sequencing, created_at inversion, tamper detection, schema uniqueness). Previous: P1-15 boolean env parsing.
+**Last Session:** 2026-11-10 — P2-12 (stable event list pagination) implemented: `GET /events` adds `chain_seq DESC` as tiebreaker after `created_at DESC`, so tied transaction timestamps no longer duplicate or drop rows across pages. 2 regression tests pass; live HTTP paging returned `[5,4] [3,2] [1]`. Previous: P0-02 deterministic chain ordering (10 tests).
 
 ---
 
@@ -83,6 +83,11 @@ P0-02 — deterministic hash chain ordering:
 - `backend/src/jobs/workers/hash-verifier.js` (orders by `chain_seq`)
 - Tests: `backend/src/modules/events/events.chain-seq.test.js`, `backend/src/utils/hashChain.chain-seq.test.js`, `backend/src/test/dbGuard.js`
 - Docs: `docs/AUDIT_REPORT.md`, `docs/BACKEND_ARCHITECTURE.md`
+
+P2-12 — stable event list pagination:
+- `backend/src/modules/events/events.service.js` (`GET /events` orders by `created_at DESC`, then `chain_seq DESC`)
+- Tests: `backend/src/modules/events/events.list-order.test.js` (2 passing against a disposable local Postgres)
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 ---
 

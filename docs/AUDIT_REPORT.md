@@ -119,6 +119,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-09 | P2 | Attachment upload flow leaves orphaned objects | Open |
 | P2-10 | P2 | Minor API/UX inconsistencies (status codes, empty states) | Open |
 | P2-11 | P2 | Expected 4xx errors are logged at ERROR level | Fixed (2026-11-09, 315e54b) |
+| P2-12 | P2 | Event list pagination is unstable when `created_at` values tie | Fixed (2026-11-10, ca4985e) |
 
 ---
 
@@ -558,6 +559,15 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Real-world impact:** Error dashboards, alerts, and log searches fill with noise from normal traffic. Real 5xx failures and incidents become harder to spot, and alert thresholds either fire constantly or get muted.
 - **Fix direction:** Log operational errors with `statusCode < 500` at `warn`; keep `error` for 5xx and unknown or non-operational failures. Do not change the response envelope or the status-code mapping.
 - **Verification:** Unit tests assert `warn` for operational 400/401/403/404/409/422 and `error` for an operational 500 and an unknown error. A live run against a disposable local database produced two expected 404s with `WARN ... Request failed` and zero `ERROR` lines; both responses stayed `404 NOT_FOUND`.
+
+## P2-12 — Event list pagination is unstable when `created_at` values tie
+
+- **Severity:** P2 · **Area:** backend / API pagination · **Status:** Fixed (2026-11-10, ca4985e)
+- **Evidence:** `backend/src/modules/events/events.service.js` built the `GET /events` query with `.orderBy('events.created_at', 'desc')` and no tiebreaker. `events.created_at` defaults to `CURRENT_TIMESTAMP`, which PostgreSQL evaluates once per transaction (transaction start time), so concurrent inserts can carry the same value.
+- **What happens:** When several events share a `created_at`, the sort has no defined order among them. The database may return tied rows in different physical orders for different `LIMIT`/`OFFSET` values, so page 1 and page 2 can overlap or leave a row out. The order can also change between two identical requests.
+- **Real-world impact:** Reviewers paging through the event list can miss events or see duplicates, and any client that aggregates pages (export, report, script) builds an incomplete history. In an audit tool this looks like data loss even when no row was deleted.
+- **Fix direction:** Keep `created_at DESC` as the primary sort and add `chain_seq DESC` as a deterministic tiebreaker. `chain_seq` is unique per organization, so the pair is a total order. Do not change the response envelope or the pagination shape.
+- **Verification:** `backend/src/modules/events/events.list-order.test.js` inserts five events that share one `created_at`, then asserts page 1 is `[5,4]`, page 2 `[3,2]`, page 3 `[1]`, and that the three pages contain five unique ids. The test failed before the fix (page 1 returned `[4,5]`) and passes after it. A live `GET /api/v1/events?page=N&limit=2` run against a disposable local database returned `[5,4]`, `[3,2]`, `[1]`, status 200 on every page, and no duplicate ids.
 
 ---
 
