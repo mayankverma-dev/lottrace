@@ -76,7 +76,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | ID | Severity | Title | Status |
 |----|----------|-------|--------|
 | P0-01 | P0 | Hash verification fails for every event with lot links (number vs decimal string) | Open |
-| P0-02 | P0 | Hash chain ordering is non-deterministic under concurrency | Open |
+| P0-02 | P0 | Hash chain ordering is non-deterministic under concurrency | Fixed (2026-11-10, 6118815) |
 | P0-03 | P0 | Event creation accepts lots from other organizations | Open |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Open |
 | P0-05 | P0 | Row Level Security is inert at runtime | Open |
@@ -140,7 +140,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-02 — Hash chain ordering is non-deterministic under concurrency
 
-- **Severity:** P0 · **Area:** backend / data integrity · **Status:** Open
+- **Severity:** P0 · **Area:** backend / data integrity · **Status:** Fixed (2026-11-10, 6118815)
 - **Evidence:** `backend/src/modules/events/events.service.js:48-57` (transaction starts, then advisory lock, then `orderBy('created_at','desc')`), migration `events.created_at` defaults to `knex.fn.now()`; `backend/src/jobs/workers/hash-verifier.js:13-16` orders by `created_at ASC`.
 - **What happens:** PostgreSQL `now()` is the **transaction start** timestamp, not the statement time. Two transactions can begin in the same millisecond, then serialize on the advisory lock; both rows get the same `created_at`. `ORDER BY created_at` alone is then ambiguous, so the second transaction may pick the wrong `prev_hash`, and the verifier may read the rows in the opposite order. Under any real concurrency (import worker + manual entry, two operators), the chain can fork.
 - **Real-world impact:** Hash verification fails intermittently and non-reproducibly — the worst possible failure mode for an audit tool. Restoring a database can change physical order and surface failures that did not exist before.
