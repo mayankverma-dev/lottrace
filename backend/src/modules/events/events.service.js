@@ -197,7 +197,12 @@ const getEvents = async (query, organizationId) => {
         WHERE ell.event_id = events.id
       ) as lot_links`)
     )
-    .orderBy('events.created_at', 'desc')
+    // created_at is the transaction start time and can tie under concurrency.
+    // chain_seq is unique per organization, so it makes pagination stable.
+    .orderBy([
+      { column: 'events.created_at', order: 'desc' },
+      { column: 'events.chain_seq', order: 'desc' },
+    ])
     .limit(limit)
     .offset(offset);
 
