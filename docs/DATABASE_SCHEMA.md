@@ -118,6 +118,7 @@ CREATE TABLE locations (
 
 CREATE INDEX idx_locations_org ON locations(organization_id);
 CREATE INDEX idx_locations_org_active ON locations(organization_id, is_active);
+CREATE UNIQUE INDEX uq_locations_id_org ON locations(id, organization_id);
 ```
 
 ---
@@ -191,7 +192,7 @@ CREATE TABLE events (
   id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id     uuid NOT NULL REFERENCES organizations(id),
   event_type          text NOT NULL,        -- creation | receiving | transformation | shipping
-  location_id         uuid REFERENCES locations(id),
+  location_id         uuid,
   counterparty_info   jsonb,                -- external partner details (name, address, lot code as-given)
   event_datetime      timestamptz NOT NULL, -- when it physically happened (client-supplied, converted to UTC)
   recorded_by         uuid NOT NULL REFERENCES users(id),
@@ -219,6 +220,12 @@ CREATE INDEX idx_events_org_type ON events(organization_id, event_type);
 CREATE INDEX idx_events_org_datetime ON events(organization_id, event_datetime DESC);
 CREATE INDEX idx_events_org_status ON events(organization_id, status);
 CREATE INDEX idx_events_location ON events(location_id);
+
+-- Tenant-safe location relationship. The event organization must match the
+-- location organization.
+ALTER TABLE events
+  ADD FOREIGN KEY (location_id, organization_id)
+  REFERENCES locations(id, organization_id);
 CREATE INDEX idx_events_compliance_gaps ON events(organization_id, has_compliance_gaps) WHERE has_compliance_gaps = true;
 CREATE INDEX idx_events_recorded_by ON events(recorded_by);
 -- Chain order + tip lookup. Unique per organization; never order the chain by created_at.

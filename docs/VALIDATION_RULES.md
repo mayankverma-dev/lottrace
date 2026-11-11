@@ -206,6 +206,10 @@ Event creation validates lot ownership inside its database transaction. A lot
 that is unknown or belongs to another organization returns `404 NOT_FOUND`
 (`Lot not found`), and the event plus all links are rolled back.
 
+When supplied, `locationId` is validated against the event organization inside
+the same transaction. Unknown or foreign locations return `404 NOT_FOUND`
+(`Location not found`).
+
 ### Create Event — Base (shared fields)
 ```javascript
 const eventBaseSchema = z.object({

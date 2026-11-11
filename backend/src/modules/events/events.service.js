@@ -59,6 +59,13 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
   const lockId = getAdvisoryLockId(organizationId);
   
   return await db.transaction(async (trx) => {
+    if (data.locationId) {
+      const location = await trx('locations')
+        .where({ id: data.locationId, organization_id: organizationId })
+        .first('id');
+      if (!location) throw new AppError('Location not found', 'NOT_FOUND', 404);
+    }
+
     // Tenant boundary: every referenced lot must belong to this organization.
     // Runs before the event row exists, so a foreign lot leaves no trace.
     const lotIds = [...(data.inputs || []), ...(data.outputs || [])].map(l => l.lotId);
@@ -148,7 +155,12 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
         .where({ organization_id: organizationId, status: 'active' })
         .whereIn('role', ['compliance_manager']);
         
-      const location = data.locationId ? await trx('locations').where({ id: data.locationId }).first() : null;
+      const location = data.locationId
+        ? await trx('locations').where({
+          id: data.locationId,
+          organization_id: organizationId,
+        }).first()
+        : null;
       const locationName = location ? location.name : 'Unknown Location';
       const parsedGaps = JSON.parse(complianceGaps);
       

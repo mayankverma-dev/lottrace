@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-11
-**Last Session:** 2026-11-11 — P0-03 tenant-safe event lot links fixed (commit pending). Manual and import event paths validate lot ownership inside the transaction, and composite event/lot foreign keys carry organization scope. Disposable local DB migration reset succeeded; P0-03 plus canonical hash regression suites passed 13/13.
+**Last Session:** 2026-11-11 — P0-13 implementation complete; verification passed. Event creation validates location ownership inside the transaction; original migrations now enforce composite event/location tenant scope. Fresh migration and 13/13 relevant regression tests pass.
 
 ---
 

@@ -23,6 +23,9 @@ exports.up = async (knex) => {
 
     table.index('organization_id', 'idx_locations_org');
     table.index(['organization_id', 'is_active'], 'idx_locations_org_active');
+
+    // Composite key for events' tenant-safe location FK (P0-13).
+    table.unique(['id', 'organization_id'], 'uq_locations_id_org');
   });
 };
 

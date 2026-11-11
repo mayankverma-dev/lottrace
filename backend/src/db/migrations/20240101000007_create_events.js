@@ -6,7 +6,7 @@ exports.up = async (knex) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
     table.uuid('organization_id').notNullable().references('id').inTable('organizations');
     table.text('event_type').notNullable(); // creation | receiving | transformation | shipping
-    table.uuid('location_id').references('id').inTable('locations');
+    table.uuid('location_id');
     table.jsonb('counterparty_info'); // external partner details
     table.timestamp('event_datetime', { useTz: true }).notNullable();
     table.uuid('recorded_by').notNullable().references('id').inTable('users');
@@ -36,6 +36,10 @@ exports.up = async (knex) => {
 
     // Composite key for event_lot_links' tenant-safe FK (P0-03).
     table.unique(['id', 'organization_id'], 'uq_events_id_org');
+
+    table.foreign(['location_id', 'organization_id'])
+      .references(['id', 'organization_id'])
+      .inTable('locations');
   });
 
   // Generated column for compliance gaps

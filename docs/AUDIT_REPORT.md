@@ -78,6 +78,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-01 | P0 | Hash verification fails for every event with lot links (number vs decimal string) | Fixed (2026-11-10, 5271aea) |
 | P0-02 | P0 | Hash chain ordering is non-deterministic under concurrency | Fixed (2026-11-10, 6118815) |
 | P0-03 | P0 | Event creation accepts lots from other organizations | Fixed (2026-11-11, 63ce814) |
+| P0-13 | P0 | Event creation accepts cross-tenant locationId | Open |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Open |
 | P0-05 | P0 | Row Level Security is inert at runtime | Open |
 | P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Open |
@@ -167,6 +168,17 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Verification:** As org A, attempt to create an event linking org B's lot; expect 404 and **zero** rows inserted. Confirm the transaction rolled back the event itself. Then trace an org-A lot and confirm no org-B product data appears.
 - **Fix:** `assertLotsBelongToOrganization()` now validates every referenced lot inside the event transaction before event insertion. Manual and import links persist `organization_id`; composite parent keys and foreign keys enforce the same tenant boundary at the database layer. Unknown and foreign lots both return `404 NOT_FOUND`.
 - **Verified:** `events.cross-tenant-lots.test.js` covers foreign, mixed valid/foreign, and unknown lot requests, including rollback assertions.
+
+## P0-13 — Event creation accepts cross-tenant locationId
+
+- **Severity:** P0 · **Area:** backend / tenant isolation · **Status:** Open
+- **Evidence:** `backend/src/modules/events/events.service.js` writes `data.locationId` directly to `events.location_id`; the only validation is UUID shape in `events.validation.js`.
+- **What happens:** An org A caller can submit an org B location UUID. The event is created with a foreign location reference, and the compliance alert lookup can read that location without an organization predicate.
+- **Real-world impact:** Cross-tenant location data can enter event history and compliance notifications, corrupting lineage context and exposing another organization's location metadata.
+- **Fix direction:** Validate the location inside the event transaction with `id` and `organization_id`; return `404 NOT_FOUND` for unknown or foreign locations. Scope the compliance lookup. Add composite `(id, organization_id)` and `(location_id, organization_id)` database keys. Edit original migrations and reset the disposable development database; no backfill or compatibility path.
+- **Verification:** As org A, submit org B's location to event creation; expect 404 and no event row. Submit an unknown location; expect the same 404. Submit an org-A location; expect successful creation and a passing hash verification.
+- **Fix:** `createEvent()` now validates supplied locations against the event organization inside the transaction. Compliance location lookup is organization-scoped. Original migrations add composite location keys and a tenant-safe event/location foreign key.
+- **Verified:** `events.cross-tenant-location.test.js` covers foreign, unknown, and valid locations. Fresh migration and canonical hash regression pass.
 
 ## P0-04 — Amendment is not atomic and can leave inconsistent history
 
