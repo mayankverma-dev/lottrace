@@ -77,7 +77,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 |----|----------|-------|--------|
 | P0-01 | P0 | Hash verification fails for every event with lot links (number vs decimal string) | Fixed (2026-11-10, 5271aea) |
 | P0-02 | P0 | Hash chain ordering is non-deterministic under concurrency | Fixed (2026-11-10, 6118815) |
-| P0-03 | P0 | Event creation accepts lots from other organizations | Open |
+| P0-03 | P0 | Event creation accepts lots from other organizations | Fixed (commit pending) |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Open |
 | P0-05 | P0 | Row Level Security is inert at runtime | Open |
 | P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Open |
@@ -159,12 +159,14 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-03 — Event creation accepts lots from other organizations
 
-- **Severity:** P0 · **Area:** backend / tenant isolation · **Status:** Open
+- **Severity:** P0 · **Area:** backend / tenant isolation · **Status:** Fixed (commit pending)
 - **Evidence:** `backend/src/modules/events/events.service.js:106-121` inserts `event_lot_links` directly from `data.inputs` / `data.outputs`; `backend/src/modules/events/events.validation.js` validates UUID shape only; `event_lot_links` FK references `lots(id)` with no organization constraint.
 - **What happens:** A caller can supply the UUID of a lot belonging to another tenant. The link is inserted successfully. Trace queries then join that foreign lot, and `backend/src/modules/trace/trace.service.js:249` fetches products with `whereIn('id', productIds)` and **no organization filter**, leaking the foreign product name/SKU. Even without the product leak, the attacker can pollute another tenant's lineage or discover whether a guessed lot UUID exists.
 - **Real-world impact:** Cross-tenant data disclosure and integrity corruption. This is the exact class of bug RLS was supposed to prevent, but RLS is inert (P0-05).
 - **Fix direction:** Inside the create transaction, select all referenced lot IDs with `whereIn('id', ids).where({ organization_id })`; if the count does not match, throw `404 NOT_FOUND` (never 403 — do not confirm existence). Apply the same check in the import processor and amend path. Add a defense-in-depth composite FK: unique `(id, organization_id)` on `lots`, then `event_lot_links (lot_id, organization_id)` FK. Consider the same for `location_id` and `product_id`.
 - **Verification:** As org A, attempt to create an event linking org B's lot; expect 404 and **zero** rows inserted. Confirm the transaction rolled back the event itself. Then trace an org-A lot and confirm no org-B product data appears.
+- **Fix:** `assertLotsBelongToOrganization()` now validates every referenced lot inside the event transaction before event insertion. Manual and import links persist `organization_id`; composite parent keys and foreign keys enforce the same tenant boundary at the database layer. Unknown and foreign lots both return `404 NOT_FOUND`.
+- **Verified:** `events.cross-tenant-lots.test.js` covers foreign, mixed valid/foreign, and unknown lot requests, including rollback assertions.
 
 ## P0-04 — Amendment is not atomic and can leave inconsistent history
 
