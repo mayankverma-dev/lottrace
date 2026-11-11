@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-11
-**Last Session:** 2026-11-11 — P1-23 (event void cache invalidation) implemented: `voidEvent` collects linked lot ids in the void transaction, then invalidates forward/backward/full trace cache for every linked lot only after commit. 2 DB tests (warm trace recomputes without voided event; rejected void keeps cache) pass; live API warm trace dropped the voided event and Redis keys were gone without TTL wait. Previous: P1-22 lot audit trail (4 DB tests + live API).
+**Last Session:** 2026-11-11 — P0-11 (trace excludes superseded/amended events) implemented: both trace CTEs now traverse only `status = 'active'` events, and the trace cache namespace moved to `trace:v2:` so pre-fix cached graphs are ignored. 4 new DB tests plus the updated P1-23 void-cache tests (2 DB tests) pass against a disposable local Postgres. Previous: P1-23 event void cache invalidation (2 DB tests + live API), P1-22 lot audit trail (4 DB tests + live API).
 
 ---
 
@@ -86,8 +86,8 @@ P1-16 — seed safety and idempotence:
 
 P0-11 — trace excludes superseded events:
 - `backend/src/modules/trace/trace.service.js` (both CTEs filter `e.status = 'active'`; cache namespace `trace:v2:`)
-- Tests: `backend/src/modules/trace/trace.amended-events.test.js` (new, 6 passing against a disposable local Postgres)
-- Docs: `docs/ARCHITECTURE.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
+- Tests: `backend/src/modules/trace/trace.amended-events.test.js` (new, 4 DB tests against a disposable local Postgres), `backend/src/modules/events/events.void-cache.test.js` (cache-key assertions updated to `trace:v2:`)
+- Docs: `docs/ARCHITECTURE.md`, `docs/DATABASE_SCHEMA.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P1-15 — boolean env parsing:
 - `backend/src/config/env.js` (`booleanEnv` explicit allowlist; `EMAIL_DRY_RUN` no longer uses `z.coerce.boolean()`; `NODE_ENV=test` accepted for Jest)

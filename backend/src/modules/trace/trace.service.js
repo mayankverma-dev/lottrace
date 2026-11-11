@@ -14,7 +14,7 @@ const MAX_HOPS = 50;
  * @returns {string}
  */
 const cacheKey = (orgId, lotId, direction) =>
-  `trace:${orgId}:${lotId}:${direction}`;
+  `trace:v2:${orgId}:${lotId}:${direction}`;
 
 /**
  * Try to get cached trace result from Redis.
@@ -106,8 +106,10 @@ const forwardTrace = async (lotId, organizationId) => {
       FROM forward_trace ft
       JOIN event_lot_links ell_in ON ell_in.lot_id = ft.id
         AND ell_in.direction = 'input'
+      -- Only current events belong in the live trace graph. Amended and void
+      -- events stay available through the event endpoints and audit log.
       JOIN events e ON e.id = ell_in.event_id
-        AND e.status != 'void'
+        AND e.status = 'active'
         AND e.organization_id = ?
       JOIN event_lot_links ell_out ON ell_out.event_id = e.id
         AND ell_out.direction = 'output'
@@ -172,8 +174,10 @@ const backwardTrace = async (lotId, organizationId) => {
       FROM backward_trace bt
       JOIN event_lot_links ell_out ON ell_out.lot_id = bt.id
         AND ell_out.direction = 'output'
+      -- Only current events belong in the live trace graph. Amended and void
+      -- events stay available through the event endpoints and audit log.
       JOIN events e ON e.id = ell_out.event_id
-        AND e.status != 'void'
+        AND e.status = 'active'
         AND e.organization_id = ?
       JOIN event_lot_links ell_in ON ell_in.event_id = e.id
         AND ell_in.direction = 'input'

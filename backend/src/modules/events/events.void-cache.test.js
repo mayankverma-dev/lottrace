@@ -153,12 +153,12 @@ describeDb('P1-23 event void invalidates trace cache', () => {
     expect(warm.edges).toEqual([
       expect.objectContaining({ from: org.inputLotId, to: org.outputLotId, eventId: event.id }),
     ]);
-    expect(redis.__store.has(`trace:${org.orgId}:${org.inputLotId}:full`)).toBe(true);
+    expect(redis.__store.has(`trace:v2:${org.orgId}:${org.inputLotId}:full`)).toBe(true);
 
     await eventsService.voidEvent(event.id, 'wrong lot recorded', org.orgId);
 
     const lotKeys = [...redis.__store.keys()].filter(
-      (key) => key.startsWith(`trace:${org.orgId}:`),
+      (key) => key.startsWith(`trace:v2:${org.orgId}:`),
     );
     expect(lotKeys).toEqual([]);
 
@@ -180,6 +180,6 @@ describeDb('P1-23 event void invalidates trace cache', () => {
       eventsService.voidEvent(event.id, 'second void', org.orgId),
     ).rejects.toMatchObject({ code: 'EVENT_IMMUTABLE', statusCode: 409 });
 
-    expect(redis.__store.has(`trace:${org.orgId}:${org.inputLotId}:full`)).toBe(true);
+    expect(redis.__store.has(`trace:v2:${org.orgId}:${org.inputLotId}:full`)).toBe(true);
   });
 });

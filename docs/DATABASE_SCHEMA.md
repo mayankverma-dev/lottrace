@@ -224,6 +224,12 @@ CREATE INDEX idx_events_recorded_by ON events(recorded_by);
 CREATE UNIQUE INDEX idx_events_org_chain_seq ON events(organization_id, chain_seq);
 ```
 
+**Event status and trace** — the trace engine traverses only `status = 'active'` events.
+`amended` rows (superseded by a replacement linked through `supersedes_event_id`) and `void`
+rows stay available through the event endpoints and audit log, but never appear in forward,
+backward, or full trace results. Lot-level `status = 'void'` does not remove the lot from a
+trace; it is returned as a node with its status flag.
+
 **Chain ordering (`events.chain_seq`)** — the hash chain is ordered by `chain_seq`, **never** by
 `created_at`. `created_at` defaults to `CURRENT_TIMESTAMP`, which PostgreSQL evaluates once per
 transaction (transaction start time), so a transaction that waits on the organization advisory lock

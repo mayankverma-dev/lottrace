@@ -167,7 +167,7 @@ WITH RECURSIVE forward_trace AS (
   JOIN event_lot_links ell_in ON ell_in.lot_id = ft.id
     AND ell_in.direction = 'input'
   JOIN events e ON e.id = ell_in.event_id
-    AND e.status != 'void'
+    AND e.status = 'active'
     AND e.organization_id = $2
   JOIN event_lot_links ell_out ON ell_out.event_id = e.id
     AND ell_out.direction = 'output'
@@ -180,9 +180,15 @@ SELECT DISTINCT * FROM forward_trace ORDER BY hop;
 ### Backward Trace (Where did this come from?)
 Mirror of forward: swap `input`/`output` directions.
 
+Both directions traverse only events with `status = 'active'`. Amended events (superseded
+by a replacement) and void events remain available through `GET /events/:id`, the event
+list, and the audit log, but never appear in the live trace graph. Lot rows with
+`status = 'void'` are still returned as nodes with their status flag so the path stays
+continuous; only event status filters the graph.
+
 ### Performance Strategy
 - Index: `event_lot_links(lot_id, direction)`, `event_lot_links(event_id)`
-- Cache trace results in Redis (TTL 5min, invalidated on new events for that lot)
+- Cache trace results in Redis (TTL 5min, `trace:v2:` key namespace, invalidated on new events for that lot)
 - Max depth: 50 hops (cycle protection), never silently truncate — show "truncated at 50 hops" warning
 
 ---
