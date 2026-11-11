@@ -85,7 +85,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-08 | P0 | Event detail page crashes when compliance gaps exist | Open |
 | P0-09 | P0 | Event timestamps shift by the browser UTC offset | Open |
 | P0-10 | P0 | Import maps shipping rows to the wrong trace direction | Open |
-| P0-11 | P0 | Trace includes superseded (amended) events | Open |
+| P0-11 | P0 | Trace includes superseded (amended) events | Fixed (2026-11-11, 298465f) |
 | P0-12 | P0 | Operators can create events but cannot read them | Open |
 | P1-01 | P1 | Imports never compute compliance gaps | Open |
 | P1-02 | P1 | Export pipeline produces an unreachable file and ignores format | Open |
@@ -241,12 +241,14 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-11 — Trace includes superseded (amended) events
 
-- **Severity:** P0 · **Area:** backend / trace · **Status:** Open
+- **Severity:** P0 · **Area:** backend / trace · **Status:** Fixed (2026-11-11, 298465f)
 - **Evidence:** `backend/src/modules/trace/trace.service.js:110` and `:176` (`AND e.status != 'void'`).
 - **What happens:** Amendment sets the old event to `status = 'amended'` and creates a replacement with `supersedes_event_id`. The trace CTEs exclude only `void`, so **both** the superseded and the replacement event are traversed. Any corrected quantity, location, or input/output set appears twice with conflicting values; cycles are only prevented by lot ID, not event ID.
 - **Real-world impact:** Trace results double-count hops and contain known-wrong data. A recall could include or exclude the wrong lots based on a corrected record. Auditors see two versions of the same event presented as equally valid.
 - **Fix direction:** Filter `e.status = 'active'` in both CTEs. Keep amended/void events available in the audit log and event detail, but never in the live trace graph. Decide and document whether lot-level `status = 'void'` should also be excluded from trace results (currently it is returned with a status flag). Add a test: create event A, amend it to B, trace the lot; only B appears.
 - **Verification:** Trace before and after an amendment; node/edge counts must not double. Confirm the superseded event is still visible via `GET /events/:id` and the audit log.
+- **Fix:** `backend/src/modules/trace/trace.service.js` now filters `e.status = 'active'` in both recursive CTEs and uses `trace:v2:` cache keys so pre-fix cached graphs are ignored. Lot-level `status = 'void'` remains in trace results as a flagged node; only event status filters the graph.
+- **Verified:** `backend/src/modules/trace/trace.amended-events.test.js` (4 DB tests) and the updated `backend/src/modules/events/events.void-cache.test.js` (2 DB tests) pass against a disposable local Postgres. Live API verification on a fresh disposable DB confirmed: same-link amend keeps exactly one edge to the replacement; changed-link amend shows only the new input/output path in forward, backward, and full traces; cold and warm cache returns the replacement; amended events remain available through event detail and the event list; tenant isolation returns 404 both directions; lot/event void audit rows are present; and the hash verifier passes with zero failures.
 
 ## P0-12 — Operators can create events but cannot read them
 
