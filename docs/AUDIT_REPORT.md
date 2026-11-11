@@ -110,6 +110,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-21 | P1 | Fresh database migration fails on unique-constraint index | Fixed (2026-11-09, 85b091e) |
 | P1-22 | P1 | Lot create/update/void actions are not written to `audit_log` | Fixed (2026-11-11, 1f2150e) |
 | P1-23 | P1 | Voiding an event does not invalidate warm trace cache | Fixed (2026-11-11, 192ee02) |
+| P1-24 | P1 | Event status filters return 500 (`status` is ambiguous) | Fixed (2026-11-11, 7f50307) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Open |
 | P2-02 | P2 | API response pagination shape is inconsistent | Open |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Open |
@@ -484,6 +485,17 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Verification:** Warm a full trace from an input lot, void the linking event, then trace the same lot immediately without waiting for TTL. The trace must not be served from cache, must not contain the voided event's edge, and must not contain its downstream lot. Redis must have no `trace:{orgId}:{lotId}:*` keys for either linked lot. A rejected second void must leave the cache intact.
 - **Fix:** `backend/src/modules/events/events.service.js` `voidEvent` now reads `event_lot_links` inside the transaction, returns unique linked lot ids, and calls `invalidateTraceCache(organizationId, lotId)` for each after the transaction commits.
 - **Verified:** `backend/src/modules/events/events.void-cache.test.js` (2 DB tests with an in-memory Redis: warm trace recomputes without the voided event and clears all keys; rejected void keeps the warm cache). Live API run created input lot `1c4fdf26-a263-4a51-a930-5ea4845be823`, output lot `b084ee7d-34a6-4dd4-b1ba-ecfc67cbd15c`, and event `0af71da9-9922-4ea4-bbce-dc695b4a5db8`. Warm full trace had both lots and 1 edge; after void both `trace:{orgId}:{lotId}:*` key sets were empty, and the immediate re-trace had only the input lot and 0 edges.
+
+## P1-24 — Event status filters return 500 (`status` is ambiguous)
+
+- **Severity:** P1 · **Area:** backend / events · **Status:** Fixed (2026-11-11, 7f50307)
+- **Evidence:** `backend/src/modules/events/events.service.js:178` applied `.where({ status })`; the event data query later left-joins `users` (`:188`), and both `events` and `users` have a `status` column. `GET /api/v1/events?status=active` returned 500 with `column reference "status" is ambiguous`.
+- **What happens:** Any request that filters the event list by lifecycle status (`active`, `amended`, or `void`) fails after the filter is applied. The count query has no join and succeeds, but the data query joins `users` for the recorder name, so PostgreSQL cannot resolve the unqualified `status` reference. The validated status enum makes every allowed filter value reachable, so the entire status-filter feature is broken.
+- **Real-world impact:** Org admins, compliance managers, and auditors cannot isolate active, amended, or void events from the event log. During a recall investigation, that prevents narrowing the list to the current version of events or reviewing voided history without exporting and filtering elsewhere.
+- **Fix direction:** Qualify the predicate as `events.status`. Leave the other filters unchanged because their column names exist only on `events`. Add a regression test that exercises all three status values through `getEvents`, including filtered pagination totals.
+- **Verification:** Seed events with `active`, `amended`, and `void` statuses plus a user whose own status is `active`; call `getEvents` with each status and confirm only matching rows are returned and `pagination.total` counts only that status. Confirm filtered pagination partitions the matching set. Call `GET /api/v1/events?status=active|amended|void` against a fresh local disposable database and confirm 200 responses with the expected rows.
+- **Fix:** `backend/src/modules/events/events.service.js` `getEvents` now filters with `where('events.status', status)`, so the later `users` join cannot make the reference ambiguous.
+- **Verified:** `backend/src/modules/events/events.status-filter.test.js` (4 DB tests: active, amended, void, and filtered pagination). Live API run seeded 2 events per status and returned 200 with exactly 2 rows and `pagination.total = 2` for each filter; the unfiltered list returned all 6 rows.
 
 ---
 
