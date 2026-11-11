@@ -241,7 +241,8 @@ const hash = hmacSha256(secret, `lottrace:event:v3|${prevHash}|${stableStringify
 Writers insert with `record_hash = 'PENDING'` and `hash_key_id = 'PENDING'`, insert the links,
 then seal the hash in the same transaction. Mutable lifecycle fields (`status`, `void_reason`) and
 later attachment metadata are covered by the append-only `event_evidence` chain rooted at the
-event's `record_hash`, not by re-sealing the event.
+event's `record_hash`, not by re-sealing the event. A database trigger rejects updates and deletes
+on sealed evidence rows.
 
 Hash verification re-walks the chain nightly, ordered by `chain_seq`. On the first mismatch it
 writes `audit_log` with `action = 'hash.verify_failed'`, creates an org-wide

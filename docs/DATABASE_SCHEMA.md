@@ -273,7 +273,10 @@ Append-only signed evidence for mutable facts that happen after an event is seal
 transitions (`void`, `amend`) and attachment additions. The chain is rooted at the parent event's
 `record_hash`, so an edit to `events.status`, `events.void_reason`, or attachment metadata is
 detectable without re-sealing the event. Written by
-`appendEventEvidence()` in `backend/src/utils/hashChain.js`.
+`appendEventEvidence()` in `backend/src/utils/hashChain.js`. The database enforces the
+append-only rule: a `BEFORE UPDATE OR DELETE` trigger rejects every change to a sealed row. The
+only permitted update is the one-time seal that replaces the `PENDING` placeholders on the row
+that was just inserted.
 
 ```sql
 CREATE TABLE event_evidence (
@@ -294,6 +297,11 @@ CREATE TABLE event_evidence (
 );
 
 CREATE INDEX idx_event_evidence_org_event ON event_evidence(organization_id, event_id);
+
+-- Append-only enforcement: sealed rows cannot be updated or deleted.
+CREATE TRIGGER event_evidence_immutable
+BEFORE UPDATE OR DELETE ON event_evidence
+FOR EACH ROW EXECUTE FUNCTION reject_event_evidence_mutation();
 ```
 
 The verifier re-walks each event's evidence chain and cross-checks the signed facts against the

@@ -110,6 +110,20 @@ describeDb('P1-18 signed event evidence', () => {
     .where({ event_id: eventId })
     .orderBy('seq', 'asc');
 
+  /**
+   * Simulates an attacker who can write SQL by temporarily disabling the
+   * database-level immutability trigger. Verification must still detect the
+   * tamper from the signed chain alone.
+   */
+  const tamperEvidence = async (mutate) => {
+    await db.raw('ALTER TABLE event_evidence DISABLE TRIGGER event_evidence_immutable');
+    try {
+      await mutate();
+    } finally {
+      await db.raw('ALTER TABLE event_evidence ENABLE TRIGGER event_evidence_immutable');
+    }
+  };
+
   const failedAudits = (orgId) => db('audit_log')
     .where({ organization_id: orgId, action: 'hash.verify_failed' });
 
@@ -178,9 +192,9 @@ describeDb('P1-18 signed event evidence', () => {
     const event = await createLinkedEvent(org);
     await eventsService.voidEvent(event.id, 'wrong lot recorded', org.orgId, org.userId);
 
-    await db('event_evidence')
+    await tamperEvidence(() => db('event_evidence')
       .where({ event_id: event.id })
-      .update({ payload: JSON.stringify({ fromStatus: 'active', toStatus: 'void', reason: 'edited', actorId: null }) });
+      .update({ payload: JSON.stringify({ fromStatus: 'active', toStatus: 'void', reason: 'edited', actorId: null }) }));
 
     expect(await failureReason(org.orgId)).toBe('evidence_payload_mismatch');
   });
@@ -190,7 +204,7 @@ describeDb('P1-18 signed event evidence', () => {
     const event = await createLinkedEvent(org);
     await eventsService.voidEvent(event.id, 'wrong lot recorded', org.orgId, org.userId);
 
-    await db('event_evidence').where({ event_id: event.id }).del();
+    await tamperEvidence(() => db('event_evidence').where({ event_id: event.id }).del());
 
     expect(await failureReason(org.orgId)).toBe('evidence_state_mismatch');
   });
@@ -212,7 +226,7 @@ describeDb('P1-18 signed event evidence', () => {
     const event = await createLinkedEvent(org);
     await eventsService.voidEvent(event.id, 'wrong lot recorded', org.orgId, org.userId);
 
-    await db('event_evidence').where({ event_id: event.id }).update({ seq: 2 });
+    await tamperEvidence(() => db('event_evidence').where({ event_id: event.id }).update({ seq: 2 }));
 
     expect(await failureReason(org.orgId)).toBe('evidence_chain_mismatch');
   });
@@ -222,9 +236,37 @@ describeDb('P1-18 signed event evidence', () => {
     const event = await createLinkedEvent(org);
     await eventsService.voidEvent(event.id, 'wrong lot recorded', org.orgId, org.userId);
 
-    await db('event_evidence').where({ event_id: event.id }).update({ prev_hash: 'GENESIS' });
+    await tamperEvidence(() => db('event_evidence').where({ event_id: event.id }).update({ prev_hash: 'GENESIS' }));
 
     expect(await failureReason(org.orgId)).toBe('evidence_chain_mismatch');
+  });
+
+  it('rejects updating a sealed evidence row at the database level', async () => {
+    const org = await seedOrganization('immutable-update');
+    const event = await createLinkedEvent(org);
+    await eventsService.voidEvent(event.id, 'wrong lot recorded', org.orgId, org.userId);
+
+    await expect(
+      db('event_evidence')
+        .where({ event_id: event.id })
+        .update({ payload: JSON.stringify({ fromStatus: 'active', toStatus: 'void', reason: 'edited', actorId: null }) })
+    ).rejects.toThrow('event_evidence is append-only');
+
+    const rows = await evidenceRows(event.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].payload.reason).toBe('wrong lot recorded');
+  });
+
+  it('rejects deleting a sealed evidence row at the database level', async () => {
+    const org = await seedOrganization('immutable-delete');
+    const event = await createLinkedEvent(org);
+    await eventsService.voidEvent(event.id, 'wrong lot recorded', org.orgId, org.userId);
+
+    await expect(
+      db('event_evidence').where({ event_id: event.id }).del()
+    ).rejects.toThrow('event_evidence is append-only');
+
+    expect(await evidenceRows(event.id)).toHaveLength(1);
   });
 
   it('signs an amendment and keeps both events verifiable', async () => {

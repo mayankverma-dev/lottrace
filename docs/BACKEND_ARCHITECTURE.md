@@ -144,7 +144,7 @@ Four event types are fully implemented:
 | `transformation` | N input lots → M output lots (e.g., blending, repackaging) |
 | `shipping` | A lot leaves a location to a customer/distributor |
 
-- **Hash chain**: every event stores `record_hash` (HMAC-SHA256 of its payload, keyed from env/KMS) and `prev_hash` (pointing to the prior event), forming a tamper-evident ledger. Mutable status/void/attachment facts are signed in the append-only `event_evidence` chain.
+- **Hash chain**: every event stores `record_hash` (HMAC-SHA256 of its payload, keyed from env/KMS) and `prev_hash` (pointing to the prior event), forming a tamper-evident ledger. Mutable status/void/attachment facts are signed in the append-only `event_evidence` chain; a database trigger rejects updates and deletes on sealed rows.
 - **Compliance gap detection**: on every event save, the system checks if all required KDE fields for the product are present
 - **Idempotency key support**: clients can retry event creation without creating duplicates
 - **Amend flow**: an event cannot be edited — instead, a new superseding event is created and the old is marked `amended`
