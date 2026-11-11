@@ -79,7 +79,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-02 | P0 | Hash chain ordering is non-deterministic under concurrency | Fixed (2026-11-10, 6118815) |
 | P0-03 | P0 | Event creation accepts lots from other organizations | Fixed (2026-11-11, 63ce814) |
 | P0-13 | P0 | Event creation accepts cross-tenant locationId | Fixed (2026-11-11, 104a774) |
-| P0-14 | P0 | Lot creation accepts cross-tenant productId | Open |
+| P0-14 | P0 | Lot creation accepts cross-tenant productId | Fixed (2026-11-11, ef77049) |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Open |
 | P0-05 | P0 | Row Level Security is inert at runtime | Open |
 | P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Open |
@@ -183,7 +183,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-14 — Lot creation accepts cross-tenant productId
 
-- **Severity:** P0 · **Area:** backend / tenant isolation · **Status:** Open
+- **Severity:** P0 · **Area:** backend / tenant isolation · **Status:** Fixed (2026-11-11, ef77049)
 - **Evidence:** `backend/src/modules/lots/lots.service.js` inserts `data.productId` directly into `lots.product_id`; `lots.validation.js` validates UUID shape only.
 - **What happens:** An org A caller can create a lot referencing an org B product. The lot then carries foreign product identity into list/detail responses and downstream trace data.
 - **Real-world impact:** Cross-tenant product metadata can enter org A lot history and contaminate traceability records.
