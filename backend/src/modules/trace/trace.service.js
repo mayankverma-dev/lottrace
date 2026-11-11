@@ -116,7 +116,12 @@ const forwardTrace = async (lotId, organizationId) => {
       JOIN lots l ON l.id = ell_out.lot_id
       WHERE ft.hop < ? AND NOT (l.id = ANY(ft.path))
     )
-    SELECT DISTINCT ON (id) * FROM forward_trace ORDER BY id, hop
+    -- Deduplicate by lot and event: one lot can be reached through more than one
+    -- active event (for example, after an amendment that keeps the same links),
+    -- and every current event edge must stay in the graph. Nodes are still
+    -- deduplicated by lot id in buildTraceResult().
+    SELECT DISTINCT ON (id, via_event_id) * FROM forward_trace
+    ORDER BY id, via_event_id, hop
   `, [lotId, organizationId, organizationId, MAX_HOPS]);
 
   const rows = result.rows || [];
@@ -184,7 +189,8 @@ const backwardTrace = async (lotId, organizationId) => {
       JOIN lots l ON l.id = ell_in.lot_id
       WHERE bt.hop > ? AND NOT (l.id = ANY(bt.path))
     )
-    SELECT DISTINCT ON (id) * FROM backward_trace ORDER BY id, hop
+    SELECT DISTINCT ON (id, via_event_id) * FROM backward_trace
+    ORDER BY id, via_event_id, hop
   `, [lotId, organizationId, organizationId, -MAX_HOPS]);
 
   const rows = result.rows || [];

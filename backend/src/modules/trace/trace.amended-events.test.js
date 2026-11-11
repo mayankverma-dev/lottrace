@@ -254,6 +254,40 @@ describeDb('P0-11 trace excludes amended events', () => {
     expect(full.edges.some((edge) => edge.eventId === original.id)).toBe(false);
   });
 
+  it('keeps every current edge when two active events share the same lot pair', async () => {
+    const org = await seedOrganization();
+    const first = await createTransformation(org);
+    const second = await createTransformation(org, {
+      eventDatetime: '2026-11-11T10:30:00.000Z',
+    });
+
+    const replacement = await amendTransformation(org, second.id, {
+      outputs: [{ lotId: org.oldOutputLotId, quantity: 9, uom: 'kg' }],
+    });
+
+    const full = await traceService.fullTrace(org.inputLotId, org.orgId);
+    expect(full.edges).toHaveLength(2);
+    expect(full.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        from: org.inputLotId,
+        to: org.oldOutputLotId,
+        eventId: first.id,
+      }),
+      expect.objectContaining({
+        from: org.inputLotId,
+        to: org.oldOutputLotId,
+        eventId: replacement.id,
+      }),
+    ]));
+    expect(full.edges.some((edge) => edge.eventId === second.id)).toBe(false);
+    expect(nodeIds(full)).toEqual([org.inputLotId, org.oldOutputLotId].sort());
+
+    const backward = await traceService.backwardTrace(org.oldOutputLotId, org.orgId);
+    expect(backward.edges).toHaveLength(2);
+    expect(backward.edges.some((edge) => edge.eventId === replacement.id)).toBe(true);
+    expect(backward.edges.some((edge) => edge.eventId === second.id)).toBe(false);
+  });
+
   it('keeps the superseded event available through event detail and the event list', async () => {
     const org = await seedOrganization();
     const original = await createTransformation(org);
