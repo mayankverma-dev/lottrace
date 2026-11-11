@@ -31,6 +31,11 @@ const toAuditState = (lot) => ({
  * @returns {Promise<Object>}
  */
 const createLot = async (data, organizationId, userId, auditContext = {}) => db.transaction(async (trx) => {
+  const product = await trx('products')
+    .where({ id: data.productId, organization_id: organizationId })
+    .first('id');
+  if (!product) throw new AppError('Product not found', 'NOT_FOUND', 404);
+
   const [lot] = await trx('lots')
     .insert({
       id: uuid(),

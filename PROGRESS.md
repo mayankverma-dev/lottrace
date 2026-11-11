@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-11
-**Last Session:** 2026-11-11 — P0-13 implementation complete; verification passed. Event creation validates location ownership inside the transaction; original migrations now enforce composite event/location tenant scope. Fresh migration and 13/13 relevant regression tests pass.
+**Last Session:** 2026-11-11 — P0-14 implementation complete; verification passed. Lot creation now validates product ownership inside the transaction, with composite product/lot tenant scope planned in the original migrations.
 
 ---
 

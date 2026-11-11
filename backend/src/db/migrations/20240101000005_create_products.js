@@ -19,6 +19,9 @@ exports.up = async (knex) => {
 
     table.index('organization_id', 'idx_products_org');
     table.index(['organization_id', 'is_active'], 'idx_products_org_active');
+
+    // Composite key for lots' tenant-safe product FK (P0-14).
+    table.unique(['id', 'organization_id'], 'uq_products_id_org');
   });
 };
 

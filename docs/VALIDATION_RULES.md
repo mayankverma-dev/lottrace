@@ -210,6 +210,10 @@ When supplied, `locationId` is validated against the event organization inside
 the same transaction. Unknown or foreign locations return `404 NOT_FOUND`
 (`Location not found`).
 
+Lot creation validates `productId` against the lot organization inside its
+transaction. Unknown or foreign products return `404 NOT_FOUND` (`Product not
+found`), and the lot plus audit row are rolled back.
+
 ### Create Event — Base (shared fields)
 ```javascript
 const eventBaseSchema = z.object({

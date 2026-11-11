@@ -144,6 +144,7 @@ CREATE TABLE products (
 
 CREATE INDEX idx_products_org ON products(organization_id);
 CREATE INDEX idx_products_org_active ON products(organization_id, is_active);
+CREATE UNIQUE INDEX uq_products_id_org ON products(id, organization_id);
 ```
 
 **`custom_kde_schema` example:**
@@ -162,7 +163,7 @@ The central unit being traced. Every event attaches to one or more lots.
 CREATE TABLE lots (
   id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id         uuid NOT NULL REFERENCES organizations(id),
-  product_id              uuid NOT NULL REFERENCES products(id),
+  product_id              uuid NOT NULL,
   traceability_lot_code   text NOT NULL,
   quantity                numeric(15, 4) NOT NULL,
   uom                     text NOT NULL,
@@ -181,6 +182,12 @@ CREATE UNIQUE INDEX idx_lots_tlc_org_product ON lots(organization_id, product_id
 CREATE INDEX idx_lots_org ON lots(organization_id);
 CREATE INDEX idx_lots_org_status ON lots(organization_id, status);
 CREATE INDEX idx_lots_product ON lots(product_id);
+
+-- Tenant-safe product relationship. The lot organization must match the
+-- product organization.
+ALTER TABLE lots
+  ADD FOREIGN KEY (product_id, organization_id)
+  REFERENCES products(id, organization_id);
 ```
 
 ---

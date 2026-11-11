@@ -79,6 +79,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-02 | P0 | Hash chain ordering is non-deterministic under concurrency | Fixed (2026-11-10, 6118815) |
 | P0-03 | P0 | Event creation accepts lots from other organizations | Fixed (2026-11-11, 63ce814) |
 | P0-13 | P0 | Event creation accepts cross-tenant locationId | Fixed (2026-11-11, 104a774) |
+| P0-14 | P0 | Lot creation accepts cross-tenant productId | Open |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Open |
 | P0-05 | P0 | Row Level Security is inert at runtime | Open |
 | P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Open |
@@ -179,6 +180,15 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Verification:** As org A, submit org B's location to event creation; expect 404 and no event row. Submit an unknown location; expect the same 404. Submit an org-A location; expect successful creation and a passing hash verification.
 - **Fix:** `createEvent()` now validates supplied locations against the event organization inside the transaction. Compliance location lookup is organization-scoped. Original migrations add composite location keys and a tenant-safe event/location foreign key.
 - **Verified:** `events.cross-tenant-location.test.js` covers foreign, unknown, and valid locations. Fresh migration and canonical hash regression pass.
+
+## P0-14 — Lot creation accepts cross-tenant productId
+
+- **Severity:** P0 · **Area:** backend / tenant isolation · **Status:** Open
+- **Evidence:** `backend/src/modules/lots/lots.service.js` inserts `data.productId` directly into `lots.product_id`; `lots.validation.js` validates UUID shape only.
+- **What happens:** An org A caller can create a lot referencing an org B product. The lot then carries foreign product identity into list/detail responses and downstream trace data.
+- **Real-world impact:** Cross-tenant product metadata can enter org A lot history and contaminate traceability records.
+- **Fix direction:** Validate the product inside the lot creation transaction with `id` and `organization_id`; return `404 NOT_FOUND` for unknown or foreign products. Add composite `(id, organization_id)` and `(product_id, organization_id)` database keys. Edit original migrations and reset the disposable development database; no backfill or compatibility path. Keep P2-04 separate.
+- **Verification:** As org A, create a lot with org B's product; expect 404 and no lot or audit row. Submit an unknown product; expect the same 404. Submit an org-A product; expect successful lot creation and audit logging.
 
 ## P0-04 — Amendment is not atomic and can leave inconsistent history
 

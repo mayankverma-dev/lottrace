@@ -5,7 +5,7 @@ exports.up = async (knex) => {
   await knex.schema.createTable('lots', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
     table.uuid('organization_id').notNullable().references('id').inTable('organizations');
-    table.uuid('product_id').notNullable().references('id').inTable('products');
+    table.uuid('product_id').notNullable();
     table.text('traceability_lot_code').notNullable();
     table.decimal('quantity', 15, 4).notNullable();
     table.text('uom').notNullable();
@@ -23,6 +23,10 @@ exports.up = async (knex) => {
 
     // Composite key for event_lot_links' tenant-safe FK (P0-03).
     table.unique(['id', 'organization_id'], 'uq_lots_id_org');
+
+    table.foreign(['product_id', 'organization_id'])
+      .references(['id', 'organization_id'])
+      .inTable('products');
   });
 
   // TLC unique per org+product (excluding voided lots)
