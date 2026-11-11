@@ -175,7 +175,7 @@ const getEvents = async (query, organizationId) => {
   }
 
   if (eventType) queryBuilder = queryBuilder.where({ event_type: eventType });
-  if (status) queryBuilder = queryBuilder.where({ status });
+  if (status) queryBuilder = queryBuilder.where('events.status', status);
   if (locationId) queryBuilder = queryBuilder.where({ location_id: locationId });
   if (dateFrom) queryBuilder = queryBuilder.where('event_datetime', '>=', dateFrom);
   if (dateTo) queryBuilder = queryBuilder.where('event_datetime', '<=', dateTo);

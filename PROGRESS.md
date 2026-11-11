@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-11
-**Last Session:** 2026-11-11 — P0-11 (trace excludes superseded/amended events) implemented: both trace CTEs now traverse only `status = 'active'` events, and the trace cache namespace moved to `trace:v2:` so pre-fix cached graphs are ignored. 4 new DB tests plus the updated P1-23 void-cache tests (2 DB tests) pass against a disposable local Postgres. Previous: P1-23 event void cache invalidation (2 DB tests + live API), P1-22 lot audit trail (4 DB tests + live API).
+**Last Session:** 2026-11-11 — P1-24 (event status filter) fixed: `GET /events?status=...` now filters on `events.status`, avoiding the ambiguous `status` reference created by the later `users` join. 4 new DB tests cover active/amended/void and filtered pagination; live API verification returned 200 with the correct rows for all three statuses. Previous: P0-11 trace excludes amended events (4 DB tests), P1-23 event void cache invalidation (2 DB tests + live API), P1-22 lot audit trail (4 DB tests + live API).
 
 ---
 
@@ -55,6 +55,11 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P1-24 — event status filter:
+- `backend/src/modules/events/events.service.js` (`getEvents` filters on `events.status` so the later `users` join cannot make `status` ambiguous)
+- Tests: `backend/src/modules/events/events.status-filter.test.js` (4 DB tests: active, amended, void, filtered pagination)
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P1-23 — event void cache invalidation:
 - `backend/src/modules/events/events.service.js` (`voidEvent` returns linked lot ids from the transaction, invalidates trace cache after commit)
