@@ -42,6 +42,7 @@ describeDb('P0-02 deterministic hash chain ordering', () => {
   let db;
   let eventsService;
   let verifyHashChain;
+  let hashChain;
 
   const seedOrganization = async (label, lotCount = 2) => {
     const orgId = uuidv4();
@@ -136,6 +137,7 @@ describeDb('P0-02 deterministic hash chain ordering', () => {
     db = require('../../db/knex');
     eventsService = require('./events.service');
     ({ verifyHashChain } = require('../../jobs/workers/hash-verifier'));
+    hashChain = require('../../utils/hashChain');
 
     await db.raw('DROP SCHEMA IF EXISTS public CASCADE');
     await db.raw('CREATE SCHEMA public');
@@ -223,6 +225,10 @@ describeDb('P0-02 deterministic hash chain ordering', () => {
     expect(Number(third.chain_seq)).toBe(3);
     expect(third.prev_hash).toBe(second.record_hash);
 
+    // `created_at` is part of the P1-18 hash payload. Restore the sealed value
+    // before verification so this test isolates ordering, not tamper detection.
+    await db('events').where({ id: first.id }).update({ created_at: first.created_at });
+
     await verifyHashChain({ organizationId: org.orgId });
     expect(await failedAudits(org.orgId)).toHaveLength(0);
   });
@@ -275,6 +281,7 @@ describeDb('P0-02 deterministic hash chain ordering', () => {
       record_hash: 'schema-hash',
       prev_hash: 'GENESIS',
       chain_seq: 1,
+      hash_key_id: hashChain.getCurrentHashKeyId(),
     };
 
     await db('events').insert({

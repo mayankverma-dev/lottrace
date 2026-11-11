@@ -4,9 +4,11 @@ const {
   HASH_VERSION,
   GENESIS_HASH,
   PENDING_RECORD_HASH,
+  PENDING_HASH_KEY_ID,
   getChainTip,
   nextChainSeq,
   sealEventHash,
+  appendEventEvidence,
 } = require('../../utils/hashChain');
 const AppError = require('../../utils/AppError');
 const crc32 = require('crc-32');
@@ -87,6 +89,7 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
       prev_hash: prevHash,
       chain_seq: chainSeq,
       hash_version: HASH_VERSION,
+      hash_key_id: PENDING_HASH_KEY_ID,
       status: overrideStatus,
       supersedes_event_id: supersedesEventId,
     });
@@ -234,16 +237,35 @@ const getEventById = async (eventId, organizationId) => {
   return event;
 };
 
-const voidEvent = async (eventId, voidReason, organizationId) => {
+const voidEvent = async (eventId, voidReason, organizationId, userId = null) => {
   const { voided, linkedLotIds } = await db.transaction(async (trx) => {
-    const event = await trx('events').where({ id: eventId, organization_id: organizationId }).first();
+    const event = await trx('events')
+      .where({ id: eventId, organization_id: organizationId })
+      .forUpdate()
+      .first();
     if (!event) throw new AppError('Event not found', 'NOT_FOUND', 404);
     if (event.status !== 'active') throw new AppError('Event is not active', 'EVENT_IMMUTABLE', 409);
 
     const [updated] = await trx('events')
-      .where({ id: eventId })
+      .where({ id: eventId, status: 'active' })
       .update({ status: 'void', void_reason: voidReason })
       .returning('*');
+
+    if (!updated) throw new AppError('Event is not active', 'EVENT_IMMUTABLE', 409);
+
+    // Status and void_reason are mutable, so the sealed event hash cannot cover
+    // them. Bind the transition to the event hash with signed evidence instead.
+    await appendEventEvidence(trx, {
+      organizationId,
+      eventId,
+      kind: 'status_change',
+      payload: {
+        fromStatus: event.status,
+        toStatus: 'void',
+        reason: voidReason,
+        actorId: userId,
+      },
+    }, event.record_hash);
 
     const links = await trx('event_lot_links')
       .where({ event_id: eventId })
@@ -267,7 +289,14 @@ const voidEvent = async (eventId, voidReason, organizationId) => {
 
 const amendEvent = async (eventId, data, organizationId, userId) => {
   return await db.transaction(async (trx) => {
-    const oldEvent = await trx('events').where({ id: eventId, organization_id: organizationId }).first();
+    const oldEvent = await trx('events')
+      .where({ id: eventId, organization_id: organizationId })
+      // `FOR NO KEY UPDATE`, not `FOR UPDATE`: createEvent inserts a row that
+      // references this event through `supersedes_event_id`, and the foreign-key
+      // check takes a KEY SHARE lock. A plain FOR UPDATE would block that check
+      // forever; this mode still serializes concurrent writers.
+      .forNoKeyUpdate()
+      .first();
     if (!oldEvent) throw new AppError('Event not found', 'NOT_FOUND', 404);
     if (oldEvent.status !== 'active') throw new AppError('Event is not active', 'EVENT_IMMUTABLE', 409);
 
@@ -278,6 +307,18 @@ const amendEvent = async (eventId, data, organizationId, userId) => {
     await trx('events')
       .where({ id: eventId })
       .update({ status: 'amended', void_reason: data.voidReason });
+
+    await appendEventEvidence(trx, {
+      organizationId,
+      eventId,
+      kind: 'status_change',
+      payload: {
+        fromStatus: oldEvent.status,
+        toStatus: 'amended',
+        reason: data.voidReason,
+        actorId: userId,
+      },
+    }, oldEvent.record_hash);
 
     return newEvent;
   });
@@ -298,21 +339,43 @@ const generateAttachmentUploadUrl = async (eventId, organizationId, filename, co
 };
 
 const addAttachment = async (eventId, data, organizationId, userId) => {
-  const event = await db('events').where({ id: eventId, organization_id: organizationId }).first();
-  if (!event) throw new AppError('Event not found', 'NOT_FOUND', 404);
+  return db.transaction(async (trx) => {
+    const event = await trx('events')
+      .where({ id: eventId, organization_id: organizationId })
+      .forUpdate()
+      .first();
+    if (!event) throw new AppError('Event not found', 'NOT_FOUND', 404);
 
-  const [attachment] = await db('attachments').insert({
-    organization_id: organizationId,
-    parent_type: 'event',
-    parent_id: eventId,
-    storage_key: data.key,
-    filename: data.filename,
-    content_type: data.contentType,
-    size_bytes: data.sizeBytes,
-    uploaded_by: userId,
-  }).returning('*');
+    const [attachment] = await trx('attachments').insert({
+      organization_id: organizationId,
+      parent_type: 'event',
+      parent_id: eventId,
+      storage_key: data.key,
+      filename: data.filename,
+      content_type: data.contentType,
+      size_bytes: data.sizeBytes,
+      uploaded_by: userId,
+    }).returning('*');
 
-  return attachment;
+    // Attachment metadata is added after the event is sealed. Bind it to the
+    // event hash with signed evidence so a later edit or deletion is detectable.
+    await appendEventEvidence(trx, {
+      organizationId,
+      eventId,
+      kind: 'attachment_added',
+      payload: {
+        attachmentId: attachment.id,
+        storageKey: attachment.storage_key,
+        filename: attachment.filename,
+        contentType: attachment.content_type,
+        sizeBytes: attachment.size_bytes,
+        uploadedBy: attachment.uploaded_by,
+        attachmentCreatedAt: new Date(attachment.created_at).toISOString(),
+      },
+    }, event.record_hash);
+
+    return attachment;
+  });
 };
 
 module.exports = {

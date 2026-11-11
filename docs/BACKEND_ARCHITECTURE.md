@@ -144,7 +144,7 @@ Four event types are fully implemented:
 | `transformation` | N input lots → M output lots (e.g., blending, repackaging) |
 | `shipping` | A lot leaves a location to a customer/distributor |
 
-- **Hash chain**: every event stores `record_hash` (SHA-256 of its payload) and `prev_hash` (pointing to the prior event), forming a tamper-evident ledger
+- **Hash chain**: every event stores `record_hash` (HMAC-SHA256 of its payload, keyed from env/KMS) and `prev_hash` (pointing to the prior event), forming a tamper-evident ledger. Mutable status/void/attachment facts are signed in the append-only `event_evidence` chain.
 - **Compliance gap detection**: on every event save, the system checks if all required KDE fields for the product are present
 - **Idempotency key support**: clients can retry event creation without creating duplicates
 - **Amend flow**: an event cannot be edited — instead, a new superseding event is created and the old is marked `amended`
@@ -327,7 +327,7 @@ The `createEvent` service function is the most complex in the codebase. It:
 2. **Acquires a PostgreSQL advisory lock** (`pg_advisory_xact_lock`) scoped to the organization. This prevents two concurrent event-creation requests from generating hash chain conflicts.
 3. **Fetches `prev_hash`** — looks up the most recent event for the organization. The first-ever event gets `'GENESIS'` as its `prev_hash`.
 4. **Runs compliance gap detection** — joins the lot's product to its `custom_kde_schema` and checks which required fields are absent from `kde_payload`.
-5. **Computes `record_hash`** using `hashChain.js` — a deterministic SHA-256 of the event payload concatenated with `prev_hash`.
+5. **Computes `record_hash`** using `hashChain.js` — a keyed HMAC-SHA256 of the persisted event payload chained with `prev_hash`, after the row and links are inserted (see `sealEventHash`).
 6. **Inserts the event row** and all `event_lot_links` (input/output lot associations) in a single database transaction.
 7. **Invalidates Redis trace cache** for all affected lots.
 8. **Queues compliance gap alert emails** to all `compliance_manager` users in the organization if gaps were detected.
@@ -397,7 +397,7 @@ Workers are BullMQ consumers that run asynchronously, decoupled from the HTTP re
 |---|---|
 | `apiResponse.js` | All HTTP responses go through these helpers — never `res.json()` directly. Enforces the universal `{ success, message, data }` envelope. |
 | `AppError.js` | Custom operational error class with `statusCode`, `code`, `details`, and `isOperational = true`. Thrown by services; caught by `errorHandler.js`. |
-| `hashChain.js` | Deterministic SHA-256 hash computation for the event ledger. Sorts object keys before stringifying to ensure consistent results regardless of key insertion order. |
+| `hashChain.js` | HMAC-SHA256 event and evidence hash computation for the ledger. Sorts object keys before stringifying so results are deterministic, resolves the env/KMS keyring, and seals hashes from persisted rows. |
 | `auditTrail.js` | Helper function `writeAuditLog({...})` called directly by services or by the `auditLogger` middleware. Inserts a row into `audit_log`. |
 | `pagination.js` | Helper that computes `total`, `page`, `limit`, `totalPages`, `hasNextPage`, `hasPrevPage` from a count query result. |
 | `logger.js` | Singleton Pino logger instance, configured for structured JSON output in production and pretty-print in development. |
@@ -546,9 +546,9 @@ and can be tied or inverted under concurrency.
 **7e. Compute record_hash**
 `hashChain.js` produces:
 ```
-SHA-256( prevHash + "|" + stableJSON(eventPayload) )
+HMAC-SHA256( secret, "lottrace:event:v3" + "|" + prevHash + "|" + stableJSON(eventPayload) )
 ```
-The "stable JSON" sorts all object keys alphabetically before stringifying — this ensures the hash is deterministic regardless of key insertion order.
+The "stable JSON" sorts all object keys alphabetically before stringifying — this ensures the hash is deterministic regardless of key insertion order. The secret is never stored in the database; `hash_key_id` names the key.
 
 **7f. Insert event row**
 The event is inserted with all computed fields: `record_hash`, `prev_hash`, `compliance_gaps` (JSONB), and `has_compliance_gaps` (auto-computed by PostgreSQL generated column).

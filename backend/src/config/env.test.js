@@ -15,10 +15,17 @@ const REQUIRED_ENV = {
   REFRESH_JWT_SECRET: 'b'.repeat(64),
   ARGON2_SECRET: 'c'.repeat(32),
   RESEND_API_KEY: 're_test_key',
+  HASH_CHAIN_KEY_ID: 'test-k1',
+  HASH_CHAIN_SECRET: 'd'.repeat(64),
   NODE_ENV: 'test',
 };
 
-const MANAGED_KEYS = [...Object.keys(REQUIRED_ENV), 'EMAIL_DRY_RUN', 'PORT'];
+const MANAGED_KEYS = [
+  ...Object.keys(REQUIRED_ENV),
+  'EMAIL_DRY_RUN',
+  'HASH_CHAIN_OLD_KEYS',
+  'PORT',
+];
 const ORIGINAL = {};
 
 /**
@@ -44,6 +51,7 @@ beforeEach(() => {
     process.env[key] = value;
   });
   delete process.env.EMAIL_DRY_RUN;
+  delete process.env.HASH_CHAIN_OLD_KEYS;
   delete process.env.PORT;
 });
 
@@ -119,5 +127,53 @@ describe('env schema still coerces other types', () => {
     process.env.PORT = '4321';
 
     expect(loadEnv().PORT).toBe(4321);
+  });
+});
+
+describe('hash chain keyring', () => {
+  it('requires HASH_CHAIN_KEY_ID', () => {
+    delete process.env.HASH_CHAIN_KEY_ID;
+
+    expect(loadEnv).toThrow();
+  });
+
+  it('requires HASH_CHAIN_SECRET of at least 32 characters', () => {
+    process.env.HASH_CHAIN_SECRET = 'short';
+
+    expect(loadEnv).toThrow();
+  });
+
+  it('rejects invalid HASH_CHAIN_OLD_KEYS JSON', () => {
+    process.env.HASH_CHAIN_OLD_KEYS = '{not-json';
+
+    expect(loadEnv).toThrow(/HASH_CHAIN_OLD_KEYS must be a JSON object/);
+  });
+
+  it('rejects old keys with short secrets', () => {
+    process.env.HASH_CHAIN_OLD_KEYS = JSON.stringify({ 'test-k0': 'short' });
+
+    expect(loadEnv).toThrow(/must be at least 32 characters/);
+  });
+
+  it('parses the rotation keyring into an object', () => {
+    process.env.HASH_CHAIN_OLD_KEYS = JSON.stringify({
+      'test-k0': 'e'.repeat(64),
+      'test-k-1': 'f'.repeat(64),
+    });
+
+    const env = loadEnv();
+
+    expect(env.HASH_CHAIN_KEY_ID).toBe('test-k1');
+    expect(env.HASH_CHAIN_SECRET).toBe('d'.repeat(64));
+    expect(env.HASH_CHAIN_OLD_KEYS).toEqual({
+      'test-k0': 'e'.repeat(64),
+      'test-k-1': 'f'.repeat(64),
+    });
+  });
+
+  it('defaults an absent rotation map to an empty object', () => {
+    delete process.env.HASH_CHAIN_OLD_KEYS;
+
+    expect(loadEnv().HASH_CHAIN_OLD_KEYS).toEqual({});
   });
 });

@@ -205,33 +205,48 @@ continuous; only event status filters the graph.
 
 ### Hash Chain Design (events table)
 Each event stores:
-- `record_hash`: SHA-256 of the canonical payload of this event, chained with `prev_hash`
+- `record_hash`: HMAC-SHA256 of the canonical payload of this event, chained with `prev_hash`
 - `prev_hash`: `record_hash` of the previous event in this org's chain (or `'GENESIS'` for first)
 - `chain_seq`: monotonic per-org position; the chain is ordered by it, never by `created_at`
-- `hash_version`: canonical payload version (currently `2`)
+- `hash_version`: canonical payload version (currently `3`)
+- `hash_key_id`: key ID used for the HMAC, resolved from the `HASH_CHAIN_KEY_ID` /
+  `HASH_CHAIN_SECRET` keyring (`HASH_CHAIN_OLD_KEYS` keeps rotated keys verifiable)
 
 **Canonical serialization** — built from the persisted row and its `event_lot_links` rows, so the
 write path and the verifier hash identical values (`backend/src/utils/hashChain.js`):
 ```js
 const payload = {
+  eventId: event.id,
+  organizationId: event.organization_id,
+  chainSeq: Number(event.chain_seq),
   eventType: event.event_type,
   locationId: event.location_id ?? null,
-  eventDatetime: new Date(event.event_datetime).toISOString(),
+  counterpartyInfo: asJson(event.counterparty_info),
+  eventDatetime: toIso(event.event_datetime),
+  recordedBy: event.recorded_by,
+  recordedAt: toIso(event.recorded_at),
   source: event.source,
-  kdePayload: event.kde_payload ?? {},
-  counterpartyInfo: event.counterparty_info ?? null,
+  kdePayload: asJson(event.kde_payload) ?? {},
+  complianceGaps: asJson(event.compliance_gaps),
+  notes: event.notes ?? null,
+  idempotencyKey: event.idempotency_key ?? null,
+  supersedesEventId: event.supersedes_event_id ?? null,
+  createdAt: toIso(event.created_at),
   inputs: sortedByLotId(inputLinks),   // quantity stays PostgreSQL numeric(15,4) text
   outputs: sortedByLotId(outputLinks),
 };
-const hash = sha256(`${prevHash}|${stableStringify(payload)}`);
+const hash = hmacSha256(secret, `lottrace:event:v3|${prevHash}|${stableStringify(payload)}`);
 ```
 
-Writers insert with `record_hash = 'PENDING'`, insert the links, then seal the hash in the same
-transaction. `notes`, `recorded_by`, `recorded_at`, `id`, `organization_id`, and `chain_seq` are not
-covered yet (P1-18).
+Writers insert with `record_hash = 'PENDING'` and `hash_key_id = 'PENDING'`, insert the links,
+then seal the hash in the same transaction. Mutable lifecycle fields (`status`, `void_reason`) and
+later attachment metadata are covered by the append-only `event_evidence` chain rooted at the
+event's `record_hash`, not by re-sealing the event.
 
-Hash verification job re-walks the chain nightly, ordered by `chain_seq`, and records an
-`audit_log` row with `action = 'hash.verify_failed'` on the first mismatch.
+Hash verification re-walks the chain nightly, ordered by `chain_seq`. On the first mismatch it
+writes `audit_log` with `action = 'hash.verify_failed'`, creates an org-wide
+`hash_verification_failed` notification, emits a Sentry event when `SENTRY_DSN` is configured, and
+records a `hash.verify_completed` metric row plus a structured pino metric log.
 
 ---
 
@@ -242,7 +257,7 @@ Hash verification job re-walks the chain nightly, ordered by `chain_seq`, and re
 |-------|------------|---------|
 | `import` | `jobs/import-processor.js` | CSV upload → POST /imports |
 | `export` | `jobs/export-generator.js` | GET /reports/export (large) |
-| `hash-verify` | `jobs/hash-verifier.js` | Nightly cron |
+| `hash-verify` | `jobs/workers/hash-verifier.js` | Nightly cron |
 | `email` | `jobs/email-sender.js` | Compliance gaps, invites, export ready |
 | `webhook` | `jobs/webhook-dispatcher.js` | Any event.created, gap.detected |
 

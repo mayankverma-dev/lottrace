@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-11
-**Last Session:** 2026-11-11 — P1-24 (event status filter) fixed: `GET /events?status=...` now filters on `events.status`, avoiding the ambiguous `status` reference created by the later `users` join. 4 new DB tests cover active/amended/void and filtered pagination; live API verification returned 200 with the correct rows for all three statuses. Previous: P0-11 trace excludes amended events (4 DB tests), P1-23 event void cache invalidation (2 DB tests + live API), P1-22 lot audit trail (4 DB tests + live API).
+**Last Session:** 2026-11-11 — P1-18 (hash keying and coverage) fixed: event hashes are HMAC-SHA256 (version 3) over the full immutable persisted field set, keyed from `HASH_CHAIN_KEY_ID` / `HASH_CHAIN_SECRET`, and mutable status/void/attachment facts are signed in the append-only `event_evidence` chain. Verifier failures now write audit + org-wide notification + Sentry event and always record a completion metric. 91 tests pass. Previous: P1-24 event status filter (4 DB tests), P0-11 trace excludes amended events (4 DB tests), P1-23 event void cache invalidation (2 DB tests + live API), P1-22 lot audit trail (4 DB tests + live API).
 
 ---
 
@@ -56,6 +56,19 @@ _Scale & Integrate (3.1 - 3.18)_
 
 ## 🔗 Key Files Modified Last Session
 
+P1-18 — keyed HMAC hash chain with full coverage:
+- `backend/src/utils/hashChain.js` (version 3 HMAC-SHA256, env/KMS keyring, full immutable payload, `event_evidence` append/seal helpers)
+- `backend/src/config/env.js` (validates `HASH_CHAIN_KEY_ID`, `HASH_CHAIN_SECRET`, `HASH_CHAIN_OLD_KEYS`)
+- `backend/src/db/migrations/20240101000007_create_events.js` (`hash_version` default 3, `hash_key_id`)
+- `backend/src/db/migrations/20240101000019_create_event_evidence.js` (append-only signed evidence chain)
+- `backend/src/modules/events/events.service.js` (row locks, void/amend/attachment evidence)
+- `backend/src/modules/events/events.controller.js` (passes actor to void evidence)
+- `backend/src/jobs/workers/import-processor.js` (`hash_key_id` on import writes)
+- `backend/src/jobs/workers/hash-verifier.js` (HMAC + evidence verification, notification, Sentry, completion metric)
+- `backend/src/lib/sentry.js` (lazy init, capture never throws), `backend/src/server.js`
+- Tests: `hashChain.canonical-payload.test.js`, `events.hash-canonical.test.js`, `events.hash-evidence.test.js`, `hash-verifier.alert.test.js`, `lib/sentry.test.js`, updated chain/list/status/void/attachment suites
+- Docs: `docs/AUDIT_REPORT.md`, `docs/DATABASE_SCHEMA.md`, `docs/ARCHITECTURE.md`, `docs/JOBS.md`, `backend/AGENTS.md`, `PROGRESS.md`
+
 P1-24 — event status filter:
 - `backend/src/modules/events/events.service.js` (`getEvents` filters on `events.status` so the later `users` join cannot make `status` ambiguous)
 - Tests: `backend/src/modules/events/events.status-filter.test.js` (4 DB tests: active, amended, void, filtered pagination)
@@ -78,7 +91,7 @@ P0-01 — canonical event hash (verification passes for events with lot links):
 - `backend/src/modules/events/events.service.js` (`createEvent` inserts `record_hash = 'PENDING'` + `hash_version`, seals after links)
 - `backend/src/jobs/workers/import-processor.js` (same seal path; payload no longer built from CSV rows)
 - `backend/src/jobs/workers/hash-verifier.js` (`loadEventHashPayload`; `hash.verify_failed` reasons `chain_link_mismatch` / `unsupported_hash_version` / `payload_mismatch`)
-- `backend/src/db/migrations/20240101000007_create_events.js` (`events.hash_version smallint NOT NULL DEFAULT 2`)
+- `backend/src/db/migrations/20240101000007_create_events.js` (`events.hash_version` now `smallint NOT NULL DEFAULT 3`, plus `hash_key_id`, from P1-18)
 - Tests: `backend/src/utils/hashChain.canonical-payload.test.js` (7 unit), `backend/src/modules/events/events.hash-canonical.test.js` (9 against a disposable local Postgres)
 - Docs: `docs/AUDIT_REPORT.md`, `docs/DATABASE_SCHEMA.md`, `docs/ARCHITECTURE.md`, `docs/JOBS.md`, `backend/AGENTS.md`, `PROGRESS.md`
 

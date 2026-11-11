@@ -11,6 +11,7 @@ const {
   HASH_VERSION,
   GENESIS_HASH,
   PENDING_RECORD_HASH,
+  PENDING_HASH_KEY_ID,
   getChainTip,
   nextChainSeq,
   sealEventHash,
@@ -196,6 +197,7 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
     prev_hash: prevHash,
     chain_seq: chainSeq,
     hash_version: HASH_VERSION,
+    hash_key_id: PENDING_HASH_KEY_ID,
     status: 'active',
     idempotency_key: idempotencyKey,
   });

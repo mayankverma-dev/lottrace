@@ -40,6 +40,7 @@ describeDb('P2-12 stable event list pagination', () => {
 
   let db;
   let eventsService;
+  let hashChain;
   let organizationId;
   let userId;
 
@@ -84,6 +85,7 @@ describeDb('P2-12 stable event list pagination', () => {
         record_hash: `p2-12-hash-${index + 1}`,
         prev_hash: index === 0 ? 'GENESIS' : `p2-12-hash-${index}`,
         chain_seq: index + 1,
+        hash_key_id: hashChain.getCurrentHashKeyId(),
         created_at: createdAt,
       });
     }
@@ -97,6 +99,7 @@ describeDb('P2-12 stable event list pagination', () => {
   beforeAll(async () => {
     db = require('../../db/knex');
     eventsService = require('./events.service');
+    hashChain = require('../../utils/hashChain');
 
     await db.raw('DROP SCHEMA IF EXISTS public CASCADE');
     await db.raw('CREATE SCHEMA public');

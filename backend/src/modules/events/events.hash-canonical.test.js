@@ -145,7 +145,8 @@ describeDb('P0-01 canonical event hash verification', () => {
 
     const event = await eventsService.createEvent(buildLinkedEvent(org), org.orgId, org.userId);
 
-    expect(event.hash_version).toBe(2);
+    expect(event.hash_version).toBe(3);
+    expect(event.hash_key_id).toBe(hashChain.getCurrentHashKeyId());
     expect(event.record_hash).toMatch(/^[a-f0-9]{64}$/);
     expect(event.prev_hash).toBe('GENESIS');
 
@@ -240,7 +241,7 @@ describeDb('P0-01 canonical event hash verification', () => {
 
     const chain = await readChain(org.orgId);
     expect(chain).toHaveLength(10);
-    expect(chain.map((event) => event.hash_version)).toEqual(Array(10).fill(2));
+    expect(chain.map((event) => event.hash_version)).toEqual(Array(10).fill(3));
 
     await verifyHashChain({ organizationId: org.orgId });
 
@@ -266,6 +267,7 @@ describeDb('P0-01 canonical event hash verification', () => {
         prev_hash: hashChain.GENESIS_HASH,
         chain_seq: 1,
         hash_version: hashChain.HASH_VERSION,
+        hash_key_id: hashChain.PENDING_HASH_KEY_ID,
         status: 'active',
       });
 
@@ -331,7 +333,22 @@ describeDb('P0-01 canonical event hash verification', () => {
     expect(failures).toHaveLength(1);
     expect(failures[0].metadata.reason).toBe('unsupported_hash_version');
     expect(failures[0].metadata.found_version).toBe(1);
-    expect(failures[0].metadata.expected_version).toBe(2);
+    expect(failures[0].metadata.expected_version).toBe(3);
+  });
+
+  it('refuses to verify an event whose HMAC key is not in the keyring', async () => {
+    const org = await seedOrganization('hash-key');
+    const event = await eventsService.createEvent(buildLinkedEvent(org), org.orgId, org.userId);
+
+    await db('events').where({ id: event.id }).update({ hash_key_id: 'retired-key' });
+
+    await verifyHashChain({ organizationId: org.orgId });
+
+    const failures = await failedAudits(org.orgId);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].entity_id).toBe(event.id);
+    expect(failures[0].metadata.reason).toBe('unsupported_hash_key');
+    expect(failures[0].metadata.key_id).toBe('retired-key');
   });
 
   it('stores hash_version as a required smallint defaulting to the current version', async () => {
@@ -345,6 +362,6 @@ describeDb('P0-01 canonical event hash verification', () => {
 
     expect(column.data_type).toBe('smallint');
     expect(column.is_nullable).toBe('NO');
-    expect(column.column_default).toContain('2');
+    expect(column.column_default).toContain('3');
   });
 });

@@ -5,6 +5,9 @@ const logger = require('./utils/logger');
 // Validate environment variables before anything else
 // This will throw immediately if required vars are missing
 const env = require('./config/env');
+const { initSentry } = require('./lib/sentry');
+
+initSentry();
 
 const app = require('./app');
 const { startWorkers } = require('./jobs');

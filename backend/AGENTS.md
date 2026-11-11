@@ -161,9 +161,11 @@ const {
   HASH_VERSION,
   GENESIS_HASH,
   PENDING_RECORD_HASH,
+  PENDING_HASH_KEY_ID,
   getChainTip,
   nextChainSeq,
   sealEventHash,
+  appendEventEvidence,
 } = require('../../utils/hashChain');
 
 // Inside the event transaction, after pg_advisory_xact_lock(org_lock_id):
@@ -171,19 +173,36 @@ const tip = await getChainTip(trx, organizationId);
 const chainSeq = nextChainSeq(tip);
 const prevHash = tip ? tip.record_hash : GENESIS_HASH;
 
-// Insert the event with record_hash: PENDING_RECORD_HASH and hash_version:
-// HASH_VERSION, insert its event_lot_links, then seal the hash from the
-// persisted row and links. Same transaction.
+// Insert the event with record_hash: PENDING_RECORD_HASH,
+// hash_key_id: PENDING_HASH_KEY_ID, and hash_version: HASH_VERSION, insert its
+// event_lot_links, then seal the HMAC from the persisted row and links.
+// Same transaction.
 const event = await sealEventHash(trx, eventId, prevHash);
+
+// Mutable facts added after sealing (void/amend status, attachments) are signed
+// into the append-only event_evidence chain rooted at the event hash. Hold a row
+// lock on the event first so two writers cannot compute the same `seq`.
+await appendEventEvidence(trx, {
+  organizationId,
+  eventId,
+  kind: 'status_change',
+  payload: { fromStatus, toStatus, reason, actorId },
+}, event.record_hash);
 ```
 
-> **P0-01/P0-02:** the hash covers **persisted values only** (`numeric(15,4)` text
-> such as `"1.0000"`, ISO-8601 UTC datetime, links sorted by `lot_id`, explicit
-> `null`/`{}` defaults), never the request body or CSV row. Both writers call
+> **P0-01/P0-02/P1-18:** the hash is **HMAC-SHA256** (version 3) over the full
+> immutable persisted field set (`numeric(15,4)` text such as `"1.0000"`,
+> ISO-8601 UTC datetimes, links sorted by `lot_id`, explicit `null`/`{}`
+> defaults), never the request body or CSV row. The secret comes from
+> `HASH_CHAIN_SECRET` (env/KMS, never the database); `hash_key_id` names the key,
+> and `HASH_CHAIN_OLD_KEYS` keeps rotated keys verifiable. Both writers call
 > `sealEventHash()`; the verifier calls `loadEventHashPayload()` — never
-> re-implement the payload in a caller. Every insert sets `chain_seq` and
-> `hash_version`, and reads the tip with `getChainTip()` / `nextChainSeq()`
-> inside the transaction that holds `pg_advisory_xact_lock(org_lock_id)`.
+> re-implement the payload in a caller. Every insert sets `chain_seq`,
+> `hash_version`, and `hash_key_id`, and reads the tip with `getChainTip()` /
+> `nextChainSeq()` inside the transaction that holds
+> `pg_advisory_xact_lock(org_lock_id)`. Use `forNoKeyUpdate()` when locking an
+> event that another transaction will reference through
+> `supersedes_event_id`; a plain `FOR UPDATE` blocks the foreign-key check.
 > There is no legacy hash version support: to change the format, bump
 > `HASH_VERSION`, update the serializer and verifier together, and reset the
 > development database.

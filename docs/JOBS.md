@@ -208,17 +208,13 @@ const worker = new Worker('export', async (job) => {
 
 ## Queue 3: `hash-verify` — Event Hash Chain Verification
 
-**File:** `src/jobs/hash-verifier.js`
+**File:** `src/jobs/workers/hash-verifier.js`
 
 **Triggered by:** Nightly cron (BullMQ repeatable job, 2:00 AM UTC)
 
 **Logic:**
 ```javascript
-// Setup nightly cron on app start
-await Queues.HASH_VERIFY.add('nightly-verify', {}, {
-  repeat: { cron: '0 2 * * *' },
-  jobId: 'nightly-hash-verify', // prevents duplicate cron jobs
-});
+const keyRing = getKeyRing(); // HASH_CHAIN_OLD_KEYS + current HASH_CHAIN_KEY_ID/SECRET
 
 const worker = new Worker('hash-verify-queue', async (job) => {
   // Walk chain per org
@@ -235,11 +231,15 @@ const worker = new Worker('hash-verify-queue', async (job) => {
     for (const event of events) {
       if (event.prev_hash !== prevHash) break;              // chain_link_mismatch
       if (event.hash_version !== HASH_VERSION) break;       // unsupported_hash_version
+      if (!hasHashKey(event.hash_key_id, keyRing)) break;   // unsupported_hash_key
 
       const payload = await loadEventHashPayload(db, event.id);
-      const expectedHash = computeEventHash(payload, prevHash);
+      const expectedHash = computeEventHash(payload, prevHash, event.hash_key_id, keyRing);
 
       if (expectedHash !== event.record_hash) break;        // payload_mismatch
+
+      // Signed mutable facts: status transitions and attachments.
+      if (await verifyEventEvidence(event, keyRing)) break; // evidence_* mismatch
       prevHash = expectedHash;
     }
   }
@@ -248,7 +248,12 @@ const worker = new Worker('hash-verify-queue', async (job) => {
 
 On the first failing event the worker writes `audit_log` with
 `action = 'hash.verify_failed'` and `metadata.reason` set to
-`chain_link_mismatch`, `unsupported_hash_version`, or `payload_mismatch`.
+`chain_link_mismatch`, `unsupported_hash_version`, `unsupported_hash_key`,
+`payload_mismatch`, `evidence_chain_mismatch`, `evidence_payload_mismatch`, or
+`evidence_state_mismatch`. It also creates an org-wide `hash_verification_failed`
+notification, calls Sentry when `SENTRY_DSN` is configured, and always writes a
+`hash.verify_completed` audit row plus a structured pino metric
+(`metric: 'hash_verification_completed'`).
 
 ---
 

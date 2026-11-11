@@ -44,6 +44,13 @@ const envSchema = z.object({
   REFRESH_JWT_SECRET: z.string().min(64, 'REFRESH_JWT_SECRET must be at least 64 characters'),
   ARGON2_SECRET: z.string().min(16, 'ARGON2_SECRET must be at least 16 characters'),
 
+  // Hash chain HMAC keyring. The secret lives only in the environment/KMS,
+  // never in the database. `HASH_CHAIN_OLD_KEYS` keeps previous keys for
+  // verification after rotation; writers always use the current pair.
+  HASH_CHAIN_KEY_ID: z.string().min(1, 'HASH_CHAIN_KEY_ID is required'),
+  HASH_CHAIN_SECRET: z.string().min(32, 'HASH_CHAIN_SECRET must be at least 32 characters'),
+  HASH_CHAIN_OLD_KEYS: z.string().optional(),
+
   // Object Storage
   S3_ENDPOINT: z.string().optional(),
   S3_REGION: z.string().default('us-east-1'),
@@ -72,9 +79,40 @@ const envSchema = z.object({
 });
 
 /**
- * Validated environment variables.
- * Access all env vars through this module — never use process.env.X directly.
+ * Parses the optional rotation key map. Values are HMAC secrets for previous
+ * key IDs; verification resolves a row's key ID from this map.
+ *
+ * @param {string|undefined} raw
+ * @returns {Object<string, string>}
  */
-const env = envSchema.parse(process.env);
+const parseOldKeys = (raw) => {
+  if (raw === undefined || raw.trim() === '') return {};
 
-module.exports = env;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (_err) {
+    throw new Error('HASH_CHAIN_OLD_KEYS must be a JSON object mapping key IDs to secrets');
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('HASH_CHAIN_OLD_KEYS must be a JSON object mapping key IDs to secrets');
+  }
+
+  Object.entries(parsed).forEach(([keyId, secret]) => {
+    if (typeof secret !== 'string' || secret.length < 32) {
+      throw new Error(`HASH_CHAIN_OLD_KEYS["${keyId}"] must be at least 32 characters`);
+    }
+  });
+
+  return parsed;
+};
+
+// Validated environment variables.
+// Access all env vars through this module — never use process.env.X directly.
+const parsedEnv = envSchema.parse(process.env);
+
+module.exports = {
+  ...parsedEnv,
+  HASH_CHAIN_OLD_KEYS: parseOldKeys(parsedEnv.HASH_CHAIN_OLD_KEYS),
+};

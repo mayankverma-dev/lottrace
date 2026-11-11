@@ -32,7 +32,7 @@
 | `jsonwebtoken` | ^9.x | JWT access tokens (15min expiry) |
 | `argon2` | ^0.31.x | Password hashing — preferred over bcrypt for security |
 | `uuid` | ^9.x | Generate UUIDs for all entity IDs |
-| `crypto` | built-in | SHA-256 for hash chain |
+| `crypto` | built-in | HMAC-SHA256 for the keyed event hash chain |
 
 ### Validation
 | Package | Version | Why |

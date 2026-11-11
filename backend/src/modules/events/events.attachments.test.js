@@ -9,18 +9,35 @@ jest.mock('../../db/knex', () => {
     where: jest.fn(function where() {
       return builder;
     }),
+    forUpdate: jest.fn(function forUpdate() {
+      return builder;
+    }),
     first: jest.fn(async () => state.event),
     insert: jest.fn(function insert(payload) {
       state.lastInsert = payload;
       return builder;
     }),
-    returning: jest.fn(async () => (state.lastInsert ? [state.lastInsert] : [])),
+    returning: jest.fn(async () => (state.lastInsert
+      ? [{ created_at: new Date('2026-01-01T00:00:00.000Z'), ...state.lastInsert }]
+      : [])),
   };
   const db = jest.fn(() => builder);
+  db.transaction = jest.fn(async (callback) => callback(db));
   db.__state = state;
   db.__builder = builder;
   return db;
 });
+
+jest.mock('../../utils/hashChain', () => ({
+  HASH_VERSION: 3,
+  GENESIS_HASH: 'GENESIS',
+  PENDING_RECORD_HASH: 'PENDING',
+  PENDING_HASH_KEY_ID: 'PENDING',
+  getChainTip: jest.fn(),
+  nextChainSeq: jest.fn(),
+  sealEventHash: jest.fn(),
+  appendEventEvidence: jest.fn().mockResolvedValue({}),
+}));
 
 jest.mock('../../lib/storage', () => ({
   generatePresignedUploadUrl: jest.fn(),

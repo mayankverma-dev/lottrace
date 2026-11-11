@@ -48,6 +48,7 @@ describeDb('P1-24 event status filters', () => {
 
   let db;
   let eventsService;
+  let hashChain;
   let org;
 
   const seedOrganization = async (label) => {
@@ -84,6 +85,7 @@ describeDb('P1-24 event status filters', () => {
       record_hash: `p1-24-hash-${organizationId}-${chainSeq}`,
       prev_hash: chainSeq === 1 ? 'GENESIS' : `p1-24-hash-${organizationId}-${chainSeq - 1}`,
       chain_seq: chainSeq,
+      hash_key_id: hashChain.getCurrentHashKeyId(),
       status,
     }).returning('*');
 
@@ -110,6 +112,7 @@ describeDb('P1-24 event status filters', () => {
   beforeAll(async () => {
     db = require('../../db/knex');
     eventsService = require('./events.service');
+    hashChain = require('../../utils/hashChain');
 
     await db.raw('DROP SCHEMA IF EXISTS public CASCADE');
     await db.raw('CREATE SCHEMA public');

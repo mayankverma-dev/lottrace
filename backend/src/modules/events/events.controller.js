@@ -22,7 +22,7 @@ const getEvent = async (req, res) => {
 };
 
 const voidEvent = async (req, res) => {
-  const event = await eventsService.voidEvent(req.params.eventId, req.validatedBody.voidReason, req.organizationId);
+  const event = await eventsService.voidEvent(req.params.eventId, req.validatedBody.voidReason, req.organizationId, req.user.id);
   return apiResponse.success(res, event, 'Event voided successfully');
 };
 

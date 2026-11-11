@@ -202,10 +202,11 @@ CREATE TABLE events (
   has_compliance_gaps boolean NOT NULL GENERATED ALWAYS AS (compliance_gaps IS NOT NULL AND jsonb_array_length(compliance_gaps) > 0) STORED,
   notes               text,
   idempotency_key     text UNIQUE,         -- client-provided idempotency key
-  record_hash         text NOT NULL,       -- SHA-256 of stable event serialization
+  record_hash         text NOT NULL,       -- HMAC-SHA256 of the canonical event payload + prev_hash
   prev_hash           text NOT NULL,       -- hash of previous event in org's chain (or 'GENESIS')
   chain_seq           bigint NOT NULL,     -- monotonic per-org chain position (see note below)
-  hash_version        smallint NOT NULL DEFAULT 2, -- payload version; only the current version is verifiable
+  hash_version        smallint NOT NULL DEFAULT 3, -- payload version; only the current version is verifiable
+  hash_key_id         text NOT NULL,       -- key ID used for this HMAC, resolved from the env/KMS keyring
   status              text NOT NULL DEFAULT 'active',     -- active | amended | void
   supersedes_event_id uuid REFERENCES events(id),        -- if this is an amendment
   void_reason         text,
@@ -253,18 +254,51 @@ Under the greenfield policy only the current version must work:
 
 | Value | Meaning | Verifiable? |
 |-------|---------|-------------|
-| `2` | Canonical: `backend/src/utils/hashChain.js` builds the payload from persisted values (quantities as `numeric(15,4)` text such as `"1.0000"`, links sorted by `lot_id`, datetime normalized to ISO-8601 UTC). | Yes — payload + chain linkage. |
-| `1` | Never implemented in this codebase. No verifier exists. | No. |
+| `3` | HMAC-SHA256 over `lottrace:event:v3`, `prev_hash`, and the full immutable field set from persisted values (quantities as `numeric(15,4)` text such as `"1.0000"`, links sorted by `lot_id`, datetimes normalized to ISO-8601 UTC). The secret comes from `HASH_CHAIN_SECRET` (env/KMS, never the database); `hash_key_id` names the key. | Yes — payload, key, and chain linkage. |
+| `1`, `2` | Removed with the greenfield P1-18 change. No verifier exists. | No. |
 
 **Hash sealing** — the hash covers persisted values, so writers insert the event with
-`record_hash = 'PENDING'`, insert `event_lot_links`, then call `sealEventHash(trx, eventId, prevHash)`
-inside the same transaction, which computes the hash from the persisted row and links and replaces
-the sentinel. A conditional update (`WHERE record_hash = 'PENDING'`) makes the hash seal-once. The
-row is never rewritten after commit; there is no re-seal migration.
+`record_hash = 'PENDING'` and `hash_key_id = 'PENDING'`, insert `event_lot_links`, then call
+`sealEventHash(trx, eventId, prevHash)` inside the same transaction, which computes the HMAC from
+the persisted row and links and replaces both sentinels. A conditional update
+(`WHERE record_hash = 'PENDING'`) makes the hash seal-once. The row is never rewritten after commit;
+there is no re-seal migration.
 
 Do not write a re-seal migration or archive old hashes. When the payload changes, bump
 `hash_version`, update the canonical serializer and verifier together, and reset the development
 database.
+
+### `event_evidence`
+Append-only signed evidence for mutable facts that happen after an event is sealed: status
+transitions (`void`, `amend`) and attachment additions. The chain is rooted at the parent event's
+`record_hash`, so an edit to `events.status`, `events.void_reason`, or attachment metadata is
+detectable without re-sealing the event. Written by
+`appendEventEvidence()` in `backend/src/utils/hashChain.js`.
+
+```sql
+CREATE TABLE event_evidence (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  event_id        uuid NOT NULL REFERENCES events(id),
+  seq             integer NOT NULL,      -- 1-based per event
+  kind            text NOT NULL,         -- status_change | attachment_added
+  payload         jsonb NOT NULL,        -- the mutable fact being signed
+  record_hash     text NOT NULL,         -- HMAC-SHA256 over the evidence payload + prev_hash
+  prev_hash       text NOT NULL,         -- event.record_hash for seq 1, else previous evidence hash
+  hash_version    smallint NOT NULL DEFAULT 3,
+  hash_key_id     text NOT NULL,
+  created_at      timestamptz NOT NULL DEFAULT NOW(),
+
+  CONSTRAINT idx_event_evidence_event_seq UNIQUE (event_id, seq),
+  CONSTRAINT event_evidence_seq_positive CHECK (seq >= 1)
+);
+
+CREATE INDEX idx_event_evidence_org_event ON event_evidence(organization_id, event_id);
+```
+
+The verifier re-walks each event's evidence chain and cross-checks the signed facts against the
+materialized `events.status` / `events.void_reason` and `attachments` rows. Mismatches fail with
+`evidence_chain_mismatch`, `evidence_payload_mismatch`, or `evidence_state_mismatch`.
 
 ---
 
