@@ -33,6 +33,9 @@ exports.up = async (knex) => {
     table.index(['organization_id', 'status'], 'idx_events_org_status');
     table.index('location_id', 'idx_events_location');
     table.index('recorded_by', 'idx_events_recorded_by');
+
+    // Composite key for event_lot_links' tenant-safe FK (P0-03).
+    table.unique(['id', 'organization_id'], 'uq_events_id_org');
   });
 
   // Generated column for compliance gaps

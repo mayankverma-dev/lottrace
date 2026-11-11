@@ -202,6 +202,10 @@ const lotLinkSchema = z.object({
 });
 ```
 
+Event creation validates lot ownership inside its database transaction. A lot
+that is unknown or belongs to another organization returns `404 NOT_FOUND`
+(`Lot not found`), and the event plus all links are rolled back.
+
 ### Create Event — Base (shared fields)
 ```javascript
 const eventBaseSchema = z.object({

@@ -4,12 +4,10 @@ const TENANT_TABLES = [
   'products',
   'lots',
   'events',
+  'event_lot_links',
   'attachments',
   'audit_log',
 ];
-
-// event_lot_links has no organization_id column — RLS not applicable directly
-// (access controlled through events table which has RLS)
 
 /**
  * @param { import("knex").Knex } knex

@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-11
-**Last Session:** 2026-11-11 — P1-25 trace edge preservation, P2-13 database evidence immutability, and P2-14 verification documentation fixed. Full local DB-backed Jest run: 20 suites passed, 157 tests passed, 4 skipped. P1-18 hashes use HMAC-SHA256 (version 3) over the full immutable persisted field set, keyed from `HASH_CHAIN_KEY_ID` / `HASH_CHAIN_SECRET`; mutable status/void/attachment facts use signed append-only evidence protected by a database trigger. Previous: P1-24 event status filter, P0-11 trace excludes amended events, P1-23 event void cache invalidation, P1-22 lot audit trail.
+**Last Session:** 2026-11-11 — P0-03 tenant-safe event lot links fixed (commit pending). Manual and import event paths validate lot ownership inside the transaction, and composite event/lot foreign keys carry organization scope. Disposable local DB migration reset succeeded; P0-03 plus canonical hash regression suites passed 13/13.
 
 ---
 

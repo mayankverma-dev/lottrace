@@ -273,6 +273,7 @@ describeDb('P0-01 canonical event hash verification', () => {
 
       await trx('event_lot_links').insert({
         id: uuidv4(),
+        organization_id: org.orgId,
         event_id: eventId,
         lot_id: org.lotIds[2],
         direction: 'input',

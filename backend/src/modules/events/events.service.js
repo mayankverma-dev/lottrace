@@ -11,6 +11,7 @@ const {
   appendEventEvidence,
 } = require('../../utils/hashChain');
 const AppError = require('../../utils/AppError');
+const { assertLotsBelongToOrganization } = require('../../utils/tenantLots');
 const crc32 = require('crc-32');
 const { invalidateTraceCache } = require('../trace/trace.service');
 
@@ -58,6 +59,11 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
   const lockId = getAdvisoryLockId(organizationId);
   
   return await db.transaction(async (trx) => {
+    // Tenant boundary: every referenced lot must belong to this organization.
+    // Runs before the event row exists, so a foreign lot leaves no trace.
+    const lotIds = [...(data.inputs || []), ...(data.outputs || [])].map(l => l.lotId);
+    await assertLotsBelongToOrganization(trx, lotIds, organizationId);
+
     // Acquire org-level lock to prevent concurrent hash chain generation
     await trx.raw('SELECT pg_advisory_xact_lock(?)', [lockId]);
 
@@ -99,6 +105,7 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
       data.inputs.forEach(input => {
         links.push({
           id: uuidv4(),
+          organization_id: organizationId,
           event_id: eventId,
           lot_id: input.lotId,
           direction: 'input',
@@ -112,6 +119,7 @@ const createEvent = async (data, organizationId, userId, overrideStatus = 'activ
       data.outputs.forEach(output => {
         links.push({
           id: uuidv4(),
+          organization_id: organizationId,
           event_id: eventId,
           lot_id: output.lotId,
           direction: 'output',
@@ -229,7 +237,19 @@ const getEventById = async (eventId, organizationId) => {
   const links = await db('event_lot_links')
     .join('lots', 'lots.id', 'event_lot_links.lot_id')
     .where({ event_id: eventId })
-    .select('event_lot_links.*', 'lots.traceability_lot_code', 'lots.product_id');
+    // Explicit columns: organization_id is a tenant guard on the link table,
+    // not part of the event detail response shape.
+    .select(
+      'event_lot_links.id',
+      'event_lot_links.event_id',
+      'event_lot_links.lot_id',
+      'event_lot_links.direction',
+      'event_lot_links.quantity',
+      'event_lot_links.uom',
+      'event_lot_links.created_at',
+      'lots.traceability_lot_code',
+      'lots.product_id',
+    );
 
   event.inputs = links.filter(l => l.direction === 'input');
   event.outputs = links.filter(l => l.direction === 'output');

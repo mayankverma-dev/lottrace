@@ -20,6 +20,9 @@ exports.up = async (knex) => {
     table.index('organization_id', 'idx_lots_org');
     table.index(['organization_id', 'status'], 'idx_lots_org_status');
     table.index('product_id', 'idx_lots_product');
+
+    // Composite key for event_lot_links' tenant-safe FK (P0-03).
+    table.unique(['id', 'organization_id'], 'uq_lots_id_org');
   });
 
   // TLC unique per org+product (excluding voided lots)

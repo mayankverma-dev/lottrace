@@ -315,13 +315,25 @@ Many-to-many between events and lots. Enables trace traversal.
 ```sql
 CREATE TABLE event_lot_links (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  event_id    uuid NOT NULL REFERENCES events(id),
-  lot_id      uuid NOT NULL REFERENCES lots(id),
+  organization_id uuid NOT NULL REFERENCES organizations(id),
+  event_id    uuid NOT NULL,
+  lot_id      uuid NOT NULL,
   direction   text NOT NULL,       -- input | output
   quantity    numeric(15, 4),
   uom         text,
   created_at  timestamptz NOT NULL DEFAULT NOW()
 );
+
+-- Tenant-safe relationship constraints. Parent IDs are unique with their
+-- organization so a link cannot cross organization boundaries.
+ALTER TABLE event_lot_links
+  ADD FOREIGN KEY (event_id, organization_id)
+  REFERENCES events(id, organization_id),
+  ADD FOREIGN KEY (lot_id, organization_id)
+  REFERENCES lots(id, organization_id);
+
+CREATE UNIQUE INDEX uq_lots_id_org ON lots(id, organization_id);
+CREATE UNIQUE INDEX uq_events_id_org ON events(id, organization_id);
 
 -- Critical indexes for the recursive trace CTEs
 CREATE INDEX idx_ell_event ON event_lot_links(event_id);

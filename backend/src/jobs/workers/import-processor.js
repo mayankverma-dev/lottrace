@@ -16,6 +16,7 @@ const {
   nextChainSeq,
   sealEventHash,
 } = require('../../utils/hashChain');
+const { assertLotsBelongToOrganization } = require('../../utils/tenantLots');
 const { invalidateTraceCache } = require('../../modules/trace/trace.service');
 const logger = require('../../utils/logger');
 const crc32 = require('crc-32');
@@ -170,6 +171,7 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
 
     eventLotLinks.push({
       id: uuidv4(),
+      organization_id: organizationId,
       event_id: eventId,
       lot_id: lot.id,
       direction,
@@ -179,6 +181,14 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
 
     affectedLotIds.add(lot.id);
   }
+
+  // Same tenant guard as manual creation. Import resolves or creates lots in
+  // this organization, so this is defense in depth before the link insert.
+  await assertLotsBelongToOrganization(
+    trx,
+    eventLotLinks.map(link => link.lot_id),
+    organizationId,
+  );
 
   // 4. Create Event. The hash covers persisted values, so it is sealed after
   // the row and its links exist (P0-01).
