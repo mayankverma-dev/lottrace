@@ -108,6 +108,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-19 | P1 | Trace cache invalidation misses upstream lots | Open |
 | P1-20 | P1 | No tests, CI, Dockerfiles, or frontend SPA rewrite | Open |
 | P1-21 | P1 | Fresh database migration fails on unique-constraint index | Fixed (2026-11-09, 85b091e) |
+| P1-22 | P1 | Lot create/update/void actions are not written to `audit_log` | Fixed (2026-11-11, 1f2150e) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Open |
 | P2-02 | P2 | API response pagination shape is inconsistent | Open |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Open |
@@ -458,6 +459,17 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Real-world impact:** No fresh deployment or disposable test database can be provisioned. Every migration-from-scratch verification is blocked, including the reset required by this report.
 - **Fix direction:** Drop the object PostgreSQL created: `table.dropUnique([], 'idx_users_email_org')`. Keep `dropIndex` for `idx_users_email`, which is a plain index. No compatibility migration or data repair is needed; the corrected migration runs from scratch.
 - **Verification:** Drop and recreate a local disposable database; `knex migrate:latest` completes all 20 migrations. `knex migrate:rollback --all` then `knex migrate:latest` also succeeds.
+
+## P1-22 — Lot create/update/void actions are not written to `audit_log`
+
+- **Severity:** P1 · **Area:** backend / audit · **Status:** Fixed (2026-11-11, 1f2150e)
+- **Evidence:** `backend/src/modules/lots/lots.routes.js:20-40` had no `auditLogger('lot')`; `backend/src/modules/lots/lots.service.js:185-212` updated the lot row without inserting an audit record. Smoke matrix row 4 voided a lot successfully, but `SELECT count(*) FROM audit_log WHERE action = 'lot.void'` returned `0`.
+- **What happens:** Creating, updating, and voiding a lot changed the `lots` table with no audit trail. There was no record of who changed the lot, what the previous state was, why it was voided, or which IP made the request.
+- **Real-world impact:** Lot lifecycle evidence was missing from the audit trail. A recall investigator or FDA auditor could not attribute lot changes or prove why a lot was voided, even though the smoke matrix requires lot void to remain in the audit log.
+- **Fix direction:** Write `lot.create`, `lot.update`, and `lot.void` audit rows inside the same transaction as the mutation, with `organization_id`, actor, IP, `before_state`, `after_state`, and the void reason. If a caller lacks actor/IP context, the service must still require the actor id and leave IP null rather than silently dropping the audit row.
+- **Verification:** Create, update, and void a lot through the API; confirm exactly one `lot.create`, `lot.update`, and `lot.void` row, each with the correct actor, `entity_type = 'lot'`, `entity_id`, IP, and before/after state. Void metadata must contain the reason. Confirm a rejected update writes no audit row.
+- **Fix:** `backend/src/utils/auditTrail.js` accepts an optional Knex transaction. `backend/src/modules/lots/lots.service.js` now runs create/update/void in a transaction and writes the audit row before commit; `lots.controller.js` passes `req.user.id` and `req.ip`. No audit middleware/dual-write path.
+- **Verified:** `backend/src/modules/lots/lots.audit.test.js` (4 DB tests: create, update, void, rejected update). Live API run created lot `167212ce-ff2f-4ab0-8073-c90111102449` and produced `lot.create`, `lot.update`, `lot.void` rows with actor `b0e9ee06-e1a5-42df-b121-4d569fc23406`, IP `127.0.0.1/32`, correct before/after states, and `metadata.reason = 'P1-22 live review'`.
 
 ---
 
