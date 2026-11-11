@@ -109,6 +109,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-20 | P1 | No tests, CI, Dockerfiles, or frontend SPA rewrite | Open |
 | P1-21 | P1 | Fresh database migration fails on unique-constraint index | Fixed (2026-11-09, 85b091e) |
 | P1-22 | P1 | Lot create/update/void actions are not written to `audit_log` | Fixed (2026-11-11, 1f2150e) |
+| P1-23 | P1 | Voiding an event does not invalidate warm trace cache | Fixed (2026-11-11, 192ee02) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Open |
 | P2-02 | P2 | API response pagination shape is inconsistent | Open |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Open |
@@ -470,6 +471,17 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Verification:** Create, update, and void a lot through the API; confirm exactly one `lot.create`, `lot.update`, and `lot.void` row, each with the correct actor, `entity_type = 'lot'`, `entity_id`, IP, and before/after state. Void metadata must contain the reason. Confirm a rejected update writes no audit row.
 - **Fix:** `backend/src/utils/auditTrail.js` accepts an optional Knex transaction. `backend/src/modules/lots/lots.service.js` now runs create/update/void in a transaction and writes the audit row before commit; `lots.controller.js` passes `req.user.id` and `req.ip`. No audit middleware/dual-write path.
 - **Verified:** `backend/src/modules/lots/lots.audit.test.js` (4 DB tests: create, update, void, rejected update). Live API run created lot `167212ce-ff2f-4ab0-8073-c90111102449` and produced `lot.create`, `lot.update`, `lot.void` rows with actor `b0e9ee06-e1a5-42df-b121-4d569fc23406`, IP `127.0.0.1/32`, correct before/after states, and `metadata.reason = 'P1-22 live review'`.
+
+## P1-23 — Voiding an event does not invalidate warm trace cache
+
+- **Severity:** P1 · **Area:** backend / cache · **Status:** Fixed (2026-11-11, 192ee02)
+- **Evidence:** `backend/src/modules/events/events.service.js:237-249` updated the event to `void` without touching Redis; `backend/src/modules/trace/trace.service.js:16-17,309-319` caches each lot/direction for 300 seconds. A warm full trace from lot `a35ea781-8722-4027-8a9d-19e527be3065` included event `ed62621e-9bea-42a6-a20c-f21ddf791059`; after voiding that event, the same trace returned `cached: true` and still included it.
+- **What happens:** Trace queries cache forward, backward, and full graphs per starting lot. Voiding an event changes the graph (trace CTEs exclude `status = 'void'`), but the cached result is untouched. Repeating the trace within the TTL returns the old graph containing the voided event and its downstream lot.
+- **Real-world impact:** A recall investigator re-running a trace after correcting or voiding a bad event sees stale results. A voided receipt or transformation still appears to move product downstream, which can widen or misdirect a recall until the cache expires.
+- **Fix direction:** Invalidate forward, backward, and full cache entries for every lot linked to the voided event. Collect the linked lot ids in the void transaction and invalidate only after commit so a rolled-back void cannot evict a valid cache. Upstream starting lots remain P1-19.
+- **Verification:** Warm a full trace from an input lot, void the linking event, then trace the same lot immediately without waiting for TTL. The trace must not be served from cache, must not contain the voided event's edge, and must not contain its downstream lot. Redis must have no `trace:{orgId}:{lotId}:*` keys for either linked lot. A rejected second void must leave the cache intact.
+- **Fix:** `backend/src/modules/events/events.service.js` `voidEvent` now reads `event_lot_links` inside the transaction, returns unique linked lot ids, and calls `invalidateTraceCache(organizationId, lotId)` for each after the transaction commits.
+- **Verified:** `backend/src/modules/events/events.void-cache.test.js` (2 DB tests with an in-memory Redis: warm trace recomputes without the voided event and clears all keys; rejected void keeps the warm cache). Live API run created input lot `1c4fdf26-a263-4a51-a930-5ea4845be823`, output lot `b084ee7d-34a6-4dd4-b1ba-ecfc67cbd15c`, and event `0af71da9-9922-4ea4-bbce-dc695b4a5db8`. Warm full trace had both lots and 1 edge; after void both `trace:{orgId}:{lotId}:*` key sets were empty, and the immediate re-trace had only the input lot and 0 edges.
 
 ---
 
