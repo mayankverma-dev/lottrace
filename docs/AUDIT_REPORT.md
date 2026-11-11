@@ -111,6 +111,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-22 | P1 | Lot create/update/void actions are not written to `audit_log` | Fixed (2026-11-11, 1f2150e) |
 | P1-23 | P1 | Voiding an event does not invalidate warm trace cache | Fixed (2026-11-11, 192ee02) |
 | P1-24 | P1 | Event status filters return 500 (`status` is ambiguous) | Fixed (2026-11-11, 7f50307) |
+| P1-25 | P1 | Trace drops replacement edge when event versions share lot pairs | Fixed (2026-11-11, 998f338) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Open |
 | P2-02 | P2 | API response pagination shape is inconsistent | Open |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Open |
@@ -123,6 +124,8 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-10 | P2 | Minor API/UX inconsistencies (status codes, empty states) | Open |
 | P2-11 | P2 | Expected 4xx errors are logged at ERROR level | Fixed (2026-11-09, 315e54b) |
 | P2-12 | P2 | Event list pagination is unstable when `created_at` values tie | Fixed (2026-11-10, ca4985e) |
+| P2-13 | P2 | `event_evidence` lacks database-level immutability enforcement | Fixed (2026-11-11, c9473b8) |
+| P2-14 | P2 | Audit report and progress docs overstate test counts and coverage | Fixed (2026-11-11, 642d2e1) |
 
 ---
 
@@ -434,7 +437,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **What happens:** The hash covered only `eventType`, `locationId`, `eventDatetime`, `source`, `kdePayload`, `counterpartyInfo`, and lot links. It excluded `notes`, `status`, `recorded_by`, `supersedes_event_id`, `void_reason`, and attachment metadata — all fields an auditor relies on. It was also **unkeyed**: anyone who could write to the database could recompute a valid chain from `GENESIS` after editing data. Verification failures were only logged; there was no alert or notification.
 - **Real-world impact:** The "tamper-evident" claim was weak: notes and statuses could be changed undetected, and a motivated insider with DB access could forge the entire chain. Failures could go unnoticed for months.
 - **Fix:** Hash version `3` uses HMAC-SHA256 over a domain prefix (`lottrace:event:v3`), `prev_hash`, and the full immutable persisted field set: `id`, `organization_id`, `chain_seq`, `event_type`, `location_id`, `counterparty_info`, `event_datetime`, `recorded_by`, `recorded_at`, `source`, `kde_payload`, `compliance_gaps`, `notes`, `idempotency_key`, `supersedes_event_id`, `created_at`, and sorted input/output links. The secret lives in `HASH_CHAIN_SECRET` (env/KMS, never the DB); `hash_key_id` names it, and `HASH_CHAIN_OLD_KEYS` keeps rotated keys verifiable. Mutable `status` / `void_reason` and attachment metadata are covered by the append-only `event_evidence` chain rooted at `events.record_hash`; void, amend, and attachment writes append signed evidence in the same transaction. The verifier rejects unknown versions and keys, verifies both chains, writes `hash.verify_failed`, creates an org-wide `hash_verification_failed` notification, calls Sentry when `SENTRY_DSN` is set, and always records a `hash.verify_completed` audit row plus a structured pino metric. Only version 3 exists; no v1/v2 verifier, dual-write, or backfill.
-- **Verified:** `RUN_DB_TESTS=1` against local `lottrace_p118_test`: 14 suites, 91 tests pass. New coverage: `events.hash-evidence.test.js` (void/amend/attachment evidence, payload/sequence/prev-hash/state tamper), `hash-verifier.alert.test.js` (audit + notification + Sentry + completion metric), `hashChain.canonical-payload.test.js` (full field coverage, HMAC vs SHA-256, keyring rotation, evidence domain separation), `lib/sentry.test.js` (inert without DSN, capture, reporting failure swallowed), plus updated hash/ordering/list/status/void/attachment/amended-trace suites.
+- **Verified:** Complete local DB-backed Jest run: 20 suites pass, 157 tests pass, and 4 tests skip because seed-super-admin tests require a separate opt-in setup. New coverage: `events.hash-evidence.test.js` (void/amend/attachment evidence, database immutability, payload/sequence/prev-hash/state tamper), `hash-verifier.alert.test.js` (audit + notification + Sentry + completion metric), `hashChain.canonical-payload.test.js` (full field coverage, HMAC vs SHA-256, keyring rotation, evidence domain separation), `lib/sentry.test.js` (inert without DSN, capture, reporting failure swallowed), plus updated hash/ordering/list/status/void/attachment/amended-trace suites.
 
 ## P1-19 — Trace cache invalidation misses upstream lots
 
@@ -495,6 +498,14 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Verification:** Seed events with `active`, `amended`, and `void` statuses plus a user whose own status is `active`; call `getEvents` with each status and confirm only matching rows are returned and `pagination.total` counts only that status. Confirm filtered pagination partitions the matching set. Call `GET /api/v1/events?status=active|amended|void` against a fresh local disposable database and confirm 200 responses with the expected rows.
 - **Fix:** `backend/src/modules/events/events.service.js` `getEvents` now filters with `where('events.status', status)`, so the later `users` join cannot make the reference ambiguous.
 - **Verified:** `backend/src/modules/events/events.status-filter.test.js` (4 DB tests: active, amended, void, and filtered pagination). Live API run seeded 2 events per status and returned 200 with exactly 2 rows and `pagination.total = 2` for each filter; the unfiltered list returned all 6 rows.
+
+## P1-25 — Trace drops replacement edge when event versions share lot pairs
+
+- **Severity:** P1 · **Area:** backend / trace · **Status:** Fixed (2026-11-11, 998f338)
+- **Evidence:** `backend/src/modules/trace/trace.service.js` used `DISTINCT ON (id)` in forward and backward recursive trace queries. That kept one row per lot and discarded another active event edge when an amendment reused the same input/output lots.
+- **What happens:** A trace can show an older active event edge and omit the replacement edge after an amendment with unchanged lot pairs. Nodes remain correct, but event-level trace history becomes wrong.
+- **Fix:** Trace queries now deduplicate by `(lot id, event id)` while `buildTraceResult()` continues deduplicating nodes by lot id. Amended events remain excluded by `e.status = 'active'`.
+- **Verification:** `trace.amended-events.test.js` covers two current events sharing one lot pair, an amendment that preserves that pair, forward/backward/full trace results, and exclusion of the amended event. The test passes.
 
 ---
 
@@ -607,6 +618,22 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Real-world impact:** Reviewers paging through the event list can miss events or see duplicates, and any client that aggregates pages (export, report, script) builds an incomplete history. In an audit tool this looks like data loss even when no row was deleted.
 - **Fix direction:** Keep `created_at DESC` as the primary sort and add `chain_seq DESC` as a deterministic tiebreaker. `chain_seq` is unique per organization, so the pair is a total order. Do not change the response envelope or the pagination shape.
 - **Verification:** `backend/src/modules/events/events.list-order.test.js` inserts five events that share one `created_at`, then asserts page 1 is `[5,4]`, page 2 `[3,2]`, page 3 `[1]`, and that the three pages contain five unique ids. The test failed before the fix (page 1 returned `[4,5]`) and passes after it. A live `GET /api/v1/events?page=N&limit=2` run against a disposable local database returned `[5,4]`, `[3,2]`, `[1]`, status 200 on every page, and no duplicate ids.
+
+## P2-13 — `event_evidence` lacks database-level immutability enforcement
+
+- **Severity:** P2 · **Area:** backend / database integrity · **Status:** Fixed (2026-11-11, c9473b8)
+- **Evidence:** The `event_evidence` table was described as append-only, but PostgreSQL allowed direct `UPDATE` and `DELETE` operations. HMAC verification detected tampering later, but did not prevent accidental mutation.
+- **What happens:** A database writer could modify or delete signed evidence rows. The verifier would detect the resulting mismatch, but the append-only invariant was not enforced at the database boundary.
+- **Fix:** Migration `20240101000019_create_event_evidence.js` adds `event_evidence_immutable`, a `BEFORE UPDATE OR DELETE` trigger. It rejects every mutation except the one-time seal update that replaces `PENDING` hash placeholders on the newly inserted row.
+- **Verification:** Evidence tests cover rejected update/delete operations and disable the trigger only for controlled tamper simulations. Fresh migration and rollback both pass; trigger and function exist after migration and disappear after rollback.
+
+## P2-14 — Audit report and progress docs overstate test counts and coverage
+
+- **Severity:** P2 · **Area:** documentation / verification · **Status:** Fixed (2026-11-11, 642d2e1)
+- **Evidence:** P1-18 documentation stated `14 suites, 91 tests pass`, while the complete DB-backed run now executes 20 suites and 161 tests.
+- **What happens:** Maintainers and reviewers see stale verification evidence and cannot reliably compare current test coverage with the documented result.
+- **Fix:** Updated P1-18 verification text and `PROGRESS.md` to report the current run: 20 suites, 157 passed tests, and 4 skipped tests. Added missing P1-25, P2-13, and P2-14 entries to the issue table and detailed report.
+- **Verification:** Full local DB-backed Jest run passes: `Test Suites: 20 passed, 20 total`; `Tests: 4 skipped, 157 passed, 161 total`. Email tests pass without hash environment variables because test fixtures now provide required hash settings.
 
 ---
 
@@ -927,4 +954,3 @@ Run this after every batch. Reset the development database from scratch first. N
 - **Total:** 44
 
 > This report is a snapshot. Re-verify each issue against the current working tree before fixing it, and update the status as you go.
-
