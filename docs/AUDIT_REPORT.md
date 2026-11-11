@@ -78,7 +78,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-01 | P0 | Hash verification fails for every event with lot links (number vs decimal string) | Fixed (2026-11-10, 5271aea) |
 | P0-02 | P0 | Hash chain ordering is non-deterministic under concurrency | Fixed (2026-11-10, 6118815) |
 | P0-03 | P0 | Event creation accepts lots from other organizations | Fixed (2026-11-11, 63ce814) |
-| P0-13 | P0 | Event creation accepts cross-tenant locationId | Open |
+| P0-13 | P0 | Event creation accepts cross-tenant locationId | Fixed (2026-11-11, 104a774) |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Open |
 | P0-05 | P0 | Row Level Security is inert at runtime | Open |
 | P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Open |
@@ -171,7 +171,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-13 — Event creation accepts cross-tenant locationId
 
-- **Severity:** P0 · **Area:** backend / tenant isolation · **Status:** Open
+- **Severity:** P0 · **Area:** backend / tenant isolation · **Status:** Fixed (2026-11-11, 104a774)
 - **Evidence:** `backend/src/modules/events/events.service.js` writes `data.locationId` directly to `events.location_id`; the only validation is UUID shape in `events.validation.js`.
 - **What happens:** An org A caller can submit an org B location UUID. The event is created with a foreign location reference, and the compliance alert lookup can read that location without an organization predicate.
 - **Real-world impact:** Cross-tenant location data can enter event history and compliance notifications, corrupting lineage context and exposing another organization's location metadata.
