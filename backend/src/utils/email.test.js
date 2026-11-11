@@ -29,6 +29,8 @@ const REQUIRED_ENV = {
   ACCESS_JWT_SECRET: 'a'.repeat(64),
   REFRESH_JWT_SECRET: 'b'.repeat(64),
   ARGON2_SECRET: 'c'.repeat(32),
+  HASH_CHAIN_KEY_ID: 'test-k1',
+  HASH_CHAIN_SECRET: 'd'.repeat(64),
   RESEND_API_KEY: 're_test_key',
   EMAIL_FROM: 'LotTrace <onboarding@resend.dev>',
   NODE_ENV: 'test',
