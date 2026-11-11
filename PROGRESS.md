@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-11
-**Last Session:** 2026-11-11 — P1-22 (lot audit trail) implemented: lot create/update/void now write `lot.create`, `lot.update`, and `lot.void` rows in the same transaction as the mutation, with actor, IP, before/after lot state, and void reason. 4 DB tests pass; live API create/update/void produced all three audit rows. Previous: P0-01 canonical event hash (7 unit + 9 DB tests).
+**Last Session:** 2026-11-11 — P1-23 (event void cache invalidation) implemented: `voidEvent` collects linked lot ids in the void transaction, then invalidates forward/backward/full trace cache for every linked lot only after commit. 2 DB tests (warm trace recomputes without voided event; rejected void keeps cache) pass; live API warm trace dropped the voided event and Redis keys were gone without TTL wait. Previous: P1-22 lot audit trail (4 DB tests + live API).
 
 ---
 
@@ -55,6 +55,11 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P1-23 — event void cache invalidation:
+- `backend/src/modules/events/events.service.js` (`voidEvent` returns linked lot ids from the transaction, invalidates trace cache after commit)
+- Tests: `backend/src/modules/events/events.void-cache.test.js` (2 DB tests with in-memory Redis: warm trace before/after void, rejected void keeps cache)
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P1-22 — lot audit trail:
 - `backend/src/utils/auditTrail.js` (`writeAuditLog(params, qb)` can join the caller transaction)

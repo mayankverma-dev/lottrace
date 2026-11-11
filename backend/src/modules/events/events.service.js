@@ -235,17 +235,34 @@ const getEventById = async (eventId, organizationId) => {
 };
 
 const voidEvent = async (eventId, voidReason, organizationId) => {
-  return await db.transaction(async (trx) => {
+  const { voided, linkedLotIds } = await db.transaction(async (trx) => {
     const event = await trx('events').where({ id: eventId, organization_id: organizationId }).first();
     if (!event) throw new AppError('Event not found', 'NOT_FOUND', 404);
     if (event.status !== 'active') throw new AppError('Event is not active', 'EVENT_IMMUTABLE', 409);
 
-    const [voided] = await trx('events')
+    const [updated] = await trx('events')
       .where({ id: eventId })
       .update({ status: 'void', void_reason: voidReason })
       .returning('*');
-    return voided;
+
+    const links = await trx('event_lot_links')
+      .where({ event_id: eventId })
+      .select('lot_id');
+
+    return {
+      voided: updated,
+      linkedLotIds: [...new Set(links.map(link => link.lot_id))],
+    };
   });
+
+  // Invalidate only after commit so a rolled-back void cannot evict a valid
+  // cached trace (P1-23). Linked lots cover every trace that can contain this
+  // event directly; upstream lots remain P1-19.
+  await Promise.all(
+    linkedLotIds.map(lotId => invalidateTraceCache(organizationId, lotId))
+  );
+
+  return voided;
 };
 
 const amendEvent = async (eventId, data, organizationId, userId) => {
