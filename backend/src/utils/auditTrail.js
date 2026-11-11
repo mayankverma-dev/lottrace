@@ -14,9 +14,10 @@ const { v4: uuidv4 } = require('uuid');
  * @param {Object} [params.afterState]
  * @param {Object} [params.metadata]
  * @param {string} [params.ipAddress]
+ * @param {import('knex').Knex | import('knex').Knex.Transaction} [qb=db] - caller transaction, if any
  */
-const writeAuditLog = async (params) => {
-  await db('audit_log').insert({
+const writeAuditLog = async (params, qb = db) => {
+  await qb('audit_log').insert({
     id: uuidv4(),
     organization_id: params.organizationId || null,
     actor_id: params.actorId || null,

@@ -2,8 +2,8 @@
 
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
-**Last Updated:** 2026-11-10
-**Last Session:** 2026-11-10 — P0-01 (canonical event hash) implemented: `backend/src/utils/hashChain.js` builds one canonical payload from persisted rows/links (`numeric(15,4)` text, links sorted by `lot_id`, ISO-8601 UTC). Writers insert `record_hash = 'PENDING'` then `sealEventHash()` in the same transaction; the verifier calls the same serializer. `events.hash_version` added. 7 unit + 9 DB tests pass; live check: clean event verifies, tampered link quantity detected. Previous: P2-12 stable event list pagination (2 tests).
+**Last Updated:** 2026-11-11
+**Last Session:** 2026-11-11 — P1-22 (lot audit trail) implemented: lot create/update/void now write `lot.create`, `lot.update`, and `lot.void` rows in the same transaction as the mutation, with actor, IP, before/after lot state, and void reason. 4 DB tests pass; live API create/update/void produced all three audit rows. Previous: P0-01 canonical event hash (7 unit + 9 DB tests).
 
 ---
 
@@ -55,6 +55,13 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P1-22 — lot audit trail:
+- `backend/src/utils/auditTrail.js` (`writeAuditLog(params, qb)` can join the caller transaction)
+- `backend/src/modules/lots/lots.service.js` (create/update/void run in a transaction and write `lot.create` / `lot.update` / `lot.void` with actor, IP, before/after state, void reason)
+- `backend/src/modules/lots/lots.controller.js` (passes `req.user.id` + `req.ip`)
+- Tests: `backend/src/modules/lots/lots.audit.test.js` (4 DB tests: create, update, void, rejected update)
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P0-01 — canonical event hash (verification passes for events with lot links):
 - `backend/src/utils/hashChain.js` (`HASH_VERSION`, `GENESIS_HASH`, `PENDING_RECORD_HASH`, `buildEventHashPayload`, `loadEventHashPayload`, `sealEventHash`; one serializer for write/import/verify)

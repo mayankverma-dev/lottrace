@@ -2,16 +2,36 @@ const db = require('../../db/knex');
 const { v4: uuid } = require('uuid');
 const AppError = require('../../utils/AppError');
 const { paginate } = require('../../utils/pagination');
+const { writeAuditLog } = require('../../utils/auditTrail');
+
+/**
+ * Snapshot used in lot audit before/after states.
+ * @param {Object} lot - persisted lots row
+ * @returns {Object}
+ */
+const toAuditState = (lot) => ({
+  id: lot.id,
+  organizationId: lot.organization_id,
+  productId: lot.product_id,
+  traceabilityLotCode: lot.traceability_lot_code,
+  quantity: lot.quantity,
+  uom: lot.uom,
+  notes: lot.notes,
+  status: lot.status,
+  voidReason: lot.void_reason,
+  version: lot.version,
+});
 
 /**
  * Create a new lot.
  * @param {Object} data - Validated lot data
  * @param {string} organizationId
  * @param {string} userId
+ * @param {{ ipAddress?: string }} [auditContext]
  * @returns {Promise<Object>}
  */
-const createLot = async (data, organizationId, userId) => {
-  const [lot] = await db('lots')
+const createLot = async (data, organizationId, userId, auditContext = {}) => db.transaction(async (trx) => {
+  const [lot] = await trx('lots')
     .insert({
       id: uuid(),
       organization_id: organizationId,
@@ -23,6 +43,17 @@ const createLot = async (data, organizationId, userId) => {
       created_by: userId,
     })
     .returning('*');
+
+  await writeAuditLog({
+    organizationId,
+    actorId: userId,
+    actorType: 'user',
+    action: 'lot.create',
+    entityType: 'lot',
+    entityId: lot.id,
+    afterState: toAuditState(lot),
+    ipAddress: auditContext.ipAddress || null,
+  }, trx);
 
   return {
     id: lot.id,
@@ -37,7 +68,7 @@ const createLot = async (data, organizationId, userId) => {
     updatedAt: lot.updated_at,
     version: lot.version
   };
-};
+});
 
 /**
  * List lots with pagination and filters.
@@ -135,11 +166,13 @@ const getLot = async (lotId, organizationId) => {
  * @param {string} lotId
  * @param {Object} data
  * @param {string} organizationId
+ * @param {string} userId
+ * @param {{ ipAddress?: string }} [auditContext]
  * @returns {Promise<Object>}
  */
-const updateLot = async (lotId, data, organizationId) => {
+const updateLot = async (lotId, data, organizationId, userId, auditContext = {}) => db.transaction(async (trx) => {
   // Check if lot is voided
-  const current = await db('lots').where({ id: lotId, organization_id: organizationId }).first();
+  const current = await trx('lots').where({ id: lotId, organization_id: organizationId }).first();
   if (!current) throw new AppError('Lot not found', 'NOT_FOUND', 404);
   if (current.status === 'void') throw new AppError('Cannot update a voided lot', 'LOT_VOIDED', 400);
   if (current.status === 'recalled') throw new AppError('Cannot update a recalled lot', 'LOT_RECALLED', 400);
@@ -152,13 +185,25 @@ const updateLot = async (lotId, data, organizationId) => {
     throw new AppError('No fields to update', 'VALIDATION_ERROR', 422);
   }
 
-  updateData.updated_at = db.fn.now();
+  updateData.updated_at = trx.fn.now();
   updateData.version = current.version + 1; // optimistic concurrency
 
-  const [updated] = await db('lots')
+  const [updated] = await trx('lots')
     .where({ id: lotId, organization_id: organizationId })
     .update(updateData)
     .returning('*');
+
+  await writeAuditLog({
+    organizationId,
+    actorId: userId,
+    actorType: 'user',
+    action: 'lot.update',
+    entityType: 'lot',
+    entityId: updated.id,
+    beforeState: toAuditState(current),
+    afterState: toAuditState(updated),
+    ipAddress: auditContext.ipAddress || null,
+  }, trx);
 
   return {
     id: updated.id,
@@ -173,29 +218,44 @@ const updateLot = async (lotId, data, organizationId) => {
     updatedAt: updated.updated_at,
     version: updated.version
   };
-};
+});
 
 /**
  * Void a lot.
  * @param {string} lotId
  * @param {string} voidReason
  * @param {string} organizationId
+ * @param {string} userId
+ * @param {{ ipAddress?: string }} [auditContext]
  * @returns {Promise<Object>}
  */
-const voidLot = async (lotId, voidReason, organizationId) => {
-  const current = await db('lots').where({ id: lotId, organization_id: organizationId }).first();
+const voidLot = async (lotId, voidReason, organizationId, userId, auditContext = {}) => db.transaction(async (trx) => {
+  const current = await trx('lots').where({ id: lotId, organization_id: organizationId }).first();
   if (!current) throw new AppError('Lot not found', 'NOT_FOUND', 404);
   if (current.status === 'void') throw new AppError('Lot is already voided', 'LOT_VOIDED', 400);
 
-  const [voided] = await db('lots')
+  const [voided] = await trx('lots')
     .where({ id: lotId, organization_id: organizationId })
     .update({
       status: 'void',
       void_reason: voidReason,
-      updated_at: db.fn.now(),
+      updated_at: trx.fn.now(),
       version: current.version + 1,
     })
     .returning('*');
+
+  await writeAuditLog({
+    organizationId,
+    actorId: userId,
+    actorType: 'user',
+    action: 'lot.void',
+    entityType: 'lot',
+    entityId: voided.id,
+    beforeState: toAuditState(current),
+    afterState: toAuditState(voided),
+    metadata: { reason: voidReason },
+    ipAddress: auditContext.ipAddress || null,
+  }, trx);
 
   return {
     id: voided.id,
@@ -211,7 +271,7 @@ const voidLot = async (lotId, voidReason, organizationId) => {
     updatedAt: voided.updated_at,
     version: voided.version
   };
-};
+});
 
 module.exports = {
   createLot,
