@@ -259,7 +259,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-09 — Event timestamps shift by the browser UTC offset
 
-- **Severity:** P0 · **Area:** frontend / data correctness · **Status:** Open
+- **Severity:** P0 · **Area:** frontend / data correctness · **Status:** Fixed (2026-11-13, 7ac1afb)
 - **Evidence:** `frontend/src/pages/events/RecordEventPage.jsx:54` (`new Date().toISOString().slice(0, 16)`), `:80` (same pattern when loading for amend), `:167` (`new Date(formData.eventDatetime).toISOString()`); input is `type="datetime-local"`.
 - **What happens:** `toISOString()` returns UTC. Slicing it and putting it in a `datetime-local` input shows UTC wall-clock time as if it were local. On submit, `new Date("YYYY-MM-DDTHH:mm")` is parsed as **local** time, so the value is shifted by the browser offset a second time. In UTC+5:45, "now" is displayed 5:45 in the past, then recorded another 5:45 earlier. Amend round-trips the same way, so simply opening and saving an event moves its timestamp.
 - **Real-world impact:** Every manually recorded event outside UTC has a wrong time — up to roughly 14 hours in extreme offsets, and DST transitions add ambiguity. FSMA records require accurate event times; wrong timestamps also reorder the hash chain inputs and make recall windows incorrect.
