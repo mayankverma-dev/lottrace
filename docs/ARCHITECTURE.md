@@ -244,6 +244,13 @@ later attachment metadata are covered by the append-only `event_evidence` chain 
 event's `record_hash`, not by re-sealing the event. A database trigger rejects updates and deletes
 on sealed evidence rows.
 
+An amendment is one transaction: organization advisory lock, `FOR NO KEY UPDATE` on the superseded
+row, insert and seal the replacement with `supersedes_event_id`, claim the old row
+(`where status = 'active'`, assert one affected row), append the `status_change` evidence, commit.
+The replacement and the status change are never visible separately, and a superseded event can be
+superseded once (`idx_events_supersedes_once`). Trace caches for both the superseded and
+replacement lot sets are invalidated after commit.
+
 Hash verification re-walks the chain nightly, ordered by `chain_seq`. On the first mismatch it
 writes `audit_log` with `action = 'hash.verify_failed'`, creates an org-wide
 `hash_verification_failed` notification, emits a Sentry event when `SENTRY_DSN` is configured, and

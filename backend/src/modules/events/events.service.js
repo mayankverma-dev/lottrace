@@ -50,137 +50,155 @@ const checkComplianceGaps = async (qb, data, organizationId) => {
   return gaps.length > 0 ? JSON.stringify(gaps) : null;
 };
 
-const createEvent = async (data, organizationId, userId, overrideStatus = 'active', supersedesEventId = null) => {
+/**
+ * Inserts and seals one event inside the caller's transaction.
+ *
+ * The caller MUST already hold the organization's advisory lock
+ * (`pg_advisory_xact_lock`) and MUST pass that same transaction as `qb`.
+ * Status is always `active` on insert: `amended` and `void` are lifecycle
+ * transitions performed by `amendEvent` and `voidEvent` after the row exists.
+ *
+ * @param {import('knex').Knex.Transaction} qb
+ * @param {Object} data
+ * @param {string} organizationId
+ * @param {string} userId
+ * @param {string|null} [supersedesEventId]
+ * @returns {Promise<{ event: Object, lotIds: string[] }>} sealed event and linked lot ids
+ */
+const insertEvent = async (qb, data, organizationId, userId, supersedesEventId = null) => {
+  if (data.locationId) {
+    const location = await qb('locations')
+      .where({ id: data.locationId, organization_id: organizationId })
+      .first('id');
+    if (!location) throw new AppError('Location not found', 'NOT_FOUND', 404);
+  }
+
+  // Tenant boundary: every referenced lot must belong to this organization.
+  // Runs before the event row exists, so a foreign lot leaves no trace.
+  const lotIds = [...(data.inputs || []), ...(data.outputs || [])].map(l => l.lotId);
+  await assertLotsBelongToOrganization(qb, lotIds, organizationId);
+
+  // Chain order comes from chain_seq, never created_at (P0-02). Safe to
+  // read here: the caller holds the advisory lock for this org.
+  const chainTip = await getChainTip(qb, organizationId);
+  const prevHash = chainTip ? chainTip.record_hash : GENESIS_HASH;
+  const chainSeq = nextChainSeq(chainTip);
+  const complianceGaps = await checkComplianceGaps(qb, data, organizationId);
+
+  const eventId = uuidv4();
+
+  await qb('events').insert({
+    id: eventId,
+    organization_id: organizationId,
+    event_type: data.eventType,
+    location_id: data.locationId || null,
+    counterparty_info: data.counterpartyInfo ? JSON.stringify(data.counterpartyInfo) : null,
+    event_datetime: data.eventDatetime,
+    recorded_by: userId,
+    source: data.source,
+    kde_payload: JSON.stringify(data.kdePayload || {}),
+    compliance_gaps: complianceGaps,
+    notes: data.notes || null,
+    idempotency_key: data.idempotencyKey || null,
+    // The hash covers persisted values, so it is sealed after the row and
+    // its links exist (P0-01). Same transaction; never rewritten later.
+    record_hash: PENDING_RECORD_HASH,
+    prev_hash: prevHash,
+    chain_seq: chainSeq,
+    hash_version: HASH_VERSION,
+    hash_key_id: PENDING_HASH_KEY_ID,
+    status: 'active',
+    supersedes_event_id: supersedesEventId,
+  });
+
+  const links = [];
+  if (data.inputs) {
+    data.inputs.forEach(input => {
+      links.push({
+        id: uuidv4(),
+        organization_id: organizationId,
+        event_id: eventId,
+        lot_id: input.lotId,
+        direction: 'input',
+        quantity: input.quantity,
+        uom: input.uom,
+      });
+    });
+  }
+
+  if (data.outputs) {
+    data.outputs.forEach(output => {
+      links.push({
+        id: uuidv4(),
+        organization_id: organizationId,
+        event_id: eventId,
+        lot_id: output.lotId,
+        direction: 'output',
+        quantity: output.quantity,
+        uom: output.uom,
+      });
+    });
+  }
+
+  if (links.length > 0) {
+    await qb('event_lot_links').insert(links);
+  }
+
+  const sealedEvent = await sealEventHash(qb, eventId, prevHash);
+
+  // If compliance gaps exist, queue an email alert
+  if (complianceGaps) {
+    const { emailQueue } = require('../../jobs/queues');
+    const users = await qb('users')
+      .where({ organization_id: organizationId, status: 'active' })
+      .whereIn('role', ['compliance_manager']);
+
+    const location = data.locationId
+      ? await qb('locations').where({
+        id: data.locationId,
+        organization_id: organizationId,
+      }).first()
+      : null;
+    const locationName = location ? location.name : 'Unknown Location';
+    const parsedGaps = JSON.parse(complianceGaps);
+
+    for (const user of users) {
+      await emailQueue.add('compliance_gap_alert', {
+        type: 'compliance_gap',
+        data: {
+          email: user.email,
+          eventId: eventId,
+          locationName,
+          eventType: data.eventType,
+          timestamp: data.eventDatetime,
+          gaps: parsedGaps
+        }
+      });
+    }
+  }
+
+  return { event: sealedEvent, lotIds: [...new Set(links.map(l => l.lot_id))] };
+};
+
+const createEvent = async (data, organizationId, userId) => {
   if (data.idempotencyKey) {
     const existing = await db('events').where({ idempotency_key: data.idempotencyKey, organization_id: organizationId }).first();
     if (existing) return existing;
   }
 
   const lockId = getAdvisoryLockId(organizationId);
-  
-  return await db.transaction(async (trx) => {
-    if (data.locationId) {
-      const location = await trx('locations')
-        .where({ id: data.locationId, organization_id: organizationId })
-        .first('id');
-      if (!location) throw new AppError('Location not found', 'NOT_FOUND', 404);
-    }
 
-    // Tenant boundary: every referenced lot must belong to this organization.
-    // Runs before the event row exists, so a foreign lot leaves no trace.
-    const lotIds = [...(data.inputs || []), ...(data.outputs || [])].map(l => l.lotId);
-    await assertLotsBelongToOrganization(trx, lotIds, organizationId);
-
+  const { event, lotIds } = await db.transaction(async (trx) => {
     // Acquire org-level lock to prevent concurrent hash chain generation
     await trx.raw('SELECT pg_advisory_xact_lock(?)', [lockId]);
-
-    // Chain order comes from chain_seq, never created_at (P0-02). Safe to
-    // read here: the advisory lock serializes every writer for this org.
-    const chainTip = await getChainTip(trx, organizationId);
-    const prevHash = chainTip ? chainTip.record_hash : GENESIS_HASH;
-    const chainSeq = nextChainSeq(chainTip);
-    const complianceGaps = await checkComplianceGaps(trx, data, organizationId);
-
-    const eventId = uuidv4();
-
-    await trx('events').insert({
-      id: eventId,
-      organization_id: organizationId,
-      event_type: data.eventType,
-      location_id: data.locationId || null,
-      counterparty_info: data.counterpartyInfo ? JSON.stringify(data.counterpartyInfo) : null,
-      event_datetime: data.eventDatetime,
-      recorded_by: userId,
-      source: data.source,
-      kde_payload: JSON.stringify(data.kdePayload || {}),
-      compliance_gaps: complianceGaps,
-      notes: data.notes || null,
-      idempotency_key: data.idempotencyKey || null,
-      // The hash covers persisted values, so it is sealed after the row and
-      // its links exist (P0-01). Same transaction; never rewritten later.
-      record_hash: PENDING_RECORD_HASH,
-      prev_hash: prevHash,
-      chain_seq: chainSeq,
-      hash_version: HASH_VERSION,
-      hash_key_id: PENDING_HASH_KEY_ID,
-      status: overrideStatus,
-      supersedes_event_id: supersedesEventId,
-    });
-
-    const links = [];
-    if (data.inputs) {
-      data.inputs.forEach(input => {
-        links.push({
-          id: uuidv4(),
-          organization_id: organizationId,
-          event_id: eventId,
-          lot_id: input.lotId,
-          direction: 'input',
-          quantity: input.quantity,
-          uom: input.uom,
-        });
-      });
-    }
-
-    if (data.outputs) {
-      data.outputs.forEach(output => {
-        links.push({
-          id: uuidv4(),
-          organization_id: organizationId,
-          event_id: eventId,
-          lot_id: output.lotId,
-          direction: 'output',
-          quantity: output.quantity,
-          uom: output.uom,
-        });
-      });
-    }
-
-    if (links.length > 0) {
-      await trx('event_lot_links').insert(links);
-    }
-
-    const sealedEvent = await sealEventHash(trx, eventId, prevHash);
-
-    // Invalidate trace cache for all affected lots
-    const affectedLotIds = [...new Set(links.map(l => l.lot_id))];
-    await Promise.all(
-      affectedLotIds.map(lid => invalidateTraceCache(organizationId, lid))
-    );
-    
-    // If compliance gaps exist, queue an email alert
-    if (complianceGaps) {
-      const { emailQueue } = require('../../jobs/queues');
-      const users = await trx('users')
-        .where({ organization_id: organizationId, status: 'active' })
-        .whereIn('role', ['compliance_manager']);
-        
-      const location = data.locationId
-        ? await trx('locations').where({
-          id: data.locationId,
-          organization_id: organizationId,
-        }).first()
-        : null;
-      const locationName = location ? location.name : 'Unknown Location';
-      const parsedGaps = JSON.parse(complianceGaps);
-      
-      for (const user of users) {
-        await emailQueue.add('compliance_gap_alert', {
-          type: 'compliance_gap',
-          data: {
-            email: user.email,
-            eventId: eventId,
-            locationName,
-            eventType: data.eventType,
-            timestamp: data.eventDatetime,
-            gaps: parsedGaps
-          }
-        });
-      }
-    }
-
-    return sealedEvent;
+    return insertEvent(trx, data, organizationId, userId);
   });
+
+  // Invalidate only after commit: a rolled-back write must not evict a valid
+  // cached trace, and a pre-commit eviction can be repopulated with stale data.
+  await Promise.all(lotIds.map(lotId => invalidateTraceCache(organizationId, lotId)));
+
+  return event;
 };
 
 const getEvents = async (query, organizationId) => {
@@ -320,25 +338,40 @@ const voidEvent = async (eventId, voidReason, organizationId, userId = null) => 
 };
 
 const amendEvent = async (eventId, data, organizationId, userId) => {
-  return await db.transaction(async (trx) => {
+  const lockId = getAdvisoryLockId(organizationId);
+
+  // One transaction, one connection: the replacement row, the status change on
+  // the superseded row, and its signed evidence all commit together or not at
+  // all (P0-04). Lock order is fixed: organization advisory lock, then row lock.
+  const { replacement, lotIds } = await db.transaction(async (trx) => {
+    // Serialize every chain writer for this organization, including creates.
+    await trx.raw('SELECT pg_advisory_xact_lock(?)', [lockId]);
+
     const oldEvent = await trx('events')
       .where({ id: eventId, organization_id: organizationId })
-      // `FOR NO KEY UPDATE`, not `FOR UPDATE`: createEvent inserts a row that
-      // references this event through `supersedes_event_id`, and the foreign-key
-      // check takes a KEY SHARE lock. A plain FOR UPDATE would block that check
-      // forever; this mode still serializes concurrent writers.
+      // `FOR NO KEY UPDATE`, not `FOR UPDATE`: this transaction inserts a row
+      // that references this event through `supersedes_event_id`, and the
+      // foreign-key check takes a KEY SHARE lock. A plain FOR UPDATE would
+      // block that check forever; this mode still serializes concurrent writers.
       .forNoKeyUpdate()
       .first();
     if (!oldEvent) throw new AppError('Event not found', 'NOT_FOUND', 404);
     if (oldEvent.status !== 'active') throw new AppError('Event is not active', 'EVENT_IMMUTABLE', 409);
 
-    // Create the new event that supersedes the old one
-    const newEvent = await createEvent(data, organizationId, userId, 'active', eventId);
+    const oldLotIds = (await trx('event_lot_links')
+      .where({ event_id: eventId })
+      .select('lot_id')).map(link => link.lot_id);
 
-    // Mark the old event as amended
-    await trx('events')
-      .where({ id: eventId })
+    // Create the replacement that supersedes the old one, same transaction.
+    const created = await insertEvent(trx, data, organizationId, userId, eventId);
+
+    // Claim the old row. The status predicate plus the affected-row assertion
+    // guarantee exactly one transition, even if a future caller bypasses the
+    // read above.
+    const updated = await trx('events')
+      .where({ id: eventId, organization_id: organizationId, status: 'active' })
       .update({ status: 'amended', void_reason: data.voidReason });
+    if (updated !== 1) throw new AppError('Event is not active', 'EVENT_IMMUTABLE', 409);
 
     await appendEventEvidence(trx, {
       organizationId,
@@ -352,8 +385,18 @@ const amendEvent = async (eventId, data, organizationId, userId) => {
       },
     }, oldEvent.record_hash);
 
-    return newEvent;
+    return {
+      replacement: created.event,
+      // The superseded event's lots can differ from the replacement's, so both
+      // sets need invalidation or the old graph survives its 5-minute TTL.
+      lotIds: [...new Set([...oldLotIds, ...created.lotIds])],
+    };
   });
+
+  // After commit only, so a rolled-back amendment cannot evict a valid cache.
+  await Promise.all(lotIds.map(lotId => invalidateTraceCache(organizationId, lotId)));
+
+  return replacement;
 };
 
 const generateAttachmentUploadUrl = async (eventId, organizationId, filename, contentType) => {

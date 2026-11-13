@@ -59,6 +59,14 @@ exports.up = async (knex) => {
     ADD CONSTRAINT events_chain_seq_positive CHECK (chain_seq >= 1)
   `);
 
+  // An event can be superseded at most once. This is a database guarantee, not
+  // just a code-path check: a second replace attempt fails with 23505 (P0-04).
+  await knex.raw(`
+    CREATE UNIQUE INDEX idx_events_supersedes_once
+    ON events(supersedes_event_id)
+    WHERE supersedes_event_id IS NOT NULL
+  `);
+
   // Indexes that need raw SQL
   await knex.raw(`
     CREATE INDEX idx_events_org_datetime ON events(organization_id, event_datetime DESC)

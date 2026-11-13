@@ -2,8 +2,8 @@
 
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
-**Last Updated:** 2026-11-11
-**Last Session:** 2026-11-11 — P0-14 implementation complete; verification passed. Lot creation now validates product ownership inside the transaction, with composite product/lot tenant scope planned in the original migrations.
+**Last Updated:** 2026-11-13
+**Last Session:** 2026-11-13 — P0-04 implementation complete; verification passed. Amendment is now one transaction (replacement, status change, and signed evidence commit together) and an event can be superseded at most once.
 
 ---
 
@@ -55,6 +55,12 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P0-04 — atomic event amendment:
+- `backend/src/modules/events/events.service.js` (private `insertEvent(qb, ...)` helper; `createEvent` and `amendEvent` each use one transaction with the org advisory lock; old-row claim asserts `status = 'active'` and one affected row; post-commit trace-cache invalidation for superseded and replacement lots; deleted the nested transaction and the `overrideStatus` / `supersedesEventId` parameters)
+- `backend/src/db/migrations/20240101000007_create_events.js` (`idx_events_supersedes_once` unique partial index)
+- Tests: `backend/src/modules/events/events.amend-atomic.test.js` (new, 6 DB tests)
+- Docs: `docs/AUDIT_REPORT.md`, `docs/DATABASE_SCHEMA.md`, `docs/ARCHITECTURE.md`, `PROGRESS.md`
 
 P1-18 — keyed HMAC hash chain with full coverage:
 - `backend/src/utils/hashChain.js` (version 3 HMAC-SHA256, env/KMS keyring, full immutable payload, `event_evidence` append/seal helpers)

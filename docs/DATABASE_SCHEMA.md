@@ -237,6 +237,11 @@ CREATE INDEX idx_events_compliance_gaps ON events(organization_id, has_complianc
 CREATE INDEX idx_events_recorded_by ON events(recorded_by);
 -- Chain order + tip lookup. Unique per organization; never order the chain by created_at.
 CREATE UNIQUE INDEX idx_events_org_chain_seq ON events(organization_id, chain_seq);
+
+-- An event can be superseded at most once. A second replace attempt fails
+-- with 23505 even if application code is bypassed.
+CREATE UNIQUE INDEX idx_events_supersedes_once ON events(supersedes_event_id)
+  WHERE supersedes_event_id IS NOT NULL;
 ```
 
 **Event status and trace** — the trace engine traverses only `status = 'active'` events.
@@ -281,6 +286,15 @@ there is no re-seal migration.
 Do not write a re-seal migration or archive old hashes. When the payload changes, bump
 `hash_version`, update the canonical serializer and verifier together, and reset the development
 database.
+
+**Amendment** — one transaction, start to finish: take the organization advisory lock, lock the
+superseded row with `SELECT ... FOR NO KEY UPDATE`, verify its status is `active`, insert and seal
+the replacement with `supersedes_event_id`, claim the old row with
+`where({ id, organization_id, status: 'active' })` and assert exactly one affected row, append the
+signed `status_change` evidence, then commit. Any failure leaves the old event `active` and no
+replacement exists. `idx_events_supersedes_once` enforces superseded-at-most-once at the database
+layer. Trace cache invalidation covers the superseded and replacement lot sets and runs only after
+commit.
 
 ### `event_evidence`
 Append-only signed evidence for mutable facts that happen after an event is sealed: status

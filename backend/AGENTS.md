@@ -206,6 +206,14 @@ await appendEventEvidence(trx, {
 > There is no legacy hash version support: to change the format, bump
 > `HASH_VERSION`, update the serializer and verifier together, and reset the
 > development database.
+>
+> **Amendment is one transaction.** `amendEvent` takes the organization advisory
+> lock, locks the superseded row with `forNoKeyUpdate()`, inserts and seals the
+> replacement through the shared `insertEvent(qb, ...)` helper, claims the old
+> row with `where({ status: 'active' })` (assert one affected row), appends the
+> `status_change` evidence, and commits. Never call `createEvent` from inside
+> another transaction, and never invalidate trace cache before commit. An event
+> can be superseded once (`idx_events_supersedes_once`).
 
 
 ---
