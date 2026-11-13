@@ -205,7 +205,7 @@ const linksFor = (links, direction) => links
  * ISO-8601 UTC timestamps, numeric decimals as PostgreSQL text, links sorted
  * by lot id, and explicit nulls/empties for every optional field.
  *
- * Mutable lifecycle fields (`status`, `void_reason`) and later-added attachment
+ * Mutable lifecycle fields (`status`, `status_reason`) and later-added attachment
  * metadata are covered by the append-only `event_evidence` chain, not here.
  *
  * @param {Object} event - events row

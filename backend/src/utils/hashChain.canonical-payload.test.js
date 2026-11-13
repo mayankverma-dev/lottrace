@@ -61,7 +61,7 @@ const makeRow = (overrides = {}) => ({
   hash_key_id: KEY_ID,
   status: 'active',
   supersedes_event_id: null,
-  void_reason: null,
+  status_reason: null,
   created_at: new Date('2026-01-01T10:00:01.000Z'),
   ...overrides,
 });
@@ -215,10 +215,10 @@ describe('hashChain canonical payload (P1-18)', () => {
   });
 
   it('leaves mutable lifecycle and hash bookkeeping columns out of the event payload', () => {
-    const payload = buildEventHashPayload(makeRow({ status: 'void', void_reason: 'bad data' }), []);
+    const payload = buildEventHashPayload(makeRow({ status: 'void', status_reason: 'bad data' }), []);
 
     expect(payload).not.toHaveProperty('status');
-    expect(payload).not.toHaveProperty('voidReason');
+    expect(payload).not.toHaveProperty('statusReason');
     expect(payload).not.toHaveProperty('hashVersion');
     expect(payload).not.toHaveProperty('hashKeyId');
     expect(payload).not.toHaveProperty('recordHash');

@@ -29,7 +29,7 @@ const toIso = (value) => (value === null || value === undefined
 
 /**
  * Verifies the append-only evidence chain for one event and cross-checks it
- * against the materialized mutable state (`events.status`, `events.void_reason`,
+ * against the materialized mutable state (`events.status`, `events.status_reason`,
  * and `attachments` rows).
  *
  * @param {Object} event - events row
@@ -125,14 +125,14 @@ const verifyEventEvidence = async (event, keyRing) => {
     expectedReason = latest.reason ?? null;
   }
 
-  if (event.status !== expectedStatus || (event.void_reason ?? null) !== expectedReason) {
+  if (event.status !== expectedStatus || (event.status_reason ?? null) !== expectedReason) {
     return {
       reason: 'evidence_state_mismatch',
       detail: {
         expected_status: expectedStatus,
         found_status: event.status,
         expected_reason: expectedReason,
-        found_reason: event.void_reason ?? null,
+        found_reason: event.status_reason ?? null,
       },
     };
   }

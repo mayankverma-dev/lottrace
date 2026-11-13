@@ -210,7 +210,7 @@ Local → Staging (mirrors prod, used for UAT/demos) → Production. Separate da
 | `locations` | id, org_id, name, type, address, gln, timezone | type: farm/plant/warehouse/distributor/retailer/other |
 | `products` | id, org_id, name, gtin, category, is_ftl, default_uom, custom_kde_schema (jsonb) | `custom_kde_schema` lets a tenant add fields without a migration |
 | `lots` | id, org_id, product_id, traceability_lot_code, quantity, uom, status, created_at | status: active/recalled/void |
-| `events` | id, org_id, event_type, location_id, counterparty_info (jsonb), event_datetime, recorded_by, recorded_at, kde_payload (jsonb), record_hash, prev_hash, status, supersedes_event_id, void_reason | Core append-only table |
+| `events` | id, org_id, event_type, location_id, counterparty_info (jsonb), event_datetime, recorded_by, recorded_at, kde_payload (jsonb), record_hash, prev_hash, status, supersedes_event_id, status_reason | Core append-only table |
 | `event_lot_links` | id, event_id, lot_id, direction (input/output), quantity, uom | Enables many-to-many lot transformations |
 | `attachments` | id, parent_type, parent_id, file_url, uploaded_by, uploaded_at | COAs, photos, BOLs |
 | `audit_log` | id, org_id, actor_user_id, action, entity_type, entity_id, before, after, ip_address, timestamp | Logs *system actions*; `events` logs *supply chain facts* |

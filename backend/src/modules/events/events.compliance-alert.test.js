@@ -215,7 +215,7 @@ describeDb('P1-26 compliance-gap alert after commit', () => {
 
     const replacement = await eventsService.amendEvent(
       original.id,
-      eventPayload(org, { voidReason: 'corrected quantity' }),
+      eventPayload(org, { amendReason: 'corrected quantity' }),
       org.orgId,
       org.userId,
     );

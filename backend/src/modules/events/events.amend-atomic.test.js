@@ -142,7 +142,7 @@ describeDb('P0-04 atomic event amendment', () => {
     counterpartyInfo: null,
     inputs: [{ lotId: org.inputLotId, quantity: 10, uom: 'kg' }],
     outputs: [{ lotId: org.oldOutputLotId, quantity: 9, uom: 'kg' }],
-    voidReason: 'corrected quantity',
+    amendReason: 'corrected quantity',
     ...overrides,
   });
 
@@ -290,7 +290,7 @@ describeDb('P0-04 atomic event amendment', () => {
     const rows = await eventRows(org.orgId);
     expect(rows.map((row) => Number(row.chain_seq))).toEqual([1, 2]);
     expect(rows[0].status).toBe('amended');
-    expect(rows[0].void_reason).toBe('corrected quantity');
+    expect(rows[0].status_reason).toBe('corrected quantity');
     expect(rows[1].id).toBe(replacement.id);
     expect(rows[1].status).toBe('active');
     expect(rows[1].supersedes_event_id).toBe(original.id);

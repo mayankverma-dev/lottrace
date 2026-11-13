@@ -141,7 +141,7 @@ describeDb('P0-11 trace excludes amended events', () => {
     notes: 'corrected event',
     inputs: [{ lotId: org.inputLotId, quantity: 10, uom: 'kg' }],
     outputs: [{ lotId: org.oldOutputLotId, quantity: 9, uom: 'kg' }],
-    voidReason: 'wrong output lot recorded',
+    amendReason: 'wrong output lot recorded',
     ...overrides,
   }, org.orgId, org.userId);
 

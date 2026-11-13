@@ -216,7 +216,7 @@ describeDb('P1-18 signed event evidence', () => {
 
     await db('events')
       .where({ id: event.id })
-      .update({ status: 'active', void_reason: null });
+      .update({ status: 'active', status_reason: null });
 
     expect(await failureReason(org.orgId)).toBe('evidence_state_mismatch');
   });
@@ -281,7 +281,7 @@ describeDb('P1-18 signed event evidence', () => {
       counterpartyInfo: null,
       inputs: [{ lotId: org.lotIds[0], quantity: 1, uom: 'kg' }],
       outputs: [{ lotId: org.lotIds[1], quantity: 0.5, uom: 'kg' }],
-      voidReason: 'corrected quantity',
+      amendReason: 'corrected quantity',
     }, org.orgId, org.userId);
 
     expect(Number(replacement.chain_seq)).toBe(2);
@@ -289,7 +289,7 @@ describeDb('P1-18 signed event evidence', () => {
 
     const amended = await db('events').where({ id: event.id }).first();
     expect(amended.status).toBe('amended');
-    expect(amended.void_reason).toBe('corrected quantity');
+    expect(amended.status_reason).toBe('corrected quantity');
 
     const rows = await evidenceRows(event.id);
     expect(rows).toHaveLength(1);

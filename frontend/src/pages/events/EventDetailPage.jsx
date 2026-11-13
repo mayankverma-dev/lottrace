@@ -185,12 +185,12 @@ const EventDetailPage = () => {
                   <dd className="font-medium mt-1">{formatEventDate(event.event_datetime)}</dd>
                 </div>
                 
-                {event.status !== 'active' && event.void_reason && (
+                {event.status !== 'active' && event.status_reason && (
                   <div className="flex flex-col gap-1 sm:col-span-2 mt-2 p-3 bg-secondary/30 rounded-md border text-foreground">
                     <dt className="font-semibold flex items-center gap-1 text-xs uppercase text-muted-foreground">
                       <Ban className="h-3 w-3" /> Reason for Change
                     </dt>
-                    <dd className="mt-1">{event.void_reason}</dd>
+                    <dd className="mt-1">{event.status_reason}</dd>
                   </div>
                 )}
                 {event.supersedes_event_id && (

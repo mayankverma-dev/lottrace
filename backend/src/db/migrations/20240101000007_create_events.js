@@ -24,7 +24,7 @@ exports.up = async (knex) => {
     table.text('hash_key_id').notNullable(); // key ID resolved from the env/KMS keyring
     table.text('status').notNullable().defaultTo('active'); // active | amended | void
     table.uuid('supersedes_event_id').references('id').inTable('events');
-    table.text('void_reason');
+    table.text('status_reason');
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
     // NO updated_at — events are immutable
 

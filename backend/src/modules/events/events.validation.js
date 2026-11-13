@@ -35,7 +35,7 @@ const createEventSchema = z.object({
 });
 
 const amendEventSchema = createEventSchema.and(z.object({
-  voidReason: z.string().min(1, "Reason is required to amend an event"),
+  amendReason: z.string().min(1, "Reason is required to amend an event"),
 }));
 
 const voidEventSchema = z.object({

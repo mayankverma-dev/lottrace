@@ -217,7 +217,7 @@ CREATE TABLE events (
   hash_key_id         text NOT NULL,       -- key ID used for this HMAC, resolved from the env/KMS keyring
   status              text NOT NULL DEFAULT 'active',     -- active | amended | void
   supersedes_event_id uuid REFERENCES events(id),        -- if this is an amendment
-  void_reason         text,
+  status_reason       text,                -- reason for the latest status change (void or amend)
   created_at          timestamptz NOT NULL DEFAULT NOW()
   -- NO updated_at — events are immutable
 );
@@ -299,7 +299,7 @@ commit.
 ### `event_evidence`
 Append-only signed evidence for mutable facts that happen after an event is sealed: status
 transitions (`void`, `amend`) and attachment additions. The chain is rooted at the parent event's
-`record_hash`, so an edit to `events.status`, `events.void_reason`, or attachment metadata is
+`record_hash`, so an edit to `events.status`, `events.status_reason`, or attachment metadata is
 detectable without re-sealing the event. Written by
 `appendEventEvidence()` in `backend/src/utils/hashChain.js`. The database enforces the
 append-only rule: a `BEFORE UPDATE OR DELETE` trigger rejects every change to a sealed row. The
@@ -333,7 +333,7 @@ FOR EACH ROW EXECUTE FUNCTION reject_event_evidence_mutation();
 ```
 
 The verifier re-walks each event's evidence chain and cross-checks the signed facts against the
-materialized `events.status` / `events.void_reason` and `attachments` rows. Mismatches fail with
+materialized `events.status` / `events.status_reason` and `attachments` rows. Mismatches fail with
 `evidence_chain_mismatch`, `evidence_payload_mismatch`, or `evidence_state_mismatch`.
 
 ---

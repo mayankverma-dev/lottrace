@@ -316,12 +316,12 @@ const voidEvent = async (eventId, voidReason, organizationId, userId = null) => 
 
     const [updated] = await trx('events')
       .where({ id: eventId, status: 'active' })
-      .update({ status: 'void', void_reason: voidReason })
+      .update({ status: 'void', status_reason: voidReason })
       .returning('*');
 
     if (!updated) throw new AppError('Event is not active', 'EVENT_IMMUTABLE', 409);
 
-    // Status and void_reason are mutable, so the sealed event hash cannot cover
+    // Status and status_reason are mutable, so the sealed event hash cannot cover
     // them. Bind the transition to the event hash with signed evidence instead.
     await appendEventEvidence(trx, {
       organizationId,
@@ -400,7 +400,7 @@ const amendEvent = async (eventId, data, organizationId, userId) => {
     // read above.
     const updated = await trx('events')
       .where({ id: eventId, organization_id: organizationId, status: 'active' })
-      .update({ status: 'amended', void_reason: data.voidReason });
+      .update({ status: 'amended', status_reason: data.amendReason });
     if (updated !== 1) throw new AppError('Event is not active', 'EVENT_IMMUTABLE', 409);
 
     await appendEventEvidence(trx, {
@@ -410,7 +410,7 @@ const amendEvent = async (eventId, data, organizationId, userId) => {
       payload: {
         fromStatus: oldEvent.status,
         toStatus: 'amended',
-        reason: data.voidReason,
+        reason: data.amendReason,
         actorId: userId,
       },
     }, oldEvent.record_hash);

@@ -239,7 +239,7 @@ const hash = hmacSha256(secret, `lottrace:event:v3|${prevHash}|${stableStringify
 ```
 
 Writers insert with `record_hash = 'PENDING'` and `hash_key_id = 'PENDING'`, insert the links,
-then seal the hash in the same transaction. Mutable lifecycle fields (`status`, `void_reason`) and
+then seal the hash in the same transaction. Mutable lifecycle fields (`status`, `status_reason`) and
 later attachment metadata are covered by the append-only `event_evidence` chain rooted at the
 event's `record_hash`, not by re-sealing the event. A database trigger rejects updates and deletes
 on sealed evidence rows.
