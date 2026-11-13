@@ -83,7 +83,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Fixed (2026-11-13, a0d9a8f) |
 | P0-05 | P0 | Row Level Security is inert at runtime | Open |
 | P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Fixed (2026-11-13, 2c31091) |
-| P0-07 | P0 | "Amend event" always fails in the web UI | Open |
+| P0-07 | P0 | "Amend event" always fails in the web UI | Fixed (2026-11-13, 0a9f87d) |
 | P0-08 | P0 | Event detail page crashes when compliance gaps exist | Open |
 | P0-09 | P0 | Event timestamps shift by the browser UTC offset | Open |
 | P0-10 | P0 | Import maps shipping rows to the wrong trace direction | Open |
@@ -241,7 +241,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-07 — "Amend event" always fails in the web UI
 
-- **Severity:** P0 · **Area:** frontend / event lifecycle · **Status:** Open
+- **Severity:** P0 · **Area:** frontend / event lifecycle · **Status:** Fixed (2026-11-13, 0a9f87d)
 - **Evidence:** `frontend/src/pages/events/RecordEventPage.jsx:163-186`; backend `events.validation.js` `amendEventSchema` requires `amendReason`.
 - **What happens:** The `payload` object is built at `:163-175` and never contains `amendReason`. The amend branch then checks `if (!payload.voidReason)` at `:177`, which is **always** true, shows "Void reason is required", and returns before calling the API. Even if that check were removed, the backend schema would reject the request. The form's reason input is bound to `formData` but is never copied into the payload.
 - **Real-world impact:** The amend feature is 100% unusable. Operators who recorded a wrong event have no correction path, so they either leave bad data or record a compensating event that duplicates quantities — both unacceptable for an FDA audit trail.
