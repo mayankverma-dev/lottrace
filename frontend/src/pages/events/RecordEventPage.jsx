@@ -19,6 +19,7 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { buildEventPayload, hasAmendReason } from './recordEventPayload';
+import { toDateTimeLocal } from '@/utils/dateTimeLocal';
 
 const CTE_TYPES = [
   { value: 'creation', label: 'Creation' },
@@ -53,7 +54,7 @@ export default function RecordEventPage() {
   const [formData, setFormData] = useState({
     eventType: 'receiving',
     locationId: '',
-    eventDatetime: new Date().toISOString().slice(0, 16),
+    eventDatetime: toDateTimeLocal(new Date()),
     notes: '',
     amendReason: '', // only used if amending
     counterpartyName: '',
@@ -81,7 +82,7 @@ export default function RecordEventPage() {
       setFormData({
         eventType: e.event_type,
         locationId: e.location_id || '',
-        eventDatetime: new Date(e.event_datetime).toISOString().slice(0, 16),
+        eventDatetime: toDateTimeLocal(e.event_datetime),
         notes: e.notes || '',
         amendReason: '',
         counterpartyName: cp.name || '',

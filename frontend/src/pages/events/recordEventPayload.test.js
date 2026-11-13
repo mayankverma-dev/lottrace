@@ -28,6 +28,18 @@ test('amendment payload includes amendReason', () => {
   assert.equal(payload.amendReason, 'Corrected quantity');
 });
 
+test('event payload sends UTC ISO datetime', () => {
+  const payload = buildEventPayload({
+    formData: formData({ eventDatetime: '2026-11-13T10:00' }),
+    inputs: links,
+    outputs: links,
+    kdePayload: {},
+    isAmending: false,
+  });
+
+  assert.match(payload.eventDatetime, /Z$/);
+});
+
 test('create payload excludes amendment and void reasons', () => {
   const payload = buildEventPayload({
     formData: formData({ amendReason: 'Should not be sent' }),

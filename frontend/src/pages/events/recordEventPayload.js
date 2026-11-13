@@ -1,3 +1,5 @@
+import { fromDateTimeLocal } from '../../utils/dateTimeLocal.js';
+
 const SHOWS_INPUTS = ['receiving', 'transformation', 'shipping'];
 const SHOWS_OUTPUTS = ['creation', 'receiving', 'transformation'];
 
@@ -17,7 +19,7 @@ export const buildEventPayload = ({ formData, inputs, outputs, kdePayload, isAme
     eventType: formData.eventType,
     locationId: formData.locationId,
     notes: formData.notes,
-    eventDatetime: new Date(formData.eventDatetime).toISOString(),
+    eventDatetime: fromDateTimeLocal(formData.eventDatetime).toISOString(),
     source: 'manual',
     kdePayload,
     counterpartyInfo,
