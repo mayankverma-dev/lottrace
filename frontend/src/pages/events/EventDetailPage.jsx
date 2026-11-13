@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { Activity, ArrowLeft, MoreVertical, Ban, Edit2, Package, MapPin, Calendar, FileText, AlertTriangle } from 'lucide-react';
 
 import { useGetEvent, useVoidEvent } from '@/api/events.api';
+import { newIdempotencyKey } from '@/lib/idempotency';
 import { usePermissions } from '@/hooks/usePermissions';
 import { formatEventDate } from '@/utils/formatDate';
 
@@ -62,6 +63,7 @@ const EventDetailPage = () => {
   const voidMutation = useVoidEvent();
 
   const [voidOpen, setVoidOpen] = useState(false);
+  const voidIdempotencyRef = useRef({ signature: null, key: null });
 
   const { register: registerVoid, handleSubmit: handleVoidSubmit, reset: resetVoid, formState: { errors: voidErrors } } = useForm({
     resolver: zodResolver(voidSchema),
@@ -69,10 +71,17 @@ const EventDetailPage = () => {
   });
 
   const onVoid = (data) => {
-    voidMutation.mutate({ eventId: id, payload: { voidReason: data.voidReason } }, {
+    const payload = { voidReason: data.voidReason };
+    const signature = JSON.stringify({ eventId: id, payload });
+    if (voidIdempotencyRef.current.signature !== signature) {
+      voidIdempotencyRef.current = { signature, key: newIdempotencyKey() };
+    }
+
+    voidMutation.mutate({ eventId: id, payload, idempotencyKey: voidIdempotencyRef.current.key }, {
       onSuccess: () => {
         setVoidOpen(false);
         resetVoid();
+        voidIdempotencyRef.current = { signature: null, key: null };
       },
     });
   };

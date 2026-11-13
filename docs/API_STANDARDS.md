@@ -226,12 +226,22 @@ All list endpoints that could grow unbounded support pagination.
 ?search=lot-code-prefix
 ```
 
-### Idempotency (Event Creation)
-Event creation endpoint accepts an optional idempotency key:
+### Idempotency (Event Mutations)
+Event mutation endpoints accept an optional idempotency key:
 ```
 Idempotency-Key: <client-generated UUID>
 ```
-If same key sent twice within 24h with the same request body, return original result (not duplicate).
+The following endpoints support idempotency:
+
+```text
+POST /api/v1/events
+POST /api/v1/events/:eventId/void
+POST /api/v1/events/:eventId/amend
+POST /api/v1/events/:eventId/attachments/presigned-url
+POST /api/v1/events/:eventId/attachments
+```
+
+If same key sent twice within 24h with same request body, return original result (not duplicate).
 Store completed idempotency records in PostgreSQL with 24h TTL. Only 2xx responses are replayable.
 Expired keys execute as new requests. Same key with a different request body returns `409` with
 `IDEMPOTENCY_KEY_REUSED`. A duplicate request still in flight returns `409` with

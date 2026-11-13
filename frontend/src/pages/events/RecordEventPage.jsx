@@ -63,6 +63,7 @@ export default function RecordEventPage() {
   const [outputs, setOutputs] = useState([]);
   const [kdePayload, setKdePayload] = useState({});
   const idempotencyRef = useRef({ signature: null, key: null });
+  const attachmentKeysRef = useRef(new Map());
 
   useEffect(() => {
     if (amendEventId && amendEventData?.data) {
@@ -180,7 +181,16 @@ export default function RecordEventPage() {
           toast.error('Void reason is required when amending an event');
           return;
         }
-        const res = await amendEvent({ eventId: amendEventId, payload });
+        const signature = JSON.stringify({ eventId: amendEventId, payload });
+        if (idempotencyRef.current.signature !== signature) {
+          idempotencyRef.current = { signature, key: newIdempotencyKey() };
+        }
+        const res = await amendEvent({
+          eventId: amendEventId,
+          payload,
+          idempotencyKey: idempotencyRef.current.key,
+        });
+        idempotencyRef.current = { signature: null, key: null };
         eventId = res.data.data.id;
         toast.success('Event amended successfully');
       } else {
@@ -202,7 +212,18 @@ export default function RecordEventPage() {
 
       if (files.length > 0) {
         for (const file of files) {
-          const urlRes = await getUploadUrl({ eventId, payload: { filename: file.name, contentType: file.type } });
+          const fileSignature = `${eventId}:${file.name}:${file.type}:${file.size}`;
+          let attachmentKeys = attachmentKeysRef.current.get(fileSignature);
+          if (!attachmentKeys) {
+            attachmentKeys = { upload: newIdempotencyKey(), add: newIdempotencyKey() };
+            attachmentKeysRef.current.set(fileSignature, attachmentKeys);
+          }
+
+          const urlRes = await getUploadUrl({
+            eventId,
+            payload: { filename: file.name, contentType: file.type },
+            idempotencyKey: attachmentKeys.upload,
+          });
           const { uploadUrl, key } = urlRes.data.data;
           
           await fetch(uploadUrl, {
@@ -213,8 +234,10 @@ export default function RecordEventPage() {
 
           await addAttachment({
             eventId,
-            payload: { key, filename: file.name, contentType: file.type, sizeBytes: file.size }
+            payload: { key, filename: file.name, contentType: file.type, sizeBytes: file.size },
+            idempotencyKey: attachmentKeys.add,
           });
+          attachmentKeysRef.current.delete(fileSignature);
         }
       }
 

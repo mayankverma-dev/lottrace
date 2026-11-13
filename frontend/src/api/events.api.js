@@ -41,7 +41,9 @@ export const useCreateEvent = () => {
 export const useVoidEvent = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ eventId, payload }) => api.post(`/events/${eventId}/void`, payload),
+    mutationFn: ({ eventId, payload, idempotencyKey }) => api.post(`/events/${eventId}/void`, payload, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: EVENTS_KEYS.all });
       queryClient.invalidateQueries({ queryKey: EVENTS_KEYS.detail(variables.eventId) });
@@ -52,7 +54,9 @@ export const useVoidEvent = () => {
 export const useAmendEvent = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ eventId, payload }) => api.post(`/events/${eventId}/amend`, payload),
+    mutationFn: ({ eventId, payload, idempotencyKey }) => api.post(`/events/${eventId}/amend`, payload, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: EVENTS_KEYS.all });
       queryClient.invalidateQueries({ queryKey: EVENTS_KEYS.detail(variables.eventId) });
@@ -62,12 +66,16 @@ export const useAmendEvent = () => {
 
 export const useGetAttachmentUploadUrl = () => {
   return useMutation({
-    mutationFn: ({ eventId, payload }) => api.post(`/events/${eventId}/attachments/presigned-url`, payload),
+    mutationFn: ({ eventId, payload, idempotencyKey }) => api.post(`/events/${eventId}/attachments/presigned-url`, payload, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    }),
   });
 };
 
 export const useAddAttachment = () => {
   return useMutation({
-    mutationFn: ({ eventId, payload }) => api.post(`/events/${eventId}/attachments`, payload),
+    mutationFn: ({ eventId, payload, idempotencyKey }) => api.post(`/events/${eventId}/attachments`, payload, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    }),
   });
 };

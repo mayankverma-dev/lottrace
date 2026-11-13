@@ -74,6 +74,12 @@ P0-06 — effective event-creation idempotency:
 - Tests: `backend/src/utils/idempotency.test.js`, `backend/src/middleware/idempotency.test.js` (19 passing P0-06 tests)
 - Docs: `docs/API_STANDARDS.md`, `docs/DATABASE_SCHEMA.md`, `docs/BACKEND_ARCHITECTURE.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
+P1-28 — event mutation idempotency:
+- `backend/src/modules/events/events.routes.js`, `backend/src/modules/events/events.validation.js` (idempotency coverage and attachment body validation for void, amend, presigned URL, and attachment registration)
+- `frontend/src/api/events.api.js`, `frontend/src/pages/events/EventDetailPage.jsx`, `frontend/src/pages/events/RecordEventPage.jsx`; Scan PWA API hooks (mutation keys reused for unchanged retries)
+- Tests: `backend/src/modules/events/events.mutation-idempotency.test.js`
+- Docs: `docs/API_STANDARDS.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
+
 P0-04 — atomic event amendment:
 - `backend/src/modules/events/events.service.js` (private `insertEvent(qb, ...)` helper; `createEvent` and `amendEvent` each use one transaction with the org advisory lock; old-row claim asserts `status = 'active'` and one affected row; post-commit trace-cache invalidation for superseded and replacement lots; deleted the nested transaction and the `overrideStatus` / `supersedesEventId` parameters)
 - `backend/src/db/migrations/20240101000007_create_events.js` (`idx_events_supersedes_once` unique partial index)
