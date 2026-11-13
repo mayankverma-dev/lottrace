@@ -11,6 +11,7 @@ const {
   appendEventEvidence,
 } = require('../../utils/hashChain');
 const AppError = require('../../utils/AppError');
+const logger = require('../../utils/logger');
 const { assertLotsBelongToOrganization } = require('../../utils/tenantLots');
 const crc32 = require('crc-32');
 const { invalidateTraceCache } = require('../trace/trace.service');
@@ -66,11 +67,13 @@ const checkComplianceGaps = async (qb, data, organizationId) => {
  * @returns {Promise<{ event: Object, lotIds: string[] }>} sealed event and linked lot ids
  */
 const insertEvent = async (qb, data, organizationId, userId, supersedesEventId = null) => {
+  let locationName = null;
   if (data.locationId) {
     const location = await qb('locations')
       .where({ id: data.locationId, organization_id: organizationId })
-      .first('id');
+      .first('id', 'name');
     if (!location) throw new AppError('Location not found', 'NOT_FOUND', 404);
+    locationName = location.name;
   }
 
   // Tenant boundary: every referenced lot must belong to this organization.
@@ -146,38 +149,50 @@ const insertEvent = async (qb, data, organizationId, userId, supersedesEventId =
 
   const sealedEvent = await sealEventHash(qb, eventId, prevHash);
 
-  // If compliance gaps exist, queue an email alert
-  if (complianceGaps) {
+  // Definitive graph; side effects (email) run after commit.
+  return {
+    event: sealedEvent,
+    lotIds: [...new Set(links.map(l => l.lot_id))],
+    complianceGapAlert: complianceGaps
+      ? {
+        eventId,
+        locationName: locationName || 'Unknown Location',
+        eventType: data.eventType,
+        timestamp: data.eventDatetime,
+        gaps: JSON.parse(complianceGaps),
+      }
+      : null,
+  };
+};
+
+/**
+ * Queues compliance-gap emails for a committed event.
+ *
+ * Must run after commit: an enqueue inside the transaction can fire for an
+ * event that later rolls back, and a Redis/BullMQ outage would then abort the
+ * compliance record itself. The event is authoritative; the email is
+ * best-effort, so a queue failure is logged and never fails the request.
+ *
+ * @param {Object|null} alert
+ * @param {string} organizationId
+ */
+const enqueueComplianceGapAlert = async (alert, organizationId) => {
+  if (!alert) return;
+  try {
     const { emailQueue } = require('../../jobs/queues');
-    const users = await qb('users')
+    const users = await db('users')
       .where({ organization_id: organizationId, status: 'active' })
       .whereIn('role', ['compliance_manager']);
-
-    const location = data.locationId
-      ? await qb('locations').where({
-        id: data.locationId,
-        organization_id: organizationId,
-      }).first()
-      : null;
-    const locationName = location ? location.name : 'Unknown Location';
-    const parsedGaps = JSON.parse(complianceGaps);
 
     for (const user of users) {
       await emailQueue.add('compliance_gap_alert', {
         type: 'compliance_gap',
-        data: {
-          email: user.email,
-          eventId: eventId,
-          locationName,
-          eventType: data.eventType,
-          timestamp: data.eventDatetime,
-          gaps: parsedGaps
-        }
+        data: { email: user.email, ...alert },
       });
     }
+  } catch (err) {
+    logger.error({ err, eventId: alert.eventId }, 'Failed to enqueue compliance gap alert');
   }
-
-  return { event: sealedEvent, lotIds: [...new Set(links.map(l => l.lot_id))] };
 };
 
 const createEvent = async (data, organizationId, userId) => {
@@ -188,7 +203,7 @@ const createEvent = async (data, organizationId, userId) => {
 
   const lockId = getAdvisoryLockId(organizationId);
 
-  const { event, lotIds } = await db.transaction(async (trx) => {
+  const { event, lotIds, complianceGapAlert } = await db.transaction(async (trx) => {
     // Acquire org-level lock to prevent concurrent hash chain generation
     await trx.raw('SELECT pg_advisory_xact_lock(?)', [lockId]);
     return insertEvent(trx, data, organizationId, userId);
@@ -196,7 +211,10 @@ const createEvent = async (data, organizationId, userId) => {
 
   // Invalidate only after commit: a rolled-back write must not evict a valid
   // cached trace, and a pre-commit eviction can be repopulated with stale data.
-  await Promise.all(lotIds.map(lotId => invalidateTraceCache(organizationId, lotId)));
+  await Promise.all([
+    ...lotIds.map(lotId => invalidateTraceCache(organizationId, lotId)),
+    enqueueComplianceGapAlert(complianceGapAlert, organizationId),
+  ]);
 
   return event;
 };
@@ -343,7 +361,7 @@ const amendEvent = async (eventId, data, organizationId, userId) => {
   // One transaction, one connection: the replacement row, the status change on
   // the superseded row, and its signed evidence all commit together or not at
   // all (P0-04). Lock order is fixed: organization advisory lock, then row lock.
-  const { replacement, lotIds } = await db.transaction(async (trx) => {
+  const { replacement, lotIds, complianceGapAlert } = await db.transaction(async (trx) => {
     // Serialize every chain writer for this organization, including creates.
     await trx.raw('SELECT pg_advisory_xact_lock(?)', [lockId]);
 
@@ -390,11 +408,16 @@ const amendEvent = async (eventId, data, organizationId, userId) => {
       // The superseded event's lots can differ from the replacement's, so both
       // sets need invalidation or the old graph survives its 5-minute TTL.
       lotIds: [...new Set([...oldLotIds, ...created.lotIds])],
+      complianceGapAlert: created.complianceGapAlert,
     };
   });
 
-  // After commit only, so a rolled-back amendment cannot evict a valid cache.
-  await Promise.all(lotIds.map(lotId => invalidateTraceCache(organizationId, lotId)));
+  // After commit only, so a rolled-back amendment cannot evict a valid cache
+  // and cannot email an alert for an event that never committed.
+  await Promise.all([
+    ...lotIds.map(lotId => invalidateTraceCache(organizationId, lotId)),
+    enqueueComplianceGapAlert(complianceGapAlert, organizationId),
+  ]);
 
   return replacement;
 };
