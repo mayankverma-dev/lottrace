@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { buildEventPayload, hasAmendReason } from './recordEventPayload';
 
 const CTE_TYPES = [
   { value: 'creation', label: 'Creation' },
@@ -54,7 +55,7 @@ export default function RecordEventPage() {
     locationId: '',
     eventDatetime: new Date().toISOString().slice(0, 16),
     notes: '',
-    voidReason: '', // only used if amending
+    amendReason: '', // only used if amending
     counterpartyName: '',
     counterpartyLotCode: '',
   });
@@ -82,7 +83,7 @@ export default function RecordEventPage() {
         locationId: e.location_id || '',
         eventDatetime: new Date(e.event_datetime).toISOString().slice(0, 16),
         notes: e.notes || '',
-        voidReason: '',
+        amendReason: '',
         counterpartyName: cp.name || '',
         counterpartyLotCode: cp.lotCode || '',
       });
@@ -154,31 +155,18 @@ export default function RecordEventPage() {
   const onSubmit = async (e) => {
     e.preventDefault();
     try {
-      let counterpartyInfo = undefined;
-      if (['receiving', 'shipping'].includes(formData.eventType)) {
-        if (formData.counterpartyName || formData.counterpartyLotCode) {
-          counterpartyInfo = {};
-          if (formData.counterpartyName) counterpartyInfo.name = formData.counterpartyName;
-          if (formData.counterpartyLotCode) counterpartyInfo.lotCode = formData.counterpartyLotCode;
-        }
-      }
-
-      const payload = {
-        eventType: formData.eventType,
-        locationId: formData.locationId,
-        notes: formData.notes,
-        eventDatetime: new Date(formData.eventDatetime).toISOString(),
-        source: 'manual',
+      const payload = buildEventPayload({
+        formData,
+        inputs,
+        outputs,
         kdePayload,
-        counterpartyInfo,
-        inputs: SHOWS_INPUTS.includes(formData.eventType) ? inputs.filter((i) => i.lotId) : [],
-        outputs: SHOWS_OUTPUTS.includes(formData.eventType) ? outputs.filter((o) => o.lotId) : [],
-      };
+        isAmending: Boolean(amendEventId),
+      });
       
       let eventId;
       if (amendEventId) {
-        if (!payload.voidReason) {
-          toast.error('Void reason is required when amending an event');
+        if (!hasAmendReason(formData.amendReason)) {
+          toast.error('Amendment reason is required');
           return;
         }
         const signature = JSON.stringify({ eventId: amendEventId, payload });
@@ -194,7 +182,6 @@ export default function RecordEventPage() {
         eventId = res.data.data.id;
         toast.success('Event amended successfully');
       } else {
-        delete payload.voidReason;
         // Reuse one key for retries of the same logical submit. A changed
         // payload is a new operation and gets a new key.
         const signature = JSON.stringify(payload);
@@ -342,11 +329,11 @@ export default function RecordEventPage() {
             </CardHeader>
             <CardContent>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="voidReason">Reason for amending (this will void the old event) *</Label>
+                <Label htmlFor="amendReason">Reason for amending (this will supersede the old event) *</Label>
                 <Textarea
-                  id="voidReason"
-                  value={formData.voidReason}
-                  onChange={setInput('voidReason')}
+                  id="amendReason"
+                  value={formData.amendReason}
+                  onChange={setInput('amendReason')}
                   placeholder="e.g. Corrected quantity and location"
                   rows={2}
                   required
