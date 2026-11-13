@@ -85,7 +85,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Fixed (2026-11-13, 2c31091) |
 | P0-07 | P0 | "Amend event" always fails in the web UI | Fixed (2026-11-13, 0a9f87d) |
 | P0-08 | P0 | Event detail page crashes when compliance gaps exist | Open |
-| P0-09 | P0 | Event timestamps shift by the browser UTC offset | Open |
+| P0-09 | P0 | Event timestamps shift by the browser UTC offset | Fixed (2026-11-13, 7ac1afb) |
 | P0-10 | P0 | Import maps shipping rows to the wrong trace direction | Open |
 | P0-11 | P0 | Trace includes superseded (amended) events | Fixed (2026-11-11, 298465f) |
 | P0-12 | P0 | Operators can create events but cannot read them | Open |
