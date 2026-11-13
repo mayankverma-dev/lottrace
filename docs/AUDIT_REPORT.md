@@ -80,7 +80,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-03 | P0 | Event creation accepts lots from other organizations | Fixed (2026-11-11, 63ce814) |
 | P0-13 | P0 | Event creation accepts cross-tenant locationId | Fixed (2026-11-11, 104a774) |
 | P0-14 | P0 | Lot creation accepts cross-tenant productId | Fixed (2026-11-11, ef77049) |
-| P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Open |
+| P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Fixed (2026-11-13, a0d9a8f) |
 | P0-05 | P0 | Row Level Security is inert at runtime | Open |
 | P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Open |
 | P0-07 | P0 | "Amend event" always fails in the web UI | Open |
@@ -192,13 +192,15 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-04 — Amendment is not atomic and can leave inconsistent history
 
-- **Severity:** P0 · **Area:** backend / event lifecycle · **Status:** Open
+- **Severity:** P0 · **Area:** backend / event lifecycle · **Status:** Fixed (2026-11-13, a0d9a8f)
 - **Evidence:** `backend/src/modules/events/events.service.js:244-262` (`amendEvent` opens `db.transaction`, then calls `createEvent`), `:48` (`createEvent` opens its **own** `db.transaction`), `:230-240` (void path).
 - **What happens:** `createEvent` runs on a different connection and commits independently. If marking the old event `amended` fails (constraint, deadlock, process crash), the new event is already committed as `active` and the old event remains `active` — two active versions. The reverse ordering is also unsafe. Concurrent amendments both read `status = 'active'` without `FOR UPDATE`, so two replacements can be created and both updates can succeed. The advisory lock is taken inside the inner transaction, not around the whole amendment.
 - **Real-world impact:** Duplicate active events, ambiguous "current" record, trace and compliance reports that cannot be reconciled. A crash during amend silently corrupts history.
 - **Fix direction:** Refactor `createEvent(data, organizationId, userId, overrideStatus, supersedesEventId, trx)` to accept an optional transaction/connection. `amendEvent` must: acquire the advisory lock once, `SELECT ... FOR UPDATE` the old event, verify `status = 'active'`, create the replacement **in the same transaction**, update the old row with `where({ id, status: 'active' })` and assert `rowCount === 1`, then commit. Invalidate caches only after commit. Add a unique partial index so an event can be superseded at most once.
 - **Implementation note:** Cache invalidation currently happens inside `createEvent` before commit (P2-03); when refactoring, move it out or pass a post-commit callback.
 - **Verification:** Force the old-event update to fail (test hook or invalid constraint) and confirm **no** new event exists. Run two concurrent amend requests; exactly one succeeds, the other gets 409. Check `supersedes_event_id` and statuses form a single chain.
+- **Fix:** `backend/src/modules/events/events.service.js` now has a private `insertEvent(qb, ...)` helper that writes one event, its links, its hash seal, and its compliance-gap alert on the caller's transaction. `createEvent` opens one transaction, takes `pg_advisory_xact_lock`, and calls the helper; `amendEvent` opens one transaction, takes the same lock, `forNoKeyUpdate()`s the old row, verifies `status = 'active'`, calls the helper for the replacement, claims the old row with `.where({ status: 'active' })` asserting one affected row, appends the signed evidence, and commits. The nested `createEvent` transaction and the `overrideStatus` / `supersedesEventId` parameters are deleted. Trace-cache invalidation moved out of the transaction and now runs after commit for both the superseded and replacement lot sets; a rejected amendment no longer evicts a valid cache entry. `backend/src/db/migrations/20240101000007_create_events.js` adds `idx_events_supersedes_once`, a unique partial index on `supersedes_event_id`, so an event can be superseded at most once at the database layer.
+- **Verified:** `backend/src/modules/events/events.amend-atomic.test.js` (6 DB tests: forced status-transition failure leaves no replacement, database rejects a second supersede, concurrent amendments settle on one winner, single chain position plus verifiable evidence, unknown-lot payload rolls back, post-commit cache invalidation for both lot sets). Full event and trace suites pass against a disposable local Postgres (`11 suites / 55 tests`), plus `src/jobs/workers/hash-verifier.alert.test.js` (2 tests). The stale part of the original evidence is now recorded for context: `forNoKeyUpdate()` already serialized concurrent amendments before this fix; the live defect was the second, independently committed transaction.
 
 ## P0-05 — Row Level Security is inert at runtime
 
