@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Scanner } from '@/features/scanner/Scanner';
 import { parseGS1 } from '@/utils/gs1Parser';
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { api } from '@/lib/api';
 import { useGetLocations } from '@/api/locations.api';
 import { useCreateEvent } from '@/api/events.api';
+import { newIdempotencyKey } from '@/lib/idempotency';
 import { toast } from 'sonner';
 import { CheckCircle, Send, ListPlus, ScanLine, RotateCcw } from 'lucide-react';
 
@@ -30,6 +31,7 @@ export default function ScanPage() {
 
   const { data: locationsData } = useGetLocations({ limit: 100 });
   const { mutateAsync: createEvent } = useCreateEvent();
+  const idempotencyRef = useRef({ signature: null, key: null });
 
   const [eventData, setEventData] = useState({
     locationId: '',
@@ -122,7 +124,18 @@ export default function ScanPage() {
         outputs: [],
       };
 
-      await createEvent(payload);
+      // Reuse one key for retries of the same logical submit. A changed
+      // payload is a new operation and gets a new key.
+      const signature = JSON.stringify(payload);
+      if (idempotencyRef.current.signature !== signature) {
+        idempotencyRef.current = { signature, key: newIdempotencyKey() };
+      }
+
+      await createEvent({
+        payload,
+        idempotencyKey: idempotencyRef.current.key,
+      });
+      idempotencyRef.current = { signature: null, key: null };
       setScannedItems([]);
       setScannedLot(null);
       setEventData({ locationId: '', eventType: 'receiving' });

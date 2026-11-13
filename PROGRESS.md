@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-13
-**Last Session:** 2026-11-13 — P1-26, P1-27, P2-15, P2-16 fixed and verified. Compliance-gap email now queues after commit, amendments cannot change event type or source, amendment reason is `amendReason` / `status_reason`, and `event.amend` audit rows point at the replacement event.
+**Last Session:** 2026-11-13 — P0-06 fixed and verified, alongside P1-26, P1-27, P2-15, P2-16. Event creation now uses organization-scoped request fingerprints, atomic 24-hour response replay, expiring claims, client-generated keys, and hourly cleanup. Compliance-gap email now queues after commit, amendments cannot change event type or source, amendment reason is `amendReason` / `status_reason`, and `event.amend` audit rows point at the replacement event.
 
 ---
 
@@ -65,6 +65,14 @@ P1-26, P1-27, P2-15, P2-16 — amendment follow-ups:
 - Frontend: `frontend/src/pages/events/EventDetailPage.jsx` (`status_reason`)
 - Tests: `events.compliance-alert.test.js`, `events.validation.test.js`, `auditLogger.test.js`; `events.amend-atomic.test.js` extended
 - Docs: `docs/AUDIT_REPORT.md`, `docs/DATABASE_SCHEMA.md`, `docs/ARCHITECTURE.md`, `docs/PRD.md`
+
+P0-06 — effective event-creation idempotency:
+- `backend/src/middleware/idempotency.js`, `backend/src/utils/idempotency.js` (organization-scoped request fingerprints, atomic claims, 2xx-only replay, expiry, mismatch/in-progress errors)
+- `backend/src/db/migrations/20240101000007_create_events.js`, `backend/src/db/migrations/20240101000017_create_idempotency_keys.js` (organization-scoped import key uniqueness, request fingerprint, in-flight response state, constraints)
+- `backend/src/jobs/queues.js`, `backend/src/jobs/index.js`, `backend/src/jobs/workers/idempotency-cleanup.js` (hourly expired-row cleanup)
+- Frontend and Scan PWA event API/hooks (UUID keys reused for same logical retry)
+- Tests: `backend/src/utils/idempotency.test.js`, `backend/src/middleware/idempotency.test.js` (19 passing P0-06 tests)
+- Docs: `docs/API_STANDARDS.md`, `docs/DATABASE_SCHEMA.md`, `docs/BACKEND_ARCHITECTURE.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P0-04 — atomic event amendment:
 - `backend/src/modules/events/events.service.js` (private `insertEvent(qb, ...)` helper; `createEvent` and `amendEvent` each use one transaction with the org advisory lock; old-row claim asserts `status = 'active'` and one affected row; post-commit trace-cache invalidation for superseded and replacement lots; deleted the nested transaction and the `overrideStatus` / `supersedesEventId` parameters)

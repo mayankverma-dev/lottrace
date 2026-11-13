@@ -209,7 +209,7 @@ CREATE TABLE events (
   compliance_gaps     jsonb,               -- [{field, message}] if required KDEs missing
   has_compliance_gaps boolean NOT NULL GENERATED ALWAYS AS (compliance_gaps IS NOT NULL AND jsonb_array_length(compliance_gaps) > 0) STORED,
   notes               text,
-  idempotency_key     text UNIQUE,         -- client-provided idempotency key
+  idempotency_key     text,                -- import dedupe key; unique per organization
   record_hash         text NOT NULL,       -- HMAC-SHA256 of the canonical event payload + prev_hash
   prev_hash           text NOT NULL,       -- hash of previous event in org's chain (or 'GENESIS')
   chain_seq           bigint NOT NULL,     -- monotonic per-org chain position (see note below)
@@ -237,6 +237,7 @@ CREATE INDEX idx_events_compliance_gaps ON events(organization_id, has_complianc
 CREATE INDEX idx_events_recorded_by ON events(recorded_by);
 -- Chain order + tip lookup. Unique per organization; never order the chain by created_at.
 CREATE UNIQUE INDEX idx_events_org_chain_seq ON events(organization_id, chain_seq);
+CREATE UNIQUE INDEX uq_events_org_idempotency_key ON events(organization_id, idempotency_key);
 
 -- An event can be superseded at most once. A second replace attempt fails
 -- with 23505 even if application code is bypassed.
@@ -565,17 +566,23 @@ CREATE TABLE subscriptions (
 ---
 
 ### `idempotency_keys`
-Used to prevent duplicate event creation from retried requests.
+Used to prevent duplicate event creation from retried HTTP requests.
 ```sql
 CREATE TABLE idempotency_keys (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  key             text NOT NULL,
+  key             text NOT NULL CHECK (char_length(key) BETWEEN 1 AND 255),
   organization_id uuid NOT NULL REFERENCES organizations(id),
-  response_status integer NOT NULL,
-  response_body   jsonb NOT NULL,
+  request_hash    text NOT NULL,                           -- SHA-256 of method + route + canonical body
+  response_status integer,                                  -- NULL while request is in flight
+  response_body   jsonb,
   expires_at      timestamptz NOT NULL,  -- 24 hours from creation
   created_at      timestamptz NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE idempotency_keys
+  ADD CONSTRAINT idempotency_response_status_2xx CHECK (
+    response_status IS NULL OR (response_status >= 200 AND response_status < 300)
+  );
 
 CREATE UNIQUE INDEX idx_idempotency_org_key ON idempotency_keys(organization_id, key);
 CREATE INDEX idx_idempotency_expires ON idempotency_keys(expires_at);  -- for cleanup job

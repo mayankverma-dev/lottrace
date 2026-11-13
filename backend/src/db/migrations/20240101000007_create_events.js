@@ -16,7 +16,10 @@ exports.up = async (knex) => {
     table.jsonb('compliance_gaps'); // [{field, message}]
     // has_compliance_gaps is a generated column — created via raw SQL below
     table.text('notes');
-    table.text('idempotency_key').unique();
+    // Import dedupe key (`import_<organization_id>_<transaction_id>`). Session
+    // HTTP idempotency lives in `idempotency_keys`, not here. Unique per
+    // organization so two tenants may use the same key value.
+    table.text('idempotency_key');
     table.text('record_hash').notNullable();
     table.text('prev_hash').notNullable();
     table.bigInteger('chain_seq').notNullable(); // monotonic per-org chain position
@@ -36,6 +39,8 @@ exports.up = async (knex) => {
 
     // Composite key for event_lot_links' tenant-safe FK (P0-03).
     table.unique(['id', 'organization_id'], 'uq_events_id_org');
+
+    table.unique(['organization_id', 'idempotency_key'], 'uq_events_org_idempotency_key');
 
     table.foreign(['location_id', 'organization_id'])
       .references(['id', 'organization_id'])

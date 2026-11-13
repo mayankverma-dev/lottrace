@@ -16,8 +16,8 @@ router.use(tenantScope);
 router.post(
   '/',
   rbac(['org_admin', 'compliance_manager', 'operator']),
-  idempotency,
   validate(createEventSchema),
+  idempotency,
   eventsController.createEvent
 );
 

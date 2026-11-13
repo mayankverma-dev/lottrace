@@ -31,7 +31,9 @@ export const useGetEvent = (id) => {
 export const useCreateEvent = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload) => api.post('/events', payload),
+    mutationFn: ({ payload, idempotencyKey }) => api.post('/events', payload, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: EVENTS_KEYS.all }),
   });
 };

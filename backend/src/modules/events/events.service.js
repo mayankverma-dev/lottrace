@@ -102,7 +102,6 @@ const insertEvent = async (qb, data, organizationId, userId, supersedesEventId =
     kde_payload: JSON.stringify(data.kdePayload || {}),
     compliance_gaps: complianceGaps,
     notes: data.notes || null,
-    idempotency_key: data.idempotencyKey || null,
     // The hash covers persisted values, so it is sealed after the row and
     // its links exist (P0-01). Same transaction; never rewritten later.
     record_hash: PENDING_RECORD_HASH,
@@ -196,11 +195,6 @@ const enqueueComplianceGapAlert = async (alert, organizationId) => {
 };
 
 const createEvent = async (data, organizationId, userId) => {
-  if (data.idempotencyKey) {
-    const existing = await db('events').where({ idempotency_key: data.idempotencyKey, organization_id: organizationId }).first();
-    if (existing) return existing;
-  }
-
   const lockId = getAdvisoryLockId(organizationId);
 
   const { event, lotIds, complianceGapAlert } = await db.transaction(async (trx) => {

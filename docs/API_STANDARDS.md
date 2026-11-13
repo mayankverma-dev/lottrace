@@ -128,6 +128,8 @@ VALIDATION_ERROR        — Zod schema violation (always 422)
 NOT_FOUND               — Resource not found (or cross-tenant, always 404)
 DUPLICATE_ENTRY         — Unique constraint violated
 CONFLICT                — Optimistic lock / version conflict
+IDEMPOTENCY_KEY_REUSED  — Key reused with a different request
+IDEMPOTENCY_KEY_IN_PROGRESS — Matching request is still processing
 
 LOT_VOIDED              — Operation not allowed on voided lot
 LOT_RECALLED            — Operation not allowed on recalled lot
@@ -225,12 +227,16 @@ All list endpoints that could grow unbounded support pagination.
 ```
 
 ### Idempotency (Event Creation)
-Event creation endpoints accept an optional idempotency key:
+Event creation endpoint accepts an optional idempotency key:
 ```
 Idempotency-Key: <client-generated UUID>
 ```
-If same key sent twice within 24h, return the original result (not duplicate).
-Store idempotency keys in Redis with 24h TTL.
+If same key sent twice within 24h with the same request body, return original result (not duplicate).
+Store completed idempotency records in PostgreSQL with 24h TTL. Only 2xx responses are replayable.
+Expired keys execute as new requests. Same key with a different request body returns `409` with
+`IDEMPOTENCY_KEY_REUSED`. A duplicate request still in flight returns `409` with
+`IDEMPOTENCY_KEY_IN_PROGRESS`.
+Keys are 1–255 characters. The key is scoped to the authenticated organization.
 
 ---
 

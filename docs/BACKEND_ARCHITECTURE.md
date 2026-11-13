@@ -323,7 +323,7 @@ Key behaviors:
 
 The `createEvent` service function is the most complex in the codebase. It:
 
-1. **Checks idempotency** — if an `Idempotency-Key` header was provided and a matching event already exists in the DB, it returns the original event immediately (no duplicate).
+1. **Claims idempotency** — if an `Idempotency-Key` header was provided, the middleware atomically claims an organization-scoped PostgreSQL row using a request fingerprint. Completed 2xx responses replay for 24 hours; mismatched bodies return 409.
 2. **Acquires a PostgreSQL advisory lock** (`pg_advisory_xact_lock`) scoped to the organization. This prevents two concurrent event-creation requests from generating hash chain conflicts.
 3. **Fetches `prev_hash`** — looks up the most recent event for the organization. The first-ever event gets `'GENESIS'` as its `prev_hash`.
 4. **Runs compliance gap detection** — joins the lot's product to its `custom_kde_schema` and checks which required fields are absent from `kde_payload`.
@@ -481,9 +481,13 @@ The events router applies three route-level middlewares before the controller:
 ### Step 4 — Idempotency Middleware (idempotency.js)
 
 If the request includes an `Idempotency-Key` header, the middleware:
-- Checks `idempotency_keys` table (or Redis) for a matching `(organization_id, key)` record.
-- If found and not expired → returns the cached response immediately. The controller and service are never called.
-- If not found → proceeds to the controller and registers a hook to save the response body after success.
+- Validates the key length and computes SHA-256 over method, route, and canonical validated body.
+- Claims `(organization_id, key)` atomically in `idempotency_keys`.
+- If a live completed row matches → returns its stored 2xx response.
+- If the fingerprint differs → returns `409 IDEMPOTENCY_KEY_REUSED`.
+- If another request owns an unfinished claim → returns `409 IDEMPOTENCY_KEY_IN_PROGRESS`.
+- Stores only 2xx responses for 24 hours. Non-2xx responses release the claim.
+- An hourly maintenance worker deletes expired rows.
 
 ---
 
@@ -518,8 +522,8 @@ Its only job is to extract parameters from the request context and call the serv
 
 This is where all the work happens, inside a single **PostgreSQL transaction**:
 
-**7a. Idempotency check (inline)**
-If `data.idempotencyKey` is present, queries `events` table for a matching key. Returns early if found.
+**7a. Idempotency**
+Handled before controller execution by `idempotency.js`; event service does not receive or persist HTTP idempotency keys.
 
 **7b. Advisory lock**
 ```sql

@@ -3,9 +3,7 @@ const eventsService = require('./events.service');
 const { getEventsQuerySchema } = require('./events.validation');
 
 const createEvent = async (req, res) => {
-  const idempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
-  const payload = { ...req.validatedBody, idempotencyKey };
-  const event = await eventsService.createEvent(payload, req.organizationId, req.user.id);
+  const event = await eventsService.createEvent(req.validatedBody, req.organizationId, req.user.id);
   return apiResponse.created(res, event, 'Event created successfully');
 };
 

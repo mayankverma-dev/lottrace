@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, ClipboardList, AlertCircle } from 'lucide-react';
 
 import { useCreateEvent, useGetAttachmentUploadUrl, useAddAttachment, useGetEvent, useAmendEvent } from '@/api/events.api';
+import { newIdempotencyKey } from '@/lib/idempotency';
 import { useGetLocations } from '@/api/locations.api';
 import { useGetLots } from '@/api/lots.api';
 import { useGetProducts } from '@/api/products.api';
@@ -61,6 +62,7 @@ export default function RecordEventPage() {
   const [inputs, setInputs] = useState([]);
   const [outputs, setOutputs] = useState([]);
   const [kdePayload, setKdePayload] = useState({});
+  const idempotencyRef = useRef({ signature: null, key: null });
 
   useEffect(() => {
     if (amendEventId && amendEventData?.data) {
@@ -183,7 +185,17 @@ export default function RecordEventPage() {
         toast.success('Event amended successfully');
       } else {
         delete payload.voidReason;
-        const res = await createEvent(payload);
+        // Reuse one key for retries of the same logical submit. A changed
+        // payload is a new operation and gets a new key.
+        const signature = JSON.stringify(payload);
+        if (idempotencyRef.current.signature !== signature) {
+          idempotencyRef.current = { signature, key: newIdempotencyKey() };
+        }
+        const res = await createEvent({
+          payload,
+          idempotencyKey: idempotencyRef.current.key,
+        });
+        idempotencyRef.current = { signature: null, key: null };
         eventId = res.data.data.id;
         toast.success('Event recorded successfully');
       }
