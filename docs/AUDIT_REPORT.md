@@ -82,7 +82,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-14 | P0 | Lot creation accepts cross-tenant productId | Fixed (2026-11-11, ef77049) |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Fixed (2026-11-13, a0d9a8f) |
 | P0-05 | P0 | Row Level Security is inert at runtime | Open |
-| P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Open |
+| P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Fixed (2026-11-13, 2c31091) |
 | P0-07 | P0 | "Amend event" always fails in the web UI | Open |
 | P0-08 | P0 | Event detail page crashes when compliance gaps exist | Open |
 | P0-09 | P0 | Event timestamps shift by the browser UTC offset | Open |
@@ -235,6 +235,8 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Fix direction:** Generate an idempotency key client-side per submit attempt (UUID v4) and send it on every mutating request; reuse the same key only for retries of the same logical operation. Check `expires_at > now()` on lookup. Cache only 2xx (optionally 409). Add `request_hash` (SHA-256 of route + canonical body) and return 409 `IDEMPOTENCY_KEY_REUSED` on mismatch. Insert with `onConflict().ignore()` and re-read the winner so the race returns one consistent response. Add a TTL cleanup job. Bound the key to ≤ 255 chars. Make `events.idempotency_key` unique per `(organization_id, idempotency_key)` (or drop the column and rely solely on the middleware table) so cross-tenant collisions are impossible.
 - **Greenfield note:** Drop and recreate the table or reset the development database. Do not scan for duplicate rows, write a dedupe migration, or preserve existing idempotency keys. Make the final schema correct from scratch.
 - **Verification:** Double-submit the same form with the same key → one event, identical response. Same key + different body → 409. Expired key → executes anew. 400 response is not cached. Two concurrent requests → exactly one event. Org A and org B can use the same key without a 500.
+- **Fix:** `idempotency.js` now validates and atomically claims organization-scoped keys, fingerprints canonical validated requests, ignores expired rows, stores only 2xx responses, rejects changed bodies, releases failed claims, and replays completed responses for 24 hours. Event routes validate before idempotency. Web and Scan PWA event creation generate and send one UUID key per logical submit, reusing it for retries. The HTTP key is removed from manual event rows; the import dedupe key remains organization-unique. An hourly BullMQ maintenance worker removes expired rows.
+- **Verified:** `backend/src/utils/idempotency.test.js` (7 unit tests) and `backend/src/middleware/idempotency.test.js` (12 disposable-local-Postgres tests) pass. Covered replay, mismatch, concurrency, expiry, stale claims, non-cached 4xx, tenant reuse, key length, cleanup, import-key uniqueness, and no-key behavior.
 
 ## P0-07 — "Amend event" always fails in the web UI
 
