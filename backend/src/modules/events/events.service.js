@@ -376,12 +376,24 @@ const amendEvent = async (eventId, data, organizationId, userId) => {
     if (!oldEvent) throw new AppError('Event not found', 'NOT_FOUND', 404);
     if (oldEvent.status !== 'active') throw new AppError('Event is not active', 'EVENT_IMMUTABLE', 409);
 
+    // An amendment corrects the facts of one event; it cannot turn it into a
+    // different event type, and it cannot rewrite where the record came from.
+    // Recorded-by stays the authenticated amend actor on the replacement row.
+    if (data.eventType !== oldEvent.event_type) {
+      throw new AppError(
+        'Event type cannot change when amending an event',
+        'VALIDATION_ERROR',
+        400,
+      );
+    }
+    const replacementData = { ...data, source: oldEvent.source };
+
     const oldLotIds = (await trx('event_lot_links')
       .where({ event_id: eventId })
       .select('lot_id')).map(link => link.lot_id);
 
     // Create the replacement that supersedes the old one, same transaction.
-    const created = await insertEvent(trx, data, organizationId, userId, eventId);
+    const created = await insertEvent(trx, replacementData, organizationId, userId, eventId);
 
     // Claim the old row. The status predicate plus the affected-row assertion
     // guarantee exactly one transition, even if a future caller bypasses the

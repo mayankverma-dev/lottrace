@@ -123,7 +123,7 @@ describeDb('P0-04 atomic event amendment', () => {
     };
   };
 
-  const createTransformation = (org) => eventsService.createEvent({
+  const createTransformation = (org, overrides = {}) => eventsService.createEvent({
     eventType: 'transformation',
     eventDatetime: '2026-11-12T10:00:00.000Z',
     source: 'manual',
@@ -131,6 +131,7 @@ describeDb('P0-04 atomic event amendment', () => {
     counterpartyInfo: null,
     inputs: [{ lotId: org.inputLotId, quantity: 10, uom: 'kg' }],
     outputs: [{ lotId: org.oldOutputLotId, quantity: 9, uom: 'kg' }],
+    ...overrides,
   }, org.orgId, org.userId);
 
   const buildAmendPayload = (org, overrides = {}) => ({
@@ -324,6 +325,39 @@ describeDb('P0-04 atomic event amendment', () => {
     expect(await db('events').where({ supersedes_event_id: original.id })).toHaveLength(0);
     expect((await db('events').where({ id: original.id }).first()).status).toBe('active');
     expect(await evidenceRows(original.id)).toHaveLength(0);
+  });
+
+  it('rejects an amendment that changes the event type', async () => {
+    const org = await seedOrganization('type-change');
+    const original = await createTransformation(org);
+
+    await expect(
+      eventsService.amendEvent(
+        original.id,
+        buildAmendPayload(org, { eventType: 'receiving' }),
+        org.orgId,
+        org.userId,
+      ),
+    ).rejects.toMatchObject({ code: 'VALIDATION_ERROR', statusCode: 400 });
+
+    expect(await db('events').where({ supersedes_event_id: original.id })).toHaveLength(0);
+    expect((await db('events').where({ id: original.id }).first()).status).toBe('active');
+  });
+
+  it('keeps the original source instead of trusting the amend payload', async () => {
+    const org = await seedOrganization('source');
+    const original = await createTransformation(org, { source: 'scan' });
+
+    const replacement = await eventsService.amendEvent(
+      original.id,
+      buildAmendPayload(org, { source: 'manual' }),
+      org.orgId,
+      org.userId,
+    );
+
+    expect(replacement.source).toBe('scan');
+    const stored = await db('events').where({ id: replacement.id }).first();
+    expect(stored.source).toBe('scan');
   });
 
   it('invalidates the superseded event\'s lots after commit only', async () => {
