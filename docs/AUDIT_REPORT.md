@@ -116,6 +116,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-25 | P1 | Trace drops replacement edge when event versions share lot pairs | Fixed (2026-11-11, 998f338) |
 | P1-26 | P1 | Compliance-gap email is enqueued inside the event transaction | Fixed (2026-11-13, aa97ef2) |
 | P1-27 | P1 | Amendment can change event type and source | Fixed (2026-11-13, 0bffd49) |
+| P1-28 | P1 | Event mutations lack idempotency | Fixed (2026-11-13, 08c5818) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Open |
 | P2-02 | P2 | API response pagination shape is inconsistent | Open |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Open |
@@ -560,6 +561,15 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Verification:** Amend with a different `eventType` → rejected, no replacement, old event still `active`. Amend a `scan` event with `source: 'manual'` → replacement and stored row keep `scan`. Confirm the amend API rejects the mismatch over HTTP.
 - **Fix:** `amendEvent` now rejects `data.eventType !== oldEvent.event_type` with `400 VALIDATION_ERROR` and inserts `{ ...data, source: oldEvent.source }` (`events.service.js:382-396`). `recorded_by` remains the authenticated user on the replacement.
 - **Verified:** `events.amend-atomic.test.js` adds "rejects an amendment that changes the event type" and "keeps the original source instead of trusting the amend payload" (suite now 8 tests). Live API returned `400 VALIDATION_ERROR` for a type change and kept `source=scan` through a successful amendment.
+
+## P1-28 — Event mutations lack idempotency
+
+- **Severity:** P1 · **Area:** backend + frontend / API correctness · **Status:** Fixed (2026-11-13, 08c5818)
+- **Evidence:** `backend/src/modules/events/events.routes.js` applied idempotency only to `POST /events`; void, amend, presigned attachment URL, and attachment registration routes had no idempotency middleware. `frontend/src/api/events.api.js` and `scan-pwa/src/api/events.api.js` sent no keys for those mutations.
+- **What happens:** Retries after a timeout can repeat status transitions, create replacement events, generate new upload URLs, or insert duplicate attachment rows. Audit middleware can also record a repeated successful mutation.
+- **Fix direction:** Reuse P0-06 middleware on every event mutation. Validate attachment bodies before fingerprinting. Generate one client key per logical mutation and reuse it for retries. Replay only the original 2xx result.
+- **Fix:** Void, amend, presigned URL, and attachment registration routes now validate bodies, claim organization-scoped idempotency keys, and place audit logging after idempotency. Web and Scan PWA mutation hooks send `Idempotency-Key`; event detail, amend, and attachment flows retain keys for unchanged retries. No schema change required.
+- **Verified:** `events.mutation-idempotency.test.js` covers void, amend, presigned URL, attachment registration, mismatch, failed retry, validation retry, tenant reuse, and audit replay behavior.
 
 ---
 
