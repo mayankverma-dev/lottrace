@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-13
-**Last Session:** 2026-11-13 — P0-04 implementation complete; verification passed. Amendment is now one transaction (replacement, status change, and signed evidence commit together) and an event can be superseded at most once.
+**Last Session:** 2026-11-13 — P1-26, P1-27, P2-15, P2-16 fixed and verified. Compliance-gap email now queues after commit, amendments cannot change event type or source, amendment reason is `amendReason` / `status_reason`, and `event.amend` audit rows point at the replacement event.
 
 ---
 
@@ -55,6 +55,16 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P1-26, P1-27, P2-15, P2-16 — amendment follow-ups:
+- `backend/src/modules/events/events.service.js` (compliance-gap alert returned from `insertEvent` and queued after commit; amendment rejects a different `eventType` and pins `source`; `status_reason` / `amendReason`)
+- `backend/src/modules/events/events.validation.js` (`amendReason` for amendments, `voidReason` stays for voids)
+- `backend/src/middleware/auditLogger.js` (amend audit `entityId` = replacement, `metadata.supersededEventId` = original)
+- `backend/src/jobs/workers/hash-verifier.js`, `backend/src/utils/hashChain.js` (verifier reads `status_reason`)
+- `backend/src/db/migrations/20240101000007_create_events.js` (`status_reason` column)
+- Frontend: `frontend/src/pages/events/EventDetailPage.jsx` (`status_reason`)
+- Tests: `events.compliance-alert.test.js`, `events.validation.test.js`, `auditLogger.test.js`; `events.amend-atomic.test.js` extended
+- Docs: `docs/AUDIT_REPORT.md`, `docs/DATABASE_SCHEMA.md`, `docs/ARCHITECTURE.md`, `docs/PRD.md`
 
 P0-04 — atomic event amendment:
 - `backend/src/modules/events/events.service.js` (private `insertEvent(qb, ...)` helper; `createEvent` and `amendEvent` each use one transaction with the org advisory lock; old-row claim asserts `status = 'active'` and one affected row; post-commit trace-cache invalidation for superseded and replacement lots; deleted the nested transaction and the `overrideStatus` / `supersedesEventId` parameters)

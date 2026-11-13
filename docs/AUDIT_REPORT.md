@@ -114,6 +114,8 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-23 | P1 | Voiding an event does not invalidate warm trace cache | Fixed (2026-11-11, 192ee02) |
 | P1-24 | P1 | Event status filters return 500 (`status` is ambiguous) | Fixed (2026-11-11, 7f50307) |
 | P1-25 | P1 | Trace drops replacement edge when event versions share lot pairs | Fixed (2026-11-11, 998f338) |
+| P1-26 | P1 | Compliance-gap email is enqueued inside the event transaction | Fixed (2026-11-13, aa97ef2) |
+| P1-27 | P1 | Amendment can change event type and source | Fixed (2026-11-13, 0bffd49) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Open |
 | P2-02 | P2 | API response pagination shape is inconsistent | Open |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Open |
@@ -128,6 +130,8 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-12 | P2 | Event list pagination is unstable when `created_at` values tie | Fixed (2026-11-10, ca4985e) |
 | P2-13 | P2 | `event_evidence` lacks database-level immutability enforcement | Fixed (2026-11-11, c9473b8) |
 | P2-14 | P2 | Audit report and progress docs overstate test counts and coverage | Fixed (2026-11-11, 642d2e1) |
+| P2-15 | P2 | Amendment reason is stored and required as `voidReason` | Fixed (2026-11-13, 71bfa91) |
+| P2-16 | P2 | `event.amend` audit row points at the superseded event | Fixed (2026-11-13, c034077) |
 
 ---
 
@@ -235,10 +239,10 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 ## P0-07 — "Amend event" always fails in the web UI
 
 - **Severity:** P0 · **Area:** frontend / event lifecycle · **Status:** Open
-- **Evidence:** `frontend/src/pages/events/RecordEventPage.jsx:163-186`; backend `events.validation.js` `amendEventSchema` requires `voidReason`.
-- **What happens:** The `payload` object is built at `:163-175` and never contains `voidReason`. The amend branch then checks `if (!payload.voidReason)` at `:177`, which is **always** true, shows "Void reason is required", and returns before calling the API. Even if that check were removed, the backend schema would reject the request. The `voidReason` input exists in the form and is bound to `formData`, but is never copied into the payload.
+- **Evidence:** `frontend/src/pages/events/RecordEventPage.jsx:163-186`; backend `events.validation.js` `amendEventSchema` requires `amendReason`.
+- **What happens:** The `payload` object is built at `:163-175` and never contains `amendReason`. The amend branch then checks `if (!payload.voidReason)` at `:177`, which is **always** true, shows "Void reason is required", and returns before calling the API. Even if that check were removed, the backend schema would reject the request. The form's reason input is bound to `formData` but is never copied into the payload.
 - **Real-world impact:** The amend feature is 100% unusable. Operators who recorded a wrong event have no correction path, so they either leave bad data or record a compensating event that duplicates quantities — both unacceptable for an FDA audit trail.
-- **Fix direction:** Build the payload with `voidReason: formData.voidReason` when amending, and omit it entirely when creating. Delete the impossible check or replace it with a real client-side validation message tied to the field. Keep the backend schema as the source of truth. Consider disabling the submit button until a reason is entered.
+- **Fix direction:** Build the payload with `amendReason: formData.amendReason` when amending, and omit it entirely when creating. Delete the impossible check or replace it with a real client-side validation message tied to the field. Keep the backend schema as the source of truth. Consider disabling the submit button until a reason is entered.
 - **Verification:** Open an active event → Amend → change a quantity → enter a reason → submit. Confirm the API returns 201/200, the old event becomes `amended`, the new one is `active` with `supersedes_event_id`, and the trace shows only the new version (after P0-11). Confirm create still works without a `voidReason` field.
 
 ## P0-08 — Event detail page crashes when compliance gaps exist
@@ -533,6 +537,28 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Fix:** Trace queries now deduplicate by `(lot id, event id)` while `buildTraceResult()` continues deduplicating nodes by lot id. Amended events remain excluded by `e.status = 'active'`.
 - **Verification:** `trace.amended-events.test.js` covers two current events sharing one lot pair, an amendment that preserves that pair, forward/backward/full trace results, and exclusion of the amended event. The test passes.
 
+## P1-26 — Compliance-gap email is enqueued inside the event transaction
+
+- **Severity:** P1 · **Area:** backend / events · **Status:** Fixed (2026-11-13, aa97ef2)
+- **Evidence:** `backend/src/modules/events/events.service.js:148-171` called `emailQueue.add('compliance_gap_alert', ...)` from inside `insertEvent`, which runs on the caller's transaction. The same helper served `createEvent` and `amendEvent`.
+- **What happens:** The BullMQ enqueue is a network side effect inside the database transaction. If Redis or BullMQ is unavailable, the enqueue throws and the whole event rolls back even though the compliance facts were valid. The reverse is also possible: the job is accepted, the transaction later fails, and compliance managers receive an alert for an event that never existed.
+- **Real-world impact:** A Redis incident blocks event recording across every tenant. A rollback after enqueue sends a false compliance-gap alert, and the alert cannot be retracted. Alert delivery and event durability are coupled when they should not be.
+- **Fix direction:** Collect the gap facts inside the transaction, return them with the event, and enqueue only after commit. A queue failure must be logged and must not fail the request; the event is the compliance record, the email is best-effort.
+- **Verification:** Create an event with a required KDE field missing while the queue rejects the job: the event must commit and the request must succeed. Force a transaction rollback: the queue must not be called. Amend an event with gaps: exactly one alert must be queued for the replacement id. Check the alert is not visible to another database connection before commit.
+- **Fix:** `insertEvent` now returns `complianceGapAlert` and performs no queue calls. `enqueueComplianceGapAlert` (`events.service.js:179`) resolves the active `compliance_manager` recipients and enqueues after commit; `createEvent` and `amendEvent` run it in parallel with cache invalidation (`:216`, `:431`). Failures are logged with the event id and swallowed.
+- **Verified:** `events.compliance-alert.test.js` (4 DB tests: one alert per manager with the event visible on another connection at enqueue time, queue rejection leaves the committed event, rollback queues nothing, amendment queues the replacement id). Full event/trace/utils/jobs/middleware run: `16 suites / 83 tests` pass.
+
+## P1-27 — Amendment can change event type and source
+
+- **Severity:** P1 · **Area:** backend / events · **Status:** Fixed (2026-11-13, 0bffd49)
+- **Evidence:** `backend/src/modules/events/events.validation.js:37` built `amendEventSchema` as `createEventSchema.and(...)`, so every create field stayed writable on an amendment, including `eventType` and `source`. `events.service.js` then inserted the replacement with `data.eventType` and `data.source`.
+- **What happens:** An amendment can turn a `receiving` event into a `transformation`, or rewrite a `scan` record as `manual`. The old row is marked `amended` and the replacement is `active`, so the visible history now claims a different event type or provenance at that chain position. Incoming links can also change shape without the original event's constraints.
+- **Real-world impact:** An audit trail that can change the type of an event under the same lot history is not trustworthy. A `scan` receipt rewritten as `manual` hides that the data came from a barcode and weakens the provenance claim FSMA 204 recordkeeping relies on.
+- **Fix direction:** Pin identity fields on amend. Reject an `eventType` that differs from the superseded row and copy `source` from it. Keep correctable facts (datetime, location, notes, KDE payload, links) writable, and keep `recorded_by` derived from the authenticated amend actor.
+- **Verification:** Amend with a different `eventType` → rejected, no replacement, old event still `active`. Amend a `scan` event with `source: 'manual'` → replacement and stored row keep `scan`. Confirm the amend API rejects the mismatch over HTTP.
+- **Fix:** `amendEvent` now rejects `data.eventType !== oldEvent.event_type` with `400 VALIDATION_ERROR` and inserts `{ ...data, source: oldEvent.source }` (`events.service.js:382-396`). `recorded_by` remains the authenticated user on the replacement.
+- **Verified:** `events.amend-atomic.test.js` adds "rejects an amendment that changes the event type" and "keeps the original source instead of trusting the amend payload" (suite now 8 tests). Live API returned `400 VALIDATION_ERROR` for a type change and kept `source=scan` through a successful amendment.
+
 ---
 
 # P2 — Robustness, performance, and delivery
@@ -660,6 +686,28 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **What happens:** Maintainers and reviewers see stale verification evidence and cannot reliably compare current test coverage with the documented result.
 - **Fix:** Updated P1-18 verification text and `PROGRESS.md` to report the current run: 20 suites, 157 passed tests, and 4 skipped tests. Added missing P1-25, P2-13, and P2-14 entries to the issue table and detailed report.
 - **Verification:** Full local DB-backed Jest run passes: `Test Suites: 20 passed, 20 total`; `Tests: 4 skipped, 157 passed, 161 total`. Email tests pass without hash environment variables because test fixtures now provide required hash settings.
+
+## P2-15 — Amendment reason is stored and required as `voidReason`
+
+- **Severity:** P2 · **Area:** backend / API contract · **Status:** Fixed (2026-11-13, 71bfa91)
+- **Evidence:** `backend/src/modules/events/events.validation.js` required `voidReason` from `amendEventSchema`; `events.service.js` wrote it to `events.void_reason` and the signed evidence `reason`. The migration named the column `void_reason` on a table that also stores amendments.
+- **What happens:** An amendment is not a void, but the field name says it is. Clients must send a void-named field to correct an event, the database column mislabels amendment reasons, and any future filter or report keyed on a "void reason" silently includes amendments.
+- **Real-world impact:** API consumers and auditors read the wrong semantics. A recall report that lists void reasons can mix in amendment corrections, and the contract is confusing enough that the broken web amend flow (P0-07) grew around it.
+- **Fix direction:** Rename the storage to a neutral `status_reason`, require `amendReason` on amendments, keep `voidReason` on voids, and keep the evidence payload key `reason` because it is already neutral. Update the verifier, the web detail view, and the docs. Greenfield: edit the original migration and reset the development database; no backfill.
+- **Verification:** Amend without `amendReason` → validation error. Send `voidReason` instead → validation error. Void still requires `voidReason`. Amend and void through the API: the event row exposes `status_reason`, and the old `void_reason` field is gone. Frontend build passes. Migrate from scratch on a reset database and confirm the column name.
+- **Fix:** The events migration creates `status_reason`. `amendEventSchema` requires `amendReason` and `voidEventSchema` keeps `voidReason` (`events.validation.js:38,42`). `amendEvent` writes `status_reason: data.amendReason` and signs it; `voidEvent` writes `status_reason: voidReason` (`events.service.js:319,403`). `hash-verifier.js` compares `event.status_reason`, and `EventDetailPage.jsx` reads `status_reason`. The amend form in `RecordEventPage.jsx` is left untouched because P0-07 already blocks that flow before the API call.
+- **Verified:** `events.validation.test.js` (4 schema tests), full `16 suites / 83 tests` DB suite, `vite build` passes. Live API: `voidReason`-only amendment returned `422 VALIDATION_ERROR`, `amendReason` returned `201`, `GET /events/:id` returned `status_reason: "corrected quantity"` and no `void_reason`. Dev database rolled back 21 migrations, re-applied 21, and reseeded; only `status_reason` exists on `events`.
+
+## P2-16 — `event.amend` audit row points at the superseded event
+
+- **Severity:** P2 · **Area:** backend / audit · **Status:** Fixed (2026-11-13, c034077)
+- **Evidence:** `backend/src/middleware/auditLogger.js:29` built `entityId` as `req.params.id || req.params[`${actionPrefix}Id`] || body?.data?.id`. For `POST /events/:eventId/amend` the route param wins, so the audit row pointed at the superseded event while the response contained the replacement.
+- **What happens:** The audit trail records `event.amend` against the old event id. The new event has no audit row of its own, and linking the action to the replacement requires guessing from metadata or timestamps.
+- **Real-world impact:** An auditor investigating the replacement event cannot find who amended it without a join back through the old event. Automation that groups audit rows by `entity_id` attributes the amendment to the wrong record.
+- **Fix direction:** For `*.amend`, prefer the response's `data.id` and keep the superseded id in metadata. Leave void and every other action on the route param, which is the correct entity for them.
+- **Verification:** Unit-test the middleware with a mocked audit writer: amend logs the replacement id plus `metadata.supersededEventId`, void logs the voided id, and a 4xx response logs nothing. Confirm a live amendment writes one `event.amend` row whose `entity_id` is the replacement.
+- **Fix:** `auditLogger` now resolves `targetId` from the route, uses `body.data.id` for amend actions, and stores the superseded id in `metadata.supersededEventId` (`auditLogger.js:24-35`).
+- **Verified:** `backend/src/middleware/auditLogger.test.js` (3 unit tests). Live API amendment wrote one `event.amend` row with `entity_id` equal to the replacement and `metadata.supersededEventId` equal to the original.
 
 ---
 
@@ -974,9 +1022,9 @@ Run this after every batch. Reset the development database from scratch first. N
 
 ## Counts
 
-- **P0:** 12
-- **P1:** 21
-- **P2:** 11
-- **Total:** 44
+- **P0:** 14
+- **P1:** 27
+- **P2:** 16
+- **Total:** 57
 
 > This report is a snapshot. Re-verify each issue against the current working tree before fixing it, and update the status as you go.
