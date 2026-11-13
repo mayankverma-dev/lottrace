@@ -19,15 +19,26 @@ const auditLogger = (actionPrefix) => {
             if (req.path.includes('/reactivate')) specificAction = `${actionPrefix}.reactivate`;
             if (req.path.includes('/resend-invite')) specificAction = `${actionPrefix}.resend_invite`;
             if (req.path === '/invite' || req.path.endsWith('/invite')) specificAction = `${actionPrefix}.invite`;
-            
+
+            const targetId = req.params.id || req.params[`${actionPrefix}Id`];
+            let entityId = targetId || body?.data?.id;
+            const metadata = { url: req.originalUrl, query: req.query, body: req.body };
+
+            // An amendment writes a new event; the audit row must point at the
+            // replacement, with the superseded id kept for traceability.
+            if (specificAction === `${actionPrefix}.amend` && body?.data?.id) {
+              entityId = body.data.id;
+              metadata.supersededEventId = targetId;
+            }
+
             await writeAuditLog({
               organizationId: req.organizationId,
               actorId: req.user?.id,
               actorType: 'user',
               action: specificAction,
               entityType: actionPrefix,
-              entityId: req.params.id || req.params[`${actionPrefix}Id`] || body?.data?.id,
-              metadata: { url: req.originalUrl, query: req.query, body: req.body },
+              entityId,
+              metadata,
               ipAddress: req.ip
             });
           } catch (err) {
