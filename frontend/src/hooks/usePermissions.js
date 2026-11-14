@@ -1,19 +1,58 @@
-import { useAuthStore } from '../stores/auth.store';
+import { useAuthStore } from '../stores/auth.store.js';
 
-const ROLE_PERMISSIONS = {
-  org_admin:           ['*'],
-  compliance_manager:  ['lots.*', 'events.*', 'trace.*', 'reports.*', 'recall.*', 'audit.read', 'imports.*'],
-  operator:            ['lots.read', 'lots.create', 'events.create', 'events.read', 'trace.read', 'reports.read'],
-  auditor:             ['lots.read', 'events.read', 'trace.read', 'audit.read', 'reports.read'],
+export const ROLE_PERMISSIONS = {
+  org_admin: ['*'],
+  compliance_manager: [
+    'lots.*',
+    'events.*',
+    'trace.*',
+    'reports.*',
+    'recall.*',
+    'audit.read',
+    'imports.*',
+    'locations.read',
+    'locations.create',
+    'locations.update',
+    'products.read',
+    'products.create',
+    'products.update',
+    'settings.read',
+    'users.read',
+  ],
+  operator: [
+    'lots.read',
+    'lots.create',
+    'events.create',
+    'events.read',
+    'trace.read',
+    'reports.read',
+    'locations.read',
+    'products.read',
+  ],
+  auditor: [
+    'lots.read',
+    'events.read',
+    'trace.read',
+    'audit.read',
+    'reports.read',
+    'recall.read',
+    'imports.read',
+    'locations.read',
+    'products.read',
+  ],
+};
+
+export const hasPermission = (role, permission) => {
+  const permissions = ROLE_PERMISSIONS[role] ?? [];
+  return permissions.includes('*') || permissions.includes(permission) ||
+    permissions.some((item) => item.endsWith('.*') && permission.startsWith(item.slice(0, -2)));
 };
 
 export const usePermissions = () => {
   const { user } = useAuthStore();
   const can = (permission) => {
     if (!user) return false;
-    const perms = ROLE_PERMISSIONS[user.role] ?? [];
-    return perms.includes('*') || perms.includes(permission) ||
-      perms.some(p => p.endsWith('.*') && permission.startsWith(p.slice(0, -2)));
+    return hasPermission(user.role, permission);
   };
   return { can, role: user?.role };
 };
