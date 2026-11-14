@@ -1,4 +1,5 @@
 const db = require('../../db/knex');
+const { buildPagination } = require('../../utils/pagination');
 
 const getComplianceGaps = async (organizationId, { page = 1, limit = 50 } = {}) => {
   const offset = (page - 1) * limit;
@@ -26,12 +27,7 @@ const getComplianceGaps = async (organizationId, { page = 1, limit = 50 } = {}) 
 
   return {
     data: gaps,
-    meta: {
-      total,
-      page: parseInt(page, 10),
-      limit: parseInt(limit, 10),
-      totalPages: Math.ceil(total / limit),
-    },
+    pagination: buildPagination(total, page, limit),
   };
 };
 

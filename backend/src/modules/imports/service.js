@@ -2,7 +2,7 @@ const db = require('../../db/knex');
 const { v4: uuid } = require('uuid');
 const { importQueue } = require('../../jobs/queues');
 const AppError = require('../../utils/AppError');
-const { paginate } = require('../../utils/pagination');
+const { buildPagination, paginate } = require('../../utils/pagination');
 const { uploadBuffer, generatePresignedDownloadUrl } = require('../../lib/storage');
 const { stringify } = require('csv-stringify/sync');
 
@@ -232,7 +232,7 @@ const getImportErrors = async (organizationId, importId, { page = 1, limit = 50 
   }
 
   if (!importJob.error_report_key) {
-    return { data: [], pagination: { total: 0, page, limit, totalPages: 0, hasNextPage: false, hasPrevPage: false } };
+    return { data: [], pagination: buildPagination(0, page, limit) };
   }
 
   // Download error report from S3
@@ -255,14 +255,7 @@ const getImportErrors = async (organizationId, importId, { page = 1, limit = 50 
 
   return {
     data,
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-      hasNextPage: page * limit < total,
-      hasPrevPage: page > 1,
-    },
+    pagination: buildPagination(total, page, limit),
   };
 };
 

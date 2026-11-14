@@ -183,6 +183,12 @@ P2-12 — stable event list pagination:
 - Tests: `backend/src/modules/events/events.list-order.test.js` (2 passing against a disposable local Postgres)
 - Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
+P2-02 — consistent API pagination envelope:
+- `backend/src/utils/pagination.js` (shared six-field `buildPagination` contract)
+- Reports, events, and import-error services use shared pagination metadata; obsolete reports `meta` removed
+- Tests: `backend/src/utils/pagination.test.js`, `backend/src/modules/reports/reports.pagination.test.js`, `backend/src/modules/reports/reports.gaps-pagination.test.js`
+- Docs: `docs/API_STANDARDS.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
+
 ---
 
 ## 📌 Known Technical Debt

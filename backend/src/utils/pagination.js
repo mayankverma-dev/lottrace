@@ -1,4 +1,26 @@
 /**
+ * Builds the single pagination metadata shape used by every paginated endpoint.
+ * See docs/API_STANDARDS.md.
+ *
+ * @param {number} total - Total matching rows
+ * @param {number} page - 1-based page number
+ * @param {number} limit - Rows per page
+ * @returns {{ total: number, page: number, limit: number, totalPages: number, hasNextPage: boolean, hasPrevPage: boolean }}
+ */
+const buildPagination = (total, page, limit) => {
+  const totalPages = Math.ceil(total / limit);
+
+  return {
+    total,
+    page,
+    limit,
+    totalPages,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1,
+  };
+};
+
+/**
  * Reusable pagination helper.
  * Takes a Knex query builder and pagination params,
  * returns { data, pagination } matching the API envelope.
@@ -21,19 +43,11 @@ const paginate = async (query, { page = 1, limit = 20 } = {}) => {
   ]);
 
   const total = parseInt(countResult.total, 10);
-  const totalPages = Math.ceil(total / safeLimit);
 
   return {
     data,
-    pagination: {
-      total,
-      page: safePage,
-      limit: safeLimit,
-      totalPages,
-      hasNextPage: safePage < totalPages,
-      hasPrevPage: safePage > 1,
-    },
+    pagination: buildPagination(total, safePage, safeLimit),
   };
 };
 
-module.exports = { paginate };
+module.exports = { buildPagination, paginate };

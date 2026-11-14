@@ -6,7 +6,7 @@ const getComplianceGaps = async (req, res) => {
   const { page, limit } = req.validatedQuery;
   const result = await reportsService.getComplianceGaps(req.user.organizationId, { page, limit });
 
-  return apiResponse.paginated(res, result.data, result.meta, 'Compliance gaps retrieved');
+  return apiResponse.paginated(res, result.data, result.pagination, 'Compliance gaps retrieved');
 };
 
 const requestExport = async (req, res) => {

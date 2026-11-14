@@ -186,20 +186,8 @@ All list endpoints that could grow unbounded support pagination.
 - Default limit: 20
 - Max limit: 100 (reject with 422 if exceeded)
 
-### Cursor Pagination (audit log, events)
-```json
-{
-  "success": true,
-  "message": "Events fetched",
-  "data": [ ... ],
-  "pagination": {
-    "nextCursor": "eyJpZCI6IjEyMyIsImNyZWF0ZWRBdCI6IjIwMjQifQ==",
-    "prevCursor": null,
-    "hasMore": true,
-    "limit": 50
-  }
-}
-```
+All current list endpoints use the offset-based shape above. Cursor pagination is
+not part of the current contract; add it only as a future breaking API change.
 
 ---
 

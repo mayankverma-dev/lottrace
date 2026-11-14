@@ -13,6 +13,7 @@ const {
 const AppError = require('../../utils/AppError');
 const logger = require('../../utils/logger');
 const { assertLotsBelongToOrganization } = require('../../utils/tenantLots');
+const { buildPagination } = require('../../utils/pagination');
 const crc32 = require('crc-32');
 const { invalidateTraceCache } = require('../trace/trace.service');
 
@@ -259,14 +260,7 @@ const getEvents = async (query, organizationId) => {
 
   return {
     data: events,
-    pagination: {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-      hasNextPage: page * limit < total,
-      hasPrevPage: page > 1,
-    }
+    pagination: buildPagination(total, page, limit),
   };
 };
 

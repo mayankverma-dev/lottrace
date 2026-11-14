@@ -43,7 +43,14 @@ describe('P1-05 compliance-gap pagination contract', () => {
     app = buildApp();
     reportsService.getComplianceGaps.mockResolvedValue({
       data: [],
-      meta: { total: 21, page: 2, limit: 20, totalPages: 2 },
+      pagination: {
+        total: 21,
+        page: 2,
+        limit: 20,
+        totalPages: 2,
+        hasNextPage: false,
+        hasPrevPage: true,
+      },
     });
   });
 
@@ -58,6 +65,8 @@ describe('P1-05 compliance-gap pagination contract', () => {
       page: 2,
       limit: 20,
       totalPages: 2,
+      hasNextPage: false,
+      hasPrevPage: true,
     });
     expect(response.body.meta).toBeUndefined();
     expect(reportsService.getComplianceGaps).toHaveBeenCalledWith(
