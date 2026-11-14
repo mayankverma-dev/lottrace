@@ -29,13 +29,13 @@ router.post(
 
 router.get(
   '/',
-  rbac(['org_admin', 'compliance_manager', 'auditor']),
+  rbac(['org_admin', 'compliance_manager', 'operator', 'auditor']),
   eventsController.getEvents
 );
 
 router.get(
   '/:eventId',
-  rbac(['org_admin', 'compliance_manager', 'auditor']),
+  rbac(['org_admin', 'compliance_manager', 'operator', 'auditor']),
   eventsController.getEvent
 );
 
