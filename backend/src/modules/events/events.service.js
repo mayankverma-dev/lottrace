@@ -29,13 +29,11 @@ const checkComplianceGaps = async (qb, data, organizationId) => {
     .join('products', 'lots.product_id', 'products.id')
     .whereIn('lots.id', lotIds)
     .andWhere('lots.organization_id', organizationId)
-    .select('products.is_ftl', 'products.custom_kde_schema');
+    .select('products.custom_kde_schema');
 
   const gaps = [];
-  let isFtl = false;
-  
+
   lots.forEach(lot => {
-    if (lot.is_ftl) isFtl = true;
     if (lot.custom_kde_schema) {
       const schema = typeof lot.custom_kde_schema === 'string' ? JSON.parse(lot.custom_kde_schema) : lot.custom_kde_schema;
       schema.forEach(field => {
