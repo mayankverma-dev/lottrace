@@ -3,10 +3,11 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Activity, ArrowLeft, MoreVertical, Ban, Edit2, Package, MapPin, Calendar, FileText, AlertTriangle } from 'lucide-react';
+import { Activity, ArrowLeft, MoreVertical, Ban, Edit2, Package, MapPin, Calendar, FileText, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 import { useGetEvent, useVoidEvent } from '@/api/events.api';
 import { newIdempotencyKey } from '@/lib/idempotency';
+import { parseJsonArray, parseJsonObject } from '@/lib/json';
 import { usePermissions } from '@/hooks/usePermissions';
 import { formatEventDate } from '@/utils/formatDate';
 
@@ -118,7 +119,8 @@ const EventDetailPage = () => {
 
   const event = eventResult.data;
   const isMutable = event.status === 'active';
-  const complianceGaps = event.compliance_gaps ? JSON.parse(event.compliance_gaps) : [];
+  const complianceGaps = parseJsonArray(event.compliance_gaps);
+  const kdePayload = parseJsonObject(event.kde_payload);
 
   return (
     <div className="flex flex-col gap-6">
@@ -159,23 +161,25 @@ const EventDetailPage = () => {
         />
       </div>
 
-      {complianceGaps.length > 0 && (
-        <Card className="border-destructive bg-destructive/5">
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2 text-destructive">
-              <AlertTriangle className="h-4 w-4" />
-              Compliance Gaps Detected
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="py-2">
+      <Card className={complianceGaps.length > 0 ? 'border-destructive bg-destructive/5' : undefined}>
+        <CardHeader className="py-3">
+          <CardTitle className={`text-sm font-semibold flex items-center gap-2 ${complianceGaps.length > 0 ? 'text-destructive' : 'text-foreground'}`}>
+            {complianceGaps.length > 0 ? <AlertTriangle className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+            Compliance Gaps
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="py-2">
+          {complianceGaps.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No compliance gaps detected.</p>
+          ) : (
             <ul className="list-disc pl-5 text-sm text-destructive">
               {complianceGaps.map((gap, i) => (
-                <li key={i}>{gap.message || `Missing KDE: ${gap.field}`}</li>
+                <li key={i}>{gap?.message || `Missing KDE: ${gap?.field ?? 'unknown field'}`}</li>
               ))}
             </ul>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2 flex flex-col gap-6">
@@ -263,11 +267,11 @@ const EventDetailPage = () => {
               <CardTitle className="text-base">Key Data Elements (KDEs)</CardTitle>
             </CardHeader>
             <CardContent className="pt-4">
-              {Object.keys(event.kde_payload || {}).length === 0 ? (
+              {Object.keys(kdePayload).length === 0 ? (
                 <span className="text-sm text-muted-foreground">No KDEs recorded.</span>
               ) : (
                 <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                  {Object.entries(event.kde_payload || {}).map(([key, val]) => (
+                  {Object.entries(kdePayload).map(([key, val]) => (
                     <div key={key} className="flex flex-col gap-1">
                       <dt className="text-muted-foreground capitalize">{key}</dt>
                       <dd className="font-medium">{val?.toString() || '—'}</dd>

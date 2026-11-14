@@ -84,7 +84,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-05 | P0 | Row Level Security is inert at runtime | Open |
 | P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Fixed (2026-11-13, 2c31091) |
 | P0-07 | P0 | "Amend event" always fails in the web UI | Fixed (2026-11-13, 0a9f87d) |
-| P0-08 | P0 | Event detail page crashes when compliance gaps exist | Open |
+| P0-08 | P0 | Event detail page crashes when compliance gaps exist | Fixed (commit pending) |
 | P0-09 | P0 | Event timestamps shift by the browser UTC offset | Fixed (2026-11-13, 7ac1afb) |
 | P0-10 | P0 | Import maps shipping rows to the wrong trace direction | Open |
 | P0-11 | P0 | Trace includes superseded (amended) events | Fixed (2026-11-11, 298465f) |
@@ -250,12 +250,14 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-08 — Event detail page crashes when compliance gaps exist
 
-- **Severity:** P0 · **Area:** frontend / event display · **Status:** Open
-- **Evidence:** `frontend/src/pages/events/EventDetailPage.jsx:112` (`JSON.parse(event.compliance_gaps)`); `events.compliance_gaps` is `jsonb`.
+- **Severity:** P0 · **Area:** frontend / event display · **Status:** Fixed (commit pending)
+- **Evidence:** `frontend/src/pages/events/EventDetailPage.jsx:121` (`JSON.parse(event.compliance_gaps)`); `events.compliance_gaps` is `jsonb`.
 - **What happens:** The API returns `compliance_gaps` as an array/object (node-postgres parses jsonb). `JSON.parse(array)` stringifies the array (`"[object Object]"` for objects) and throws `SyntaxError`, crashing the route. Any event with missing KDE fields — the exact events a compliance manager needs to inspect — becomes unviewable. A related risk exists if an older row contains a JSON string, so a blind type check must handle both.
 - **Real-world impact:** The compliance-gap workflow is broken end-to-end: the report lists the event, clicking it crashes. Users lose trust in the system and cannot remediate gaps.
 - **Fix direction:** Add a shared `parseMaybeJson(value, fallback)` utility in `frontend/src/lib/` that returns the value unchanged when it is already an object/array, parses only strings, and returns the fallback on failure. Use it for `compliance_gaps`, `counterparty_info`, `kde_payload`, and `custom_kde_schema` everywhere. Render a proper empty state when the array is empty.
 - **Verification:** Open an event with two compliance gaps; page renders both without a console error. Open an event with `null` gaps; renders the empty state. Add a unit test for `parseMaybeJson` covering object, array, JSON string, null, and malformed string.
+- **Fix:** `frontend/src/lib/json.js` adds `parseMaybeJson`, `parseJsonArray`, and `parseJsonObject`. `EventDetailPage` no longer calls `JSON.parse` on `compliance_gaps`; it renders the gap list or a `No compliance gaps detected.` empty state and parses `kde_payload` through the same helper. `RecordEventPage`, `ProductDetailPage`, `ProductsListPage`, and `ComplianceGapsPage` replace their ad-hoc string/array checks with the shared helpers. No API or schema change.
+- **Verified:** `frontend/src/lib/json.test.js` (13 tests: object, array, JSON string, null, malformed string, exact jsonb gap-array regression) passes. Existing frontend tests pass with `TZ=Asia/Kathmandu`; `pnpm --filter frontend build` and `pnpm --filter scan-pwa build` succeed.
 
 ## P0-09 — Event timestamps shift by the browser UTC offset
 

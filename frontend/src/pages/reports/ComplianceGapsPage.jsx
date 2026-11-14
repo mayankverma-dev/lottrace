@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useGetComplianceGaps } from '@/api/reports.api';
+import { parseJsonArray } from '@/lib/json';
 import { PageHeader } from '@/components/common/PageHeader';
 import { DataTable } from '@/components/common/DataTable';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -34,7 +35,7 @@ const ComplianceGapsPage = () => {
       accessorKey: 'gaps',
       header: 'Missing Required Fields',
       cell: ({ row }) => {
-        const gaps = row.original.compliance_gaps || [];
+        const gaps = parseJsonArray(row.original.compliance_gaps);
         return (
           <div className="flex flex-wrap gap-1">
             {gaps.map((gap, i) => (

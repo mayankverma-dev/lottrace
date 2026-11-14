@@ -6,6 +6,7 @@ import { Box, Plus, Search, Trash2, ShieldCheck } from 'lucide-react';
 
 import { useGetProducts, useCreateProduct } from '@/api/products.api';
 import { usePermissions } from '@/hooks/usePermissions';
+import { parseJsonArray } from '@/lib/json';
 
 import { PageHeader } from '@/components/common/PageHeader';
 import { DataTable } from '@/components/common/DataTable';
@@ -111,8 +112,7 @@ const ProductsListPage = () => {
       id: 'kdeCount',
       header: 'KDE Fields',
       cell: ({ row }) => {
-        const schema = row.original.custom_kde_schema;
-        const count = Array.isArray(schema) ? schema.length : 0;
+        const count = parseJsonArray(row.original.custom_kde_schema).length;
         return count > 0 ? <Badge variant="secondary">{count}</Badge> : <span className="text-muted-foreground">—</span>;
       },
     },

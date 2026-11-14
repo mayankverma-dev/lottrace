@@ -2,8 +2,8 @@
 
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
-**Last Updated:** 2026-11-13
-**Last Session:** 2026-11-13 — P0-06 fixed and verified, alongside P1-26, P1-27, P2-15, P2-16. Event creation now uses organization-scoped request fingerprints, atomic 24-hour response replay, expiring claims, client-generated keys, and hourly cleanup. Compliance-gap email now queues after commit, amendments cannot change event type or source, amendment reason is `amendReason` / `status_reason`, and `event.amend` audit rows point at the replacement event.
+**Last Updated:** 2026-11-14
+**Last Session:** 2026-11-14 — P0-08 fixed. Event detail renders compliance gaps without crashing, using shared JSONB decoders; empty gaps show an explicit empty state.
 
 ---
 
@@ -55,6 +55,13 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P0-08 — safe JSONB parsing on event detail:
+- `frontend/src/lib/json.js` (`parseMaybeJson`, `parseJsonArray`, `parseJsonObject`)
+- `frontend/src/pages/events/EventDetailPage.jsx` (`compliance_gaps` and `kde_payload` decoded safely; explicit empty state)
+- `frontend/src/pages/events/RecordEventPage.jsx`, `frontend/src/pages/products/ProductDetailPage.jsx`, `frontend/src/pages/products/ProductsListPage.jsx`, `frontend/src/pages/reports/ComplianceGapsPage.jsx` (shared decoders replace ad-hoc string/array checks)
+- Tests: `frontend/src/lib/json.test.js` (13 tests)
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P1-26, P1-27, P2-15, P2-16 — amendment follow-ups:
 - `backend/src/modules/events/events.service.js` (compliance-gap alert returned from `insertEvent` and queued after commit; amendment rejects a different `eventType` and pins `source`; `status_reason` / `amendReason`)

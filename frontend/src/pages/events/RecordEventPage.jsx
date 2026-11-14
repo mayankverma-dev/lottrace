@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { buildEventPayload, hasAmendReason } from './recordEventPayload';
 import { toDateTimeLocal } from '@/utils/dateTimeLocal';
+import { parseJsonArray, parseJsonObject } from '@/lib/json';
 
 const CTE_TYPES = [
   { value: 'creation', label: 'Creation' },
@@ -70,14 +71,7 @@ export default function RecordEventPage() {
   useEffect(() => {
     if (amendEventId && amendEventData?.data) {
       const e = amendEventData.data;
-      let cp = {};
-      try {
-        if (e.counterparty_info) {
-          cp = typeof e.counterparty_info === 'string' ? JSON.parse(e.counterparty_info) : e.counterparty_info;
-        }
-      } catch (err) {
-        console.error('Failed to parse counterparty info', err);
-      }
+      const cp = parseJsonObject(e.counterparty_info);
       
       setFormData({
         eventType: e.event_type,
@@ -90,7 +84,7 @@ export default function RecordEventPage() {
       });
       setInputs((e.inputs || []).map(i => ({ lotId: String(i.lot_id), quantity: i.quantity, uom: i.uom })));
       setOutputs((e.outputs || []).map(o => ({ lotId: String(o.lot_id), quantity: o.quantity, uom: o.uom })));
-      setKdePayload(e.kde_payload || {});
+      setKdePayload(parseJsonObject(e.kde_payload));
     }
   }, [amendEventId, amendEventData]);
 
@@ -135,15 +129,8 @@ export default function RecordEventPage() {
       if (!lot) return;
       const product = products.find(p => p.id === lot.productId);
       if (!product || !product.custom_kde_schema) return;
-      
-      let schema = [];
-      try {
-        schema = typeof product.custom_kde_schema === 'string' ? JSON.parse(product.custom_kde_schema) : product.custom_kde_schema;
-      } catch (e) {
-        // ignore parse error
-      }
-      
-      schema.forEach(field => {
+
+      parseJsonArray(product.custom_kde_schema).forEach(field => {
         if (!kdes.has(field.name)) {
           kdes.set(field.name, field);
         }

@@ -7,6 +7,7 @@ import { ArrowLeft, Box, Pencil, Trash2, Plus, ShieldCheck } from 'lucide-react'
 
 import { useGetProduct, useUpdateProduct } from '@/api/products.api';
 import { usePermissions } from '@/hooks/usePermissions';
+import { parseJsonArray } from '@/lib/json';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,9 +56,7 @@ const ProductDetailPage = () => {
 
   const startEditing = () => {
     if (!product) return;
-    const kdeSchema = Array.isArray(product.custom_kde_schema)
-      ? product.custom_kde_schema
-      : [];
+    const kdeSchema = parseJsonArray(product.custom_kde_schema);
     reset({
       name: product.name,
       sku: product.sku || '',
@@ -100,7 +99,7 @@ const ProductDetailPage = () => {
     );
   }
 
-  const kdeSchema = Array.isArray(product.custom_kde_schema) ? product.custom_kde_schema : [];
+  const kdeSchema = parseJsonArray(product.custom_kde_schema);
 
   return (
     <div className="flex flex-col gap-6">
