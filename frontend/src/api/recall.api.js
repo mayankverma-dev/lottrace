@@ -14,10 +14,10 @@ export const recallKeys = {
 export const useGetSimulations = (params = {}) => {
   return useQuery({
     queryKey: recallKeys.list(params),
-    // We actually need the full data (including meta) for pagination
+    // We need the full response, including pagination, for the table pager.
     queryFn: async () => {
       const { data } = await api.get('/recall', { params });
-      return data; // returns { status, data, message, meta }
+      return data; // returns { success, data, message, pagination }
     },
     keepPreviousData: true,
   });

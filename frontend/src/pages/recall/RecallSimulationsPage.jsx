@@ -9,6 +9,7 @@ import { format } from 'date-fns';
 import { useGetSimulations, useRunSimulation } from '@/api/recall.api';
 import { useGetLots } from '@/api/lots.api';
 import { usePermissions } from '@/hooks/usePermissions';
+import { toPageParam } from '@/lib/pagination';
 
 import { PageHeader } from '@/components/common/PageHeader';
 import { DataTable } from '@/components/common/DataTable';
@@ -175,12 +176,8 @@ export default function RecallSimulationsPage() {
             columns={columns}
             data={response?.data || []}
             isLoading={isLoading}
-            pagination={{
-              page,
-              limit: 10,
-              total: response?.pagination?.total || 0,
-            }}
-            onPaginationChange={setPage}
+            pagination={response?.pagination}
+            onPaginationChange={(newPagination) => setPage(toPageParam(newPagination))}
           />
         )}
       </div>

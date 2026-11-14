@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useGetComplianceGaps } from '@/api/reports.api';
 import { parseJsonArray } from '@/lib/json';
+import { toPageParam } from '@/lib/pagination';
 import { PageHeader } from '@/components/common/PageHeader';
 import { DataTable } from '@/components/common/DataTable';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -76,7 +77,7 @@ const ComplianceGapsPage = () => {
   }
 
   const events = data?.data || [];
-  const pagination = data?.meta;
+  const pagination = data?.pagination;
 
   return (
     <div className="flex flex-col gap-6">
@@ -91,11 +92,7 @@ const ComplianceGapsPage = () => {
           data={events}
           pagination={pagination}
           onPaginationChange={(newPagination) => {
-            setParams(prev => ({
-              ...prev,
-              page: newPagination.pageIndex + 1,
-              limit: newPagination.pageSize
-            }));
+            setParams(prev => ({ ...prev, page: toPageParam(newPagination) }));
           }}
         />
       </div>
