@@ -84,7 +84,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-05 | P0 | Row Level Security is inert at runtime | Open |
 | P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Fixed (2026-11-13, 2c31091) |
 | P0-07 | P0 | "Amend event" always fails in the web UI | Fixed (2026-11-13, 0a9f87d) |
-| P0-08 | P0 | Event detail page crashes when compliance gaps exist | Fixed (commit pending) |
+| P0-08 | P0 | Event detail page crashes when compliance gaps exist | Fixed (2026-11-14, cfc8a26) |
 | P0-09 | P0 | Event timestamps shift by the browser UTC offset | Fixed (2026-11-13, 7ac1afb) |
 | P0-10 | P0 | Import maps shipping rows to the wrong trace direction | Open |
 | P0-11 | P0 | Trace includes superseded (amended) events | Fixed (2026-11-11, 298465f) |
@@ -250,7 +250,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-08 — Event detail page crashes when compliance gaps exist
 
-- **Severity:** P0 · **Area:** frontend / event display · **Status:** Fixed (commit pending)
+- **Severity:** P0 · **Area:** frontend / event display · **Status:** Fixed (2026-11-14, cfc8a26)
 - **Evidence:** `frontend/src/pages/events/EventDetailPage.jsx:121` (`JSON.parse(event.compliance_gaps)`); `events.compliance_gaps` is `jsonb`.
 - **What happens:** The API returns `compliance_gaps` as an array/object (node-postgres parses jsonb). `JSON.parse(array)` stringifies the array (`"[object Object]"` for objects) and throws `SyntaxError`, crashing the route. Any event with missing KDE fields — the exact events a compliance manager needs to inspect — becomes unviewable. A related risk exists if an older row contains a JSON string, so a blind type check must handle both.
 - **Real-world impact:** The compliance-gap workflow is broken end-to-end: the report lists the event, clicking it crashes. Users lose trust in the system and cannot remediate gaps.
