@@ -12,6 +12,7 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const schema = z.object({
   name: z.string().min(1, 'Organization Name is required'),
@@ -34,6 +35,8 @@ const UOM_OPTIONS = [
 
 export default function OrganizationPage() {
   const queryClient = useQueryClient();
+  const { can } = usePermissions();
+  const canUpdateSettings = can('settings.update');
   
   const { data: orgData, isLoading } = useQuery({
     queryKey: ['organization', 'me'],
@@ -78,9 +81,14 @@ export default function OrganizationPage() {
             <CardDescription>Update your organization's core information and defaults.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit((d) => updateMutation.mutate(d))} className="space-y-6 max-w-xl">
+            <form
+              onSubmit={canUpdateSettings
+                ? handleSubmit((d) => updateMutation.mutate(d))
+                : (event) => event.preventDefault()}
+              className="space-y-6 max-w-xl"
+            >
               <FormField label="Organization Name" error={errors.name?.message}>
-                <Input {...register('name')} />
+                <Input {...register('name')} disabled={!canUpdateSettings} />
               </FormField>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -90,7 +98,7 @@ export default function OrganizationPage() {
                     control={control}
                     render={({ field }) => (
                       <Select onValueChange={field.onChange} value={field.value}>
-                        <SelectTrigger>
+                        <SelectTrigger disabled={!canUpdateSettings}>
                           <SelectValue placeholder="Select timezone" />
                         </SelectTrigger>
                         <SelectContent>
@@ -109,7 +117,7 @@ export default function OrganizationPage() {
                     control={control}
                     render={({ field }) => (
                       <Select onValueChange={field.onChange} value={field.value}>
-                        <SelectTrigger>
+                        <SelectTrigger disabled={!canUpdateSettings}>
                           <SelectValue placeholder="Select UOM" />
                         </SelectTrigger>
                         <SelectContent>
@@ -123,10 +131,12 @@ export default function OrganizationPage() {
                 </FormField>
               </div>
 
-              <Button type="submit" disabled={updateMutation.isPending}>
-                {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save Changes
-              </Button>
+              {canUpdateSettings && (
+                <Button type="submit" disabled={updateMutation.isPending}>
+                  {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save Changes
+                </Button>
+              )}
             </form>
           </CardContent>
         </Card>

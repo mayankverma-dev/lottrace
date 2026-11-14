@@ -52,6 +52,15 @@ test('compliance_manager cannot manage users', () => {
   assert.equal(hasPermission('compliance_manager', 'users.manage'), false);
 });
 
+test('only org_admin can update settings or deactivate locations', () => {
+  assert.equal(hasPermission('org_admin', 'settings.update'), true);
+  assert.equal(hasPermission('org_admin', 'locations.deactivate'), true);
+  assert.equal(hasPermission('compliance_manager', 'settings.update'), false);
+  assert.equal(hasPermission('compliance_manager', 'locations.deactivate'), false);
+  assert.equal(hasPermission('operator', 'locations.deactivate'), false);
+  assert.equal(hasPermission('auditor', 'locations.deactivate'), false);
+});
+
 test('operator cannot mutate master data or access settings', () => {
   assert.equal(hasPermission('operator', 'locations.create'), false);
   assert.equal(hasPermission('operator', 'products.update'), false);

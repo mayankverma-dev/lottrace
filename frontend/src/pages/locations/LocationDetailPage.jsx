@@ -140,7 +140,7 @@ const LocationDetailPage = () => {
               Edit
             </Button>
           )}
-          {can('locations.update') && location.is_active && (
+          {can('locations.deactivate') && location.is_active && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="text-destructive">Deactivate</Button>

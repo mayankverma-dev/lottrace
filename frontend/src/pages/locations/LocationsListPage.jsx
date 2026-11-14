@@ -142,7 +142,7 @@ const LocationsListPage = () => {
               <DropdownMenuItem asChild>
                 <Link to={`/locations/${row.original.id}`}>View details</Link>
               </DropdownMenuItem>
-              {can('locations.update') && row.original.is_active && (
+              {can('locations.deactivate') && row.original.is_active && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">
