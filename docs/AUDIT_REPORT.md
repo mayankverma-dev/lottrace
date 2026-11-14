@@ -119,6 +119,8 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-28 | P1 | Event mutations lack idempotency | Fixed (2026-11-13, 08c5818) |
 | P1-29 | P1 | Operator dashboard requests return 403 | Fixed (2026-11-14, 681b998) |
 | P1-30 | P1 | Operator UI offers Amend/Void actions the API denies | Fixed (2026-11-14, 45df0e1) |
+| P1-31 | P1 | Organization settings exposes write controls to read-only roles | Fixed (2026-11-14, 12a5cf4) |
+| P1-32 | P1 | Location deactivate control uses update permission | Fixed (2026-11-14, 12a5cf4) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Open |
 | P2-02 | P2 | API response pagination shape is inconsistent | Open |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Open |
@@ -608,6 +610,24 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Verification:** Operator sees no Export, Amend, or Void controls and makes no 403 requests. Auditor sees the same read-only UI. Compliance manager sees Export and can open both Amend and Void from list and detail. Browser console stays clean.
 - **Fix:** `frontend/src/hooks/usePermissions.js` grants `operator` `reports.read` (export remains excluded for operator and auditor). `EventsListPage.jsx` gates Amend on `events.amend` and Export on `reports.export`. `EventDetailPage.jsx` renders the action menu only when `events.amend` or `events.void` is available and gates each item separately, replacing the incorrect `org_admin` string check. `AuditLogPage.jsx` gates its Export button on `reports.export`.
 - **Verified:** Playwright run against the live disposable stack (operator, auditor, compliance manager): operator and auditor saw no Export button, no Amend row action, and no detail action menu; compliance manager saw Export and both Amend and Void. No unexpected 403 API responses and no browser console errors for any role. `npm run build` in `frontend` succeeds.
+
+## P1-31 — Organization settings exposes write controls to read-only roles
+
+- **Severity:** P1 · **Area:** frontend / authorization · **Status:** Fixed (2026-11-14, 12a5cf4)
+- **Evidence:** `frontend/src/pages/settings/OrganizationPage.jsx:55-64` creates the organization PATCH mutation for every role, and `:81-129` renders editable fields and `Save Changes` without a permission check. `backend/src/modules/organizations/organizations.routes.js:17-18` permits PATCH only for `org_admin`.
+- **What happens:** A compliance manager can open Settings, edit organization fields, and submit a request that the API rejects with 403.
+- **Real-world impact:** The UI offers an action the role cannot use, creating a predictable authorization error and misleading users about their responsibilities.
+- **Fix:** `OrganizationPage` now checks `settings.update`, disables fields and blocks form submission for read-only roles, and renders `Save Changes` only for authorized users. No API or schema change.
+- **Verified:** Permission tests confirm only `org_admin` can update settings. Playwright confirms compliance managers see read-only fields without Save, while org admins see editable fields and Save.
+
+## P1-32 — Location deactivate control uses update permission
+
+- **Severity:** P1 · **Area:** frontend / authorization · **Status:** Fixed (2026-11-14, 12a5cf4)
+- **Evidence:** `frontend/src/pages/locations/LocationsListPage.jsx:145-166` and `frontend/src/pages/locations/LocationDetailPage.jsx:143-162` gate deactivation with `locations.update`. `backend/src/modules/locations/locations.routes.js:37-40` permits deactivation only for `org_admin`.
+- **What happens:** Compliance managers can edit locations and therefore see Deactivate controls, but the API rejects deactivation with 403.
+- **Real-world impact:** Users receive a forbidden response from an action the UI explicitly offers. Location lifecycle permissions become unclear and error-prone.
+- **Fix:** Both location pages now gate deactivation with `locations.deactivate`. Location editing remains gated by `locations.update`. No API or schema change.
+- **Verified:** Permission tests confirm only `org_admin` can deactivate locations. Compliance managers retain edit access but receive no Deactivate control.
 
 ---
 
