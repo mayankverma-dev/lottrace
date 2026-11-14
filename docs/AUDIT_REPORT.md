@@ -133,6 +133,10 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-14 | P2 | Audit report and progress docs overstate test counts and coverage | Fixed (2026-11-11, 642d2e1) |
 | P2-15 | P2 | Amendment reason is stored and required as `voidReason` | Fixed (2026-11-13, 71bfa91) |
 | P2-16 | P2 | `event.amend` audit row points at the superseded event | Fixed (2026-11-13, c034077) |
+| P2-17 | P2 | Compliance gaps report rows are not links to the event | Fixed (2026-11-14, 698ad1a) |
+| P2-18 | P2 | `pnpm lint` fails because the root install has no `eslint` binary | Fixed (2026-11-14, 04a7d7b) |
+| P2-19 | P2 | `dateTimeLocal` tests depend on the machine time zone | Fixed (2026-11-14, bde73e2) |
+| P2-20 | P2 | `checkComplianceGaps` declares an unused `isFtl` | Fixed (2026-11-14, 928859e) |
 
 ---
 
@@ -722,6 +726,38 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Verification:** Unit-test the middleware with a mocked audit writer: amend logs the replacement id plus `metadata.supersededEventId`, void logs the voided id, and a 4xx response logs nothing. Confirm a live amendment writes one `event.amend` row whose `entity_id` is the replacement.
 - **Fix:** `auditLogger` now resolves `targetId` from the route, uses `body.data.id` for amend actions, and stores the superseded id in `metadata.supersededEventId` (`auditLogger.js:24-35`).
 - **Verified:** `backend/src/middleware/auditLogger.test.js` (3 unit tests). Live API amendment wrote one `event.amend` row with `entity_id` equal to the replacement and `metadata.supersededEventId` equal to the original.
+
+## P2-17 — Compliance gaps report rows are not links to the event
+
+- **Severity:** P2 · **Area:** frontend / reports · **Status:** Fixed (2026-11-14, 698ad1a)
+- **Evidence:** `frontend/src/pages/reports/ComplianceGapsPage.jsx` rendered the event type cell as a plain `<span>`. This report's own P0-08 entry says "the report lists the event, clicking it crashes", but no click path existed.
+- **What happens:** A compliance manager sees the gap event in the report but cannot open it. Remediation requires copying the event id from the API or database and editing the URL by hand.
+- **Fix:** The event type cell is now a `Link` to `/events/:id`, using the same link styling as the other list pages. The API already returns `id`.
+- **Verified:** Browser run against a disposable local database: the report row links to the event, clicking it opens the detail page, and the gap card renders `Harvest Date is required` with no console errors.
+
+## P2-18 — `pnpm lint` fails because the root install has no `eslint` binary
+
+- **Severity:** P2 · **Area:** developer tooling · **Status:** Fixed (2026-11-14, 04a7d7b)
+- **Evidence:** Root `package.json` declares `lint` and `lint:fix`, but the root package had no dependencies. `eslint` existed only in `backend/devDependencies`, so `pnpm lint` failed with `sh: 1: eslint: not found`.
+- **What happens:** No one can run the documented lint command at the repo root. The root `.eslintrc.js` is never exercised, and lint drift is invisible.
+- **Fix:** `eslint@^8.57.0` is now a root `devDependency` (already listed in `docs/TECH_STACK.md` and already used by the backend). `.eslintrc.js` gains a Node-environment override for `**/vite.config.js` and `**/*.test.js`, which resolves the `process`/`__dirname` `no-undef` errors, and `eqeqeq` keeps a documented `null` exception so deliberate `!= null` checks do not silently change behavior. The one real loose comparison, `uniqueErrors?.length == 1` in `scan-pwa/src/components/ui/field.jsx`, is now `===`.
+- **Verified:** `pnpm lint` exits 0 with 0 errors. 852 warnings remain, dominated by `no-unused-vars` false positives on names used only in JSX, because `eslint-plugin-react` is not an approved package; that is a separate lint-configuration gap, not this issue.
+
+## P2-19 — `dateTimeLocal` tests depend on the machine time zone
+
+- **Severity:** P2 · **Area:** frontend / tests · **Status:** Fixed (2026-11-14, bde73e2)
+- **Evidence:** `frontend/src/utils/dateTimeLocal.test.js` branched on `process.env.TZ === 'America/New_York'` and otherwise expected hard-coded `Asia/Kathmandu` wall-clock strings, which come from this developer's machine.
+- **What happens:** `node --test src/utils/dateTimeLocal.test.js` fails under `UTC` and `Asia/Kolkata`, and the DST case degenerates into a tautology outside `America/New_York`.
+- **Fix:** The suite pins `process.env.TZ = 'Asia/Kathmandu'` at module scope, drops the conditionals, and the DST test now switches to `America/New_York` for its assertions and restores the default in a `finally` block.
+- **Verified:** `node --test src/utils/dateTimeLocal.test.js` passes 4/4 under `UTC`, `Asia/Kolkata`, `Asia/Kathmandu`, `America/New_York`, and `Australia/Sydney`.
+
+## P2-20 — `checkComplianceGaps` declares an unused `isFtl`
+
+- **Severity:** P2 · **Area:** backend / events · **Status:** Fixed (2026-11-14, 928859e)
+- **Evidence:** `backend/src/modules/events/events.service.js` declared `let isFtl = false`, set it from `lot.is_ftl`, and never read it. The `products.is_ftl` column was selected only to feed that variable.
+- **What happens:** Dead state implies FTL-specific gap rules that do not exist. A reader cannot tell whether non-FTL products are meant to skip KDE checks.
+- **Fix:** Removed the variable, its assignment, and the unused `products.is_ftl` select column. Gap logic is unchanged: required KDEs are still checked for every linked product schema.
+- **Verified:** `node --check` passes. `events.compliance-alert.test.js` passes 4/4 against a fresh disposable `_test` database, and `pnpm lint` reports no new findings.
 
 ---
 

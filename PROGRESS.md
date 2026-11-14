@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-14
-**Last Session:** 2026-11-14 — P0-08 fixed. Event detail renders compliance gaps without crashing, using shared JSONB decoders; empty gaps show an explicit empty state.
+**Last Session:** 2026-11-14 — P2-17 to P2-20 fixed. Compliance gap report rows link to the event detail, root `pnpm lint` runs with zero errors, the `dateTimeLocal` tests are timezone-independent, and the unused `isFtl` in the compliance gap check is gone.
 
 ---
 
@@ -55,6 +55,13 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P2-17 to P2-20 — report links, lint, timezone tests, dead code:
+- `frontend/src/pages/reports/ComplianceGapsPage.jsx` (event type cell links to `/events/:id`)
+- `package.json`, `pnpm-lock.yaml`, `.eslintrc.js`, `scan-pwa/src/components/ui/field.jsx` (root `eslint` devDependency; Node env for build configs and tests; `eqeqeq` null exception; strict `===`)
+- `frontend/src/utils/dateTimeLocal.test.js` (pinned `Asia/Kathmandu`, real `America/New_York` DST case)
+- `backend/src/modules/events/events.service.js` (removed unused `isFtl` and `products.is_ftl` select)
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P0-08 — safe JSONB parsing on event detail:
 - `frontend/src/lib/json.js` (`parseMaybeJson`, `parseJsonArray`, `parseJsonObject`)
