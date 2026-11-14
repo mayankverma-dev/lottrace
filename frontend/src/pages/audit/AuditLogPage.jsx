@@ -12,11 +12,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRequestExport } from '@/api/reports.api';
+import { usePermissions } from '@/hooks/usePermissions';
 import { toast } from 'sonner';
 
 const AuditLogPage = () => {
   const [params, setParams] = useState({ page: 1, limit: 20 });
   const [actionFilter, setActionFilter] = useState('');
+  const { can } = usePermissions();
   
   const queryParams = { 
     ...params, 
@@ -122,9 +124,11 @@ const AuditLogPage = () => {
         title="Audit Log"
         subtitle="Security and compliance trail for all sensitive actions"
         action={
-          <Button variant="outline" onClick={handleExport} disabled={isExporting}>
-            {isExporting ? 'Starting...' : 'Export CSV'}
-          </Button>
+          can('reports.export') && (
+            <Button variant="outline" onClick={handleExport} disabled={isExporting}>
+              {isExporting ? 'Starting...' : 'Export CSV'}
+            </Button>
+          )
         }
       />
 

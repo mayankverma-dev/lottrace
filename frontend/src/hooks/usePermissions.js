@@ -3,7 +3,7 @@ import { useAuthStore } from '../stores/auth.store';
 const ROLE_PERMISSIONS = {
   org_admin:           ['*'],
   compliance_manager:  ['lots.*', 'events.*', 'trace.*', 'reports.*', 'recall.*', 'audit.read', 'imports.*'],
-  operator:            ['lots.read', 'lots.create', 'events.create', 'events.read', 'trace.read'],
+  operator:            ['lots.read', 'lots.create', 'events.create', 'events.read', 'trace.read', 'reports.read'],
   auditor:             ['lots.read', 'events.read', 'trace.read', 'audit.read', 'reports.read'],
 };
 

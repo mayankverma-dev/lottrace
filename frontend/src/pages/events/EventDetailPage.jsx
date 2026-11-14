@@ -135,7 +135,7 @@ const EventDetailPage = () => {
             <div className="flex items-center gap-3">
               {getStatusBadge(event.status)}
               
-              {can('events.create') && isMutable && (
+              {(can('events.amend') || can('events.void')) && isMutable && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="icon">
@@ -143,11 +143,13 @@ const EventDetailPage = () => {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={onAmend}>
-                      <Edit2 className="h-4 w-4 mr-2" />
-                      Amend Event
-                    </DropdownMenuItem>
-                    {can('org_admin') && (
+                    {can('events.amend') && (
+                      <DropdownMenuItem onClick={onAmend}>
+                        <Edit2 className="h-4 w-4 mr-2" />
+                        Amend Event
+                      </DropdownMenuItem>
+                    )}
+                    {can('events.void') && (
                       <DropdownMenuItem onClick={() => setVoidOpen(true)} className="text-destructive focus:text-destructive">
                         <Ban className="h-4 w-4 mr-2" />
                         Void Event

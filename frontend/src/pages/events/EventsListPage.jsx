@@ -106,7 +106,7 @@ const EventsListPage = () => {
             <DropdownMenuItem asChild>
               <Link to={`/events/${row.original.id}`}>View Details</Link>
             </DropdownMenuItem>
-            {can('events.create') && row.original.status === 'active' && (
+            {can('events.amend') && row.original.status === 'active' && (
               <DropdownMenuItem onClick={() => navigate(`/events/record?amendEventId=${row.original.id}`)}>
                 Amend Event
               </DropdownMenuItem>
@@ -147,9 +147,11 @@ const EventsListPage = () => {
         subtitle="Supply chain traceability events"
         action={
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handleExport} disabled={isExporting}>
-              {isExporting ? 'Starting...' : 'Export CSV'}
-            </Button>
+            {can('reports.export') && (
+              <Button variant="outline" onClick={handleExport} disabled={isExporting}>
+                {isExporting ? 'Starting...' : 'Export CSV'}
+              </Button>
+            )}
             {can('events.create') && (
               <Button onClick={() => navigate('/events/record')}>
                 <Plus className="h-4 w-4 mr-2" />
