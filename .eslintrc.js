@@ -19,7 +19,8 @@ module.exports = {
     'no-console': ['warn', { allow: ['warn', 'error'] }],
     'prefer-const': 'error',
     'no-var': 'error',
-    eqeqeq: ['error', 'always'],
+    // `!= null` is an intentional null-or-undefined check and must stay one.
+    eqeqeq: ['error', 'always', { null: 'ignore' }],
   },
   overrides: [
     {
@@ -33,6 +34,11 @@ module.exports = {
       files: ['frontend/**/*.{js,jsx}', 'scan-pwa/**/*.{js,jsx}'],
       parserOptions: { sourceType: 'module' },
       env: { browser: true, node: false },
+    },
+    {
+      // Build configs and Node test files run in Node, not the browser.
+      files: ['**/vite.config.js', '**/*.test.js'],
+      env: { node: true, browser: false },
     },
   ],
 };
