@@ -376,7 +376,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-07 — Permission map hides pages from roles that can use them
 
-- **Severity:** P1 · **Area:** frontend / RBAC · **Status:** Open
+- **Severity:** P1 · **Area:** frontend / RBAC · **Status:** Fixed (2026-11-14, 4faf8a9)
 - **Evidence:** `frontend/src/hooks/usePermissions.js:3-9` (only four roles, no `locations.*`, `products.*`, `settings.*`, `users.*`); `frontend/src/components/layout/Sidebar.jsx:13-24`; `frontend/src/pages/settings/UsersPage.jsx:228,250`; `backend/src/middleware/rbac.js` and route role lists.
 - **What happens:** `compliance_manager` has `lots.*`, `events.*`, `trace.*`, `reports.*`, `recall.*`, `audit.read`, `imports.*` — but no `locations.read`, `products.read`, or `settings.read`. The sidebar therefore hides Locations, Products, and Settings for a role that is expected to manage them; the API would allow at least some of these. Operator sees Events because `events.read` is present, but the API denies it (P0-12). The frontend map is a hand-maintained duplicate of backend RBAC and has already drifted.
 - **Real-world impact:** Compliance managers cannot reach master data through the UI, so they either use an admin account (violating least privilege) or cannot do their job. Permission drift will keep producing "hidden page" and "403 after click" bugs.
