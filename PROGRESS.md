@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-14
-**Last Session:** 2026-11-14 — P2-17 to P2-20 fixed. Compliance gap report rows link to the event detail, root `pnpm lint` runs with zero errors, the `dateTimeLocal` tests are timezone-independent, and the unused `isFtl` in the compliance gap check is gone.
+**Last Session:** 2026-11-14 — P0-12, P1-03, P1-29, and P1-30 fixed. Operators can read events and dashboards; report export has RBAC, validation, per-org rate limiting, and `report.export` audit logging; event/export controls now match API permissions. Full backend suite and frontend build pass; live API and Playwright verification on a fresh disposable database passed.
 
 ---
 
@@ -55,6 +55,17 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P0-12, P1-03, P1-29, P1-30 — operator access and report/export RBAC:
+- `backend/src/modules/events/events.routes.js` (`GET /events` and `GET /events/:eventId` include `operator`)
+- `backend/src/modules/reports/reports.routes.js`, `reports.validation.js`, `reports.controller.js` (route RBAC, strict Zod query/body validation, export rate limit, audit logging, validated inputs)
+- `backend/src/middleware/rateLimiter.js` (per-organization `exportLimiter`, 10 requests / 15 minutes)
+- `backend/src/middleware/auditLogger.js` (`report.export` action)
+- `backend/src/modules/dashboard/routes.js` (operator may read dashboard stats and activity)
+- `frontend/src/hooks/usePermissions.js` (operator gains `reports.read`)
+- `frontend/src/pages/events/EventsListPage.jsx`, `EventDetailPage.jsx`, `frontend/src/pages/audit/AuditLogPage.jsx` (Amend gated on `events.amend`, Void on `events.void`, exports on `reports.export`)
+- Tests: `backend/src/modules/events/events.rbac.test.js` (44 route/role cases), `backend/src/modules/events/events.operator-read.test.js` (5 DB tests), `backend/src/modules/reports/reports.rbac.test.js` (26 RBAC/validation/audit tests), `backend/src/modules/dashboard/dashboard.rbac.test.js` (14 route/role cases)
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P2-17 to P2-20 — report links, lint, timezone tests, dead code:
 - `frontend/src/pages/reports/ComplianceGapsPage.jsx` (event type cell links to `/events/:id`)

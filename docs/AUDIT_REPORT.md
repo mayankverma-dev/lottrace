@@ -61,7 +61,7 @@ Issues marked **Fixed** are done. Do not re-implement or re-audit them unless a 
 
 ## Executive summary
 
-The codebase is structurally clean and both frontend apps build, but **`PROGRESS.md` and `docs/FEATURE_MAP.md` overstate readiness**. Phase 2 is not complete: the audit found **12 P0**, **21 P1**, and **11 P2** issues.
+The codebase is structurally clean and both frontend apps build, but **`PROGRESS.md` and `docs/FEATURE_MAP.md` overstate readiness**. Phase 2 is not complete: the audit found **12 P0**, **23 P1**, and **11 P2** issues.
 
 The three most dangerous themes:
 
@@ -88,10 +88,10 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-09 | P0 | Event timestamps shift by the browser UTC offset | Fixed (2026-11-13, 7ac1afb) |
 | P0-10 | P0 | Import maps shipping rows to the wrong trace direction | Open |
 | P0-11 | P0 | Trace includes superseded (amended) events | Fixed (2026-11-11, 298465f) |
-| P0-12 | P0 | Operators can create events but cannot read them | Open |
+| P0-12 | P0 | Operators can create events but cannot read them | Fixed (2026-11-14, c541874) |
 | P1-01 | P1 | Imports never compute compliance gaps | Open |
 | P1-02 | P1 | Export pipeline produces an unreachable file and ignores format | Open |
-| P1-03 | P1 | Reports endpoints have no RBAC or input validation | Open |
+| P1-03 | P1 | Reports endpoints have no RBAC or input validation | Fixed (2026-11-14, d589217) |
 | P1-04 | P1 | Audit log export exports events, not audit records | Open |
 | P1-05 | P1 | Compliance gaps page reads the wrong pagination field | Open |
 | P1-06 | P1 | Recall simulations page breaks pagination | Open |
@@ -117,6 +117,8 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-26 | P1 | Compliance-gap email is enqueued inside the event transaction | Fixed (2026-11-13, aa97ef2) |
 | P1-27 | P1 | Amendment can change event type and source | Fixed (2026-11-13, 0bffd49) |
 | P1-28 | P1 | Event mutations lack idempotency | Fixed (2026-11-13, 08c5818) |
+| P1-29 | P1 | Operator dashboard requests return 403 | Fixed (2026-11-14, 681b998) |
+| P1-30 | P1 | Operator UI offers Amend/Void actions the API denies | Fixed (2026-11-14, 45df0e1) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Open |
 | P2-02 | P2 | API response pagination shape is inconsistent | Open |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Open |
@@ -295,7 +297,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-12 — Operators can create events but cannot read them
 
-- **Severity:** P0 · **Area:** backend + frontend / RBAC · **Status:** Open
+- **Severity:** P0 · **Area:** backend + frontend / RBAC · **Status:** Fixed (2026-11-14, c541874)
 - **Evidence:** `backend/src/modules/events/events.routes.js:18` (POST allows `operator`), `:26` and `:32` (GET list/detail exclude `operator`); `frontend/src/hooks/usePermissions.js:7` grants `operator` `events.read`; `frontend/src/pages/events/RecordEventPage.jsx` navigates to `/events` after success.
 - **What happens:** An operator records an event, the UI navigates to `/events`, and the API returns 403. The sidebar shows "Events" because the frontend permission map says `events.read`, so the user sees a broken page rather than a hidden link. The same mismatch will affect any operator trying to confirm what they just scanned.
 - **Real-world impact:** The primary shop-floor workflow ends in an error. Operators cannot verify their own submissions, which leads to duplicate scans and distrust. Support tickets will look like "the app is broken" rather than an authorization bug.
@@ -304,6 +306,8 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
   - Alternative: keep the API restriction, remove `events.read` from the operator map, and redirect operators to a confirmation screen or the scan PWA instead of `/events`.
   Also audit every route's role list against `ROLE_PERMISSIONS` and add a table-driven test so drift is caught.
 - **Verification:** Log in as an operator, record an event, and confirm the list and detail pages load with only that organization's data. Confirm an operator still cannot void/amend/export. Add a test asserting the route-role matrix.
+- **Fix:** `backend/src/modules/events/events.routes.js` now allows `operator` on `GET /events` and `GET /events/:eventId`, matching `docs/RBAC.md` and the existing org-wide read scope in `events.service.js`. Create, void, amend, and attachments are unchanged. Frontend `usePermissions.js` already granted `events.read`, so no frontend change was needed. Operator amend/void remain denied, and after P1-03 operator export is denied too (403).
+- **Verified:** `backend/src/modules/events/events.rbac.test.js` (44 route/role cases) and `backend/src/modules/events/events.operator-read.test.js` (5 DB tests: create→list→detail, organization scoping, cross-tenant 404, void/amend denial, auditor read/create matrix) pass. The full backend suite (34 suites, 304 passed, 4 skipped) passes against a disposable local Postgres when `HASH_CHAIN_KEY_ID` and `HASH_CHAIN_SECRET` are set. Live API and browser runs on a fresh disposable database confirmed the operator event flow (create 201 → list 200 → detail 200), cross-tenant 404, void/amend 403, and export 403. Operator dashboard requests now return 200 (P1-29), and the browser run reported no console errors.
 
 ---
 
@@ -330,12 +334,14 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-03 — Reports endpoints have no RBAC or input validation
 
-- **Severity:** P1 · **Area:** backend / authorization · **Status:** Open
+- **Severity:** P1 · **Area:** backend / authorization · **Status:** Fixed (2026-11-14, d589217)
 - **Evidence:** `backend/src/modules/reports/reports.routes.js` (only `authenticate` + `tenantScope`); `reports.controller.js:17-26` reads `req.body.format` with no schema.
 - **What happens:** Every authenticated role — including `operator` and `auditor` — can trigger a full-organization export. `format` is unvalidated and passed to the worker (currently ignored, but a future implementation may write it into a filename/content type). `page`/`limit` are parsed with `parseInt` and no bounds, so `limit=1000000` is accepted. Export requests are not rate-limited or audited.
 - **Real-world impact:** Data exfiltration by the lowest-privileged role, plus a cheap way to exhaust worker/S3 resources. Compliance exports should be attributable to a person.
 - **Fix direction:** Add `rbac([...])` to both routes. Recommended: `compliance-gaps` readable by `org_admin`, `compliance_manager`, `auditor`; `export` allowed by `org_admin`, `compliance_manager` (decide whether auditor may export). Add Zod schemas for query/body (`format` enum, limit max 200, date range). Add `auditLogger('report')` and a per-org export rate limit. Add route-matrix tests.
 - **Verification:** Operator and auditor get 403 on export; compliance manager succeeds. `format=exe` returns 422. `limit=999999` is rejected or clamped. Audit log records the export with user and filters.
+- **Fix:** `backend/src/modules/reports/reports.routes.js` now applies `rbac` to both routes. Compliance gaps are readable by `org_admin`, `compliance_manager`, `operator`, and `auditor`; export is allowed only for `org_admin` and `compliance_manager`, matching the read-only auditor rule in `docs/RBAC.md`. `backend/src/modules/reports/reports.validation.js` adds Zod schemas: `page`/`limit` coerced and bounded (`limit` max 100), and a strict export body with `format` enum `csv` (default `csv`). The controller reads `req.validatedQuery` and `req.validatedBody`. A new per-organization `exportLimiter` (10 requests / 15 minutes, Redis-backed) is applied to export, and `auditLogger('report')` records successful exports as `report.export` with the actor, organization, and body. Frontend export buttons are hidden unless the user has `reports.export`, and `operator` gained `reports.read` so the compliance-gap page matches the API.
+- **Verified:** `backend/src/modules/reports/reports.rbac.test.js` (26 tests: full role matrix including 401/403 and `super_admin`, query and body validation, 403-before-validation, `report.export` audit payload, and no audit for rejected exports) passes. Live API run: operator and auditor export 403; compliance manager and org admin export 202; `limit=101`, `format=exe`, and unknown body fields return 422; all four roles read compliance gaps 200. `audit_log` contained two `report.export` rows (compliance and admin) with `entity_type='report'`, `format='csv'`, and a non-null organization; the rejected exports wrote none. Browser run confirmed operator/auditor have no Export button and compliance manager does.
 
 ## P1-04 — Audit log export exports events, not audit records
 
@@ -576,6 +582,28 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Fix direction:** Reuse P0-06 middleware on every event mutation. Validate attachment bodies before fingerprinting. Generate one client key per logical mutation and reuse it for retries. Replay only the original 2xx result.
 - **Fix:** Void, amend, presigned URL, and attachment registration routes now validate bodies, claim organization-scoped idempotency keys, and place audit logging after idempotency. Web and Scan PWA mutation hooks send `Idempotency-Key`; event detail, amend, and attachment flows retain keys for unchanged retries. No schema change required.
 - **Verified:** `events.mutation-idempotency.test.js` covers void, amend, presigned URL, attachment registration, mismatch, failed retry, validation retry, tenant reuse, and audit replay behavior.
+
+## P1-29 — Operator dashboard requests return 403
+
+- **Severity:** P1 · **Area:** backend / authorization · **Status:** Fixed (2026-11-14, 681b998)
+- **Evidence:** `backend/src/modules/dashboard/routes.js` restricted `GET /dashboard/stats` and `GET /dashboard/activity` to `org_admin`, `compliance_manager`, and `auditor`. `docs/RBAC.md` grants every role dashboard read, `frontend/src/components/layout/Sidebar.jsx` shows Dashboard to all roles, and login redirects every user to `/dashboard`.
+- **What happens:** An operator signs in, lands on `/dashboard`, and both dashboard requests return 403. The page shows empty/error panels and the browser console logs two failed requests. The user's first screen after login looks broken even though the operator's actual work is allowed.
+- **Real-world impact:** Every operator login starts with a failed page, which hides real errors and drives support tickets. It also blocks operators from seeing organization-wide activity that the RBAC matrix says they may read.
+- **Fix direction:** Add `operator` to both dashboard read routes so backend, frontend permissions, and navigation agree with `docs/RBAC.md`. Add a table-driven route/role test so the matrix cannot drift again.
+- **Verification:** Operator, auditor, compliance manager, and org admin all receive 200 from `/dashboard/stats` and `/dashboard/activity`; unauthenticated requests return 401 and non-organization roles return 403.
+- **Fix:** `backend/src/modules/dashboard/routes.js` now includes `operator` in the role list for both read routes. No frontend change was needed because Dashboard was already visible to all roles.
+- **Verified:** `backend/src/modules/dashboard/dashboard.rbac.test.js` (14 cases: both routes × four organization roles, `api_key`/unknown denial, `super_admin`, and 401 without a role) passes. Live API run returned 200 for both routes for operator, auditor, compliance manager, and org admin. Browser run for all three tested roles recorded no `/api/v1/dashboard` 403 and no console errors.
+
+## P1-30 — Operator UI offers Amend/Void actions the API denies
+
+- **Severity:** P1 · **Area:** frontend / authorization · **Status:** Fixed (2026-11-14, 45df0e1)
+- **Evidence:** `frontend/src/pages/events/EventsListPage.jsx` gated the row "Amend Event" item on `events.create`, and `frontend/src/pages/events/EventDetailPage.jsx` gated the whole action menu on `events.create` while gating Void on `can('org_admin')`. Operators have `events.create`, but the API restricts amend and void to `org_admin` and `compliance_manager` (`backend/src/modules/events/events.routes.js`). The export button was always rendered even though only managers may export.
+- **What happens:** An operator sees Amend Event and Void Event affordances, clicks them, and receives 403. Compliance managers see Void only for the literal `org_admin` string, so their capability check is wrong even though the API allows them. Export buttons render for roles that now receive 403 from P1-03.
+- **Real-world impact:** The UI invites users to perform actions the server rejects, which looks like a broken app and teaches users to distrust permission-shaped controls. The mismatched Void check also hides a legitimate compliance-manager action.
+- **Fix direction:** Give the frontend explicit `events.amend`, `events.void`, and `reports.export` capabilities and use them to gate the controls. Grant `operator` `reports.read` so the compliance-gap page stays visible while export remains hidden. Keep create gated on `events.create`.
+- **Verification:** Operator sees no Export, Amend, or Void controls and makes no 403 requests. Auditor sees the same read-only UI. Compliance manager sees Export and can open both Amend and Void from list and detail. Browser console stays clean.
+- **Fix:** `frontend/src/hooks/usePermissions.js` grants `operator` `reports.read` (export remains excluded for operator and auditor). `EventsListPage.jsx` gates Amend on `events.amend` and Export on `reports.export`. `EventDetailPage.jsx` renders the action menu only when `events.amend` or `events.void` is available and gates each item separately, replacing the incorrect `org_admin` string check. `AuditLogPage.jsx` gates its Export button on `reports.export`.
+- **Verified:** Playwright run against the live disposable stack (operator, auditor, compliance manager): operator and auditor saw no Export button, no Amend row action, and no detail action menu; compliance manager saw Export and both Amend and Void. No unexpected 403 API responses and no browser console errors for any role. `npm run build` in `frontend` succeeds.
 
 ---
 
