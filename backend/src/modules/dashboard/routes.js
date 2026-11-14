@@ -9,13 +9,13 @@ router.use(authenticate, tenantScope);
 
 router.get(
   '/stats',
-  rbac(['org_admin', 'compliance_manager', 'auditor']),
+  rbac(['org_admin', 'compliance_manager', 'operator', 'auditor']),
   controller.getStats
 );
 
 router.get(
   '/activity',
-  rbac(['org_admin', 'compliance_manager', 'auditor']),
+  rbac(['org_admin', 'compliance_manager', 'operator', 'auditor']),
   controller.getActivityFeed
 );
 
