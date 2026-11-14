@@ -95,7 +95,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-04 | P1 | Audit log export exports events, not audit records | Open |
 | P1-05 | P1 | Compliance gaps page reads the wrong pagination field | Fixed (2026-11-14, 0324cae) |
 | P1-06 | P1 | Recall simulations page breaks pagination | Fixed (2026-11-14, 0324cae) |
-| P1-07 | P1 | Permission map hides pages from roles that can use them | Open |
+| P1-07 | P1 | Permission map hides pages from roles that can use them | Fixed (2026-11-14, 4faf8a9) |
 | P1-08 | P1 | Scan PWA cannot create lots or record manual events | Open |
 | P1-09 | P1 | PWA caches authenticated lot responses across users | Open |
 | P1-10 | P1 | Attachment keys are client-trusted; no download or list | Open |
