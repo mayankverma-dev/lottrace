@@ -36,7 +36,27 @@ const authLimiter = rateLimit({
   },
 });
 
+// Per-organization export limiter. Exports are expensive and produce a full
+// organization dataset, so they must not be cheap to repeat.
+const exportLimiter = rateLimit({
+  store: new RedisStore({
+    sendCommand: (...args) => redis.call(...args),
+    prefix: 'rl:export:',
+  }),
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  requestPropertyName: 'exportRateLimit',
+  keyGenerator: (req) => req.user.organizationId,
+  message: {
+    success: false,
+    message: 'Too many export requests, please try again later.',
+  },
+});
+
 module.exports = {
   apiLimiter,
-  authLimiter
+  authLimiter,
+  exportLimiter
 };
