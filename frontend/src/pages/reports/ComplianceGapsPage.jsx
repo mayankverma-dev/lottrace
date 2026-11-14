@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useGetComplianceGaps } from '@/api/reports.api';
 import { parseJsonArray } from '@/lib/json';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -19,7 +20,12 @@ const ComplianceGapsPage = () => {
       accessorKey: 'eventType',
       header: 'Event Type',
       cell: ({ row }) => (
-        <span className="font-medium capitalize">{row.original.event_type}</span>
+        <Link
+          to={`/events/${row.original.id}`}
+          className="font-medium text-primary hover:underline capitalize"
+        >
+          {row.original.event_type}
+        </Link>
       ),
     },
     {
