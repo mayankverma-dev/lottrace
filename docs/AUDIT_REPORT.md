@@ -122,7 +122,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-31 | P1 | Organization settings exposes write controls to read-only roles | Fixed (2026-11-14, 12a5cf4) |
 | P1-32 | P1 | Location deactivate control uses update permission | Fixed (2026-11-14, 12a5cf4) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Open |
-| P2-02 | P2 | API response pagination shape is inconsistent | Open |
+| P2-02 | P2 | API response pagination shape is inconsistent | Fixed (2026-11-14, fdb11d7) |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Open |
 | P2-04 | P2 | Trace product lookup is not organization-scoped | Open |
 | P2-05 | P2 | Event list search and filters are not indexed for scale | Open |
@@ -644,12 +644,14 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P2-02 — API response pagination shape is inconsistent
 
-- **Severity:** P2 · **Area:** frontend/backend contract · **Status:** Open
+- **Severity:** P2 · **Area:** frontend/backend contract · **Status:** Fixed (2026-11-14, fdb11d7)
 - **Evidence:** `backend/src/utils/apiResponse.js:19-21` (top-level `pagination`); `frontend/src/pages/reports/ComplianceGapsPage.jsx:72` (`data.meta`); `frontend/src/pages/recall/RecallSimulationsPage.jsx:181` (`response?.pagination`); `backend/src/modules/reports/reports.service.js:27-34` (internal key named `meta`).
 - **What happens:** The backend standard is `{ data, pagination }`, but consumers variously read `meta`, `pagination`, and nested `data.pagination`. The mismatch already caused P1-05. Future endpoints will keep guessing unless the contract is enforced.
 - **Real-world impact:** Silent empty tables and broken pagers — bugs that look like backend data loss.
 - **Fix direction:** Standardize on the documented top-level `pagination` (per `docs/API_STANDARDS.md`). Rename the internal `meta` return in `reports.service` to `pagination` for clarity. Add a shared frontend hook (`usePagedQuery`) that reads `response.pagination` and exposes `{ rows, page, totalPages }`, then migrate every list page. Add an API contract test asserting the envelope for one endpoint per module.
 - **Verification:** Every list page reads the same field; a contract test fails if an endpoint returns `meta`.
+- **Fix:** Added shared `buildPagination()` metadata construction and routed reports, events, and import-error pagination through it. Reports now returns `pagination` with the complete six-field offset contract; obsolete `meta` and duplicate pagination math are deleted. Removed the unused cursor response variant from the current API contract. No database or frontend changes.
+- **Verified:** `pagination.test.js`, reports route contract tests, and disposable-local-Postgres reports service tests pass. No frontend consumer reads `meta`; all current paginated consumers read top-level `pagination`.
 
 ## P2-03 — Cache invalidation runs before transaction commit
 
