@@ -93,8 +93,8 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-02 | P1 | Export pipeline produces an unreachable file and ignores format | Open |
 | P1-03 | P1 | Reports endpoints have no RBAC or input validation | Fixed (2026-11-14, d589217) |
 | P1-04 | P1 | Audit log export exports events, not audit records | Open |
-| P1-05 | P1 | Compliance gaps page reads the wrong pagination field | Open |
-| P1-06 | P1 | Recall simulations page breaks pagination | Open |
+| P1-05 | P1 | Compliance gaps page reads the wrong pagination field | Fixed (2026-11-14, 0324cae) |
+| P1-06 | P1 | Recall simulations page breaks pagination | Fixed (2026-11-14, 0324cae) |
 | P1-07 | P1 | Permission map hides pages from roles that can use them | Open |
 | P1-08 | P1 | Scan PWA cannot create lots or record manual events | Open |
 | P1-09 | P1 | PWA caches authenticated lot responses across users | Open |
@@ -354,21 +354,25 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-05 — Compliance gaps page reads the wrong pagination field
 
-- **Severity:** P1 · **Area:** frontend / pagination · **Status:** Open
+- **Severity:** P1 · **Area:** frontend / pagination · **Status:** Fixed (2026-11-14, 0324cae)
 - **Evidence:** `frontend/src/pages/reports/ComplianceGapsPage.jsx:72` (`const pagination = data?.meta`), `:86-91` (expects TanStack `pageIndex`/`pageSize`); backend returns `pagination` at the top level (`backend/src/utils/apiResponse.js:19-21`); `frontend/src/components/common/DataTable.jsx:85-105` emits `{...pagination, page}` (1-based).
 - **What happens:** `data.meta` is always `undefined`, so the table renders no pager at all (or crashes if it assumes an object). If the field were fixed, the handler still reads `newPagination.pageIndex`/`pageSize`, which do not exist; it should read `page`/`limit`. The page is effectively stuck on the first 50 rows with no way to see more.
 - **Real-world impact:** Organizations with more than 50 gap events cannot reach the rest, hiding compliance failures.
 - **Fix direction:** Use `data?.pagination`. Change the handler to `setParams(prev => ({...prev, page: newPagination.page}))` (keep `limit` if the pager supports page size). Audit every `DataTable` consumer for the same contract mismatch. Consider making `DataTable` accept a single `onPageChange(page)` callback to remove ambiguity.
 - **Verification:** Seed 60+ gaps (test DB), confirm page 2 loads and the "Showing page X of Y" text is correct. Change page size and confirm the query updates.
+- **Fix:** `ComplianceGapsPage` now reads top-level `pagination` and maps DataTable's 1-based `page` field into query state. Added `toPageParam` regression tests.
+- **Verified:** Frontend pagination mapping tests and frontend build pass. Manual verification remains listed below.
 
 ## P1-06 — Recall simulations page breaks pagination
 
-- **Severity:** P1 · **Area:** frontend / pagination · **Status:** Open
+- **Severity:** P1 · **Area:** frontend / pagination · **Status:** Fixed (2026-11-14, 0324cae)
 - **Evidence:** `frontend/src/pages/recall/RecallSimulationsPage.jsx:31,36,178-183` (`onPaginationChange={setPage}`); `DataTable.jsx:94,102` passes an object.
 - **What happens:** `setPage` receives `{page, totalPages, ...}` and stores the object in state. The hook then sends `page=[object Object]` to the API. The request either 422s (once validation exists) or silently returns page 1; the pager may also render "page [object Object]".
 - **Real-world impact:** Recall simulation history cannot be browsed beyond the first page. Given recall drills are an audit requirement, this blocks evidence collection.
 - **Fix direction:** `onPaginationChange={(p) => setPage(p.page)}`. Add a shared `useTablePagination` hook or standardize on the `DataTable` contract across all pages. Add a test that clicking Next issues `?page=2`.
 - **Verification:** With more than one page of simulations, click Next; network request contains `page=2`, rows change, and the pager label is correct.
+- **Fix:** `RecallSimulationsPage` now passes server `response.pagination` to `DataTable` and maps its emitted page object to numeric page state. Updated stale API comments.
+- **Verified:** Frontend pagination mapping tests and frontend build pass. Manual verification remains listed below.
 
 ## P1-07 — Permission map hides pages from roles that can use them
 
