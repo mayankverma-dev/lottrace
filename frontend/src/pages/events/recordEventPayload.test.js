@@ -65,6 +65,19 @@ test('amendment payload excludes voidReason', () => {
   assert.equal(Object.hasOwn(payload, 'voidReason'), false);
 });
 
+test('shipping payload sends input lots only', () => {
+  const payload = buildEventPayload({
+    formData: formData({ eventType: 'shipping', counterpartyName: 'Customer' }),
+    inputs: links,
+    outputs: links,
+    kdePayload: {},
+    isAmending: false,
+  });
+
+  assert.deepEqual(payload.inputs, links);
+  assert.deepEqual(payload.outputs, []);
+});
+
 test('empty amendment reason is invalid', () => {
   assert.equal(hasAmendReason(''), false);
   assert.equal(hasAmendReason('   '), false);

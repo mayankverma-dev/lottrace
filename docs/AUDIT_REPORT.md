@@ -86,7 +86,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-07 | P0 | "Amend event" always fails in the web UI | Fixed (2026-11-13, 0a9f87d) |
 | P0-08 | P0 | Event detail page crashes when compliance gaps exist | Fixed (2026-11-14, cfc8a26) |
 | P0-09 | P0 | Event timestamps shift by the browser UTC offset | Fixed (2026-11-13, 7ac1afb) |
-| P0-10 | P0 | Import maps shipping rows to the wrong trace direction | Open |
+| P0-10 | P0 | Import maps shipping rows to the wrong trace direction | Fixed (commit pending) |
 | P0-11 | P0 | Trace includes superseded (amended) events | Fixed (2026-11-11, 298465f) |
 | P0-12 | P0 | Operators can create events but cannot read them | Fixed (2026-11-14, c541874) |
 | P1-01 | P1 | Imports never compute compliance gaps | Open |
@@ -278,13 +278,15 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-10 — Import maps shipping rows to the wrong trace direction
 
-- **Severity:** P0 · **Area:** backend / import + trace · **Status:** Open
+- **Severity:** P0 · **Area:** backend / import + trace · **Status:** Fixed (commit pending)
 - **Evidence:** `backend/src/jobs/workers/import-processor.js:167-172` (`else if (cteType === 'shipping') direction = 'output'`); manual event UI treats shipping as an input event (`frontend/src/pages/events/RecordEventPage.jsx` `SHOWS_INPUTS`); trace CTEs rely on `direction`.
 - **What happens:** A shipping event is the terminal event for a lot: the lot is consumed by the shipment and has no produced output lot. The manual path records that as an `input` link, but the importer records it as an `output`. The same real-world shipment therefore produces opposite graphs depending on how it was entered. Forward trace from the lot either stops at the event (correct) or invents an output edge that does not exist (imported), and backward trace from a customer lot cannot find the shipment.
 - **Real-world impact:** A recall investigation gives different answers for manual vs imported data. Since imports are the normal onboarding path, most historical shipments will be wrong. This is a direct patient-safety/compliance failure.
 - **Fix direction:** Map `shipping` to `input`, matching the manual path and the CTE semantic (the event consumes the lot). Reject output links on shipping in validation. Add a regression test that imports one shipping row and asserts the link direction is `input` and that forward trace returns the shipping event without a phantom downstream lot. Review `creation`/`receiving`/`transformation` mappings in the same test.
 - **Greenfield note:** Delete existing imported data and re-import after the fix. Do not write a data-repair migration, do not flip old links in place, and do not coordinate hash re-seals. There is no historical data to preserve.
 - **Verification:** Import a file containing creation, receiving, transformation, and shipping rows. Inspect `event_lot_links`; shipping must be `input` only. Run forward and backward trace on the shipped lot and confirm the graph matches the manual-entry equivalent.
+- **Fix:** Direction mapping is centralised in `backend/src/jobs/workers/import-direction.js`. `shipping` maps to `input`; `creation` to `output`; `receiving` to `input`; `transformation` keeps the validated row direction. The import group processor moved to `backend/src/jobs/workers/import-event.js` so it can be tested without starting a BullMQ worker. `backend/src/modules/events/events.validation.js` now rejects any shipping event with `outputs` (`422 VALIDATION_ERROR`, field `outputs`), matching the existing input-only frontend path. No schema migration or hash version change: direction was already part of the canonical hash payload, and new events seal over the corrected links.
+- **Verified:** `backend/src/jobs/workers/import-direction.test.js` (6 unit tests), `backend/src/modules/events/events.shipping-links.test.js` (4 schema tests), and `backend/src/jobs/workers/import-event.test.js` (3 DB tests against a disposable local Postgres: shipping input-only, all four CTE mappings, manual/import trace equivalence) pass. Full backend suite: 41 suites, 333 passed, 4 skipped. `frontend/src/pages/events/recordEventPayload.test.js` (6 tests) passes, as do the frontend and scan-PWA production builds. The development database must be reset and imports re-run; no backfill or compatibility path exists.
 
 ## P0-11 — Trace includes superseded (amended) events
 

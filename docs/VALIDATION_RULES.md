@@ -263,13 +263,11 @@ const createTransformationEventSchema = eventBaseSchema.extend({
 ```
 
 ### Shipping CTE
-```javascript
-const createShippingEventSchema = eventBaseSchema.extend({
-  eventType: z.literal('shipping'),
-  lots: z.array(lotLinkSchema.extend({ direction: z.literal('output') }))
-         .min(1, 'At least one lot required'),
-});
-```
+Shipping consumes the shipped lot. It produces no output lot.
+
+`POST /events` and amend require at least one entry in `inputs` and reject any
+entry in `outputs` with `422 VALIDATION_ERROR` (`details[].field = "outputs"`).
+Imports map every shipping row to an `input` link.
 
 ### Discriminated Union (single schema for POST /events)
 ```javascript

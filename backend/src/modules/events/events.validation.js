@@ -32,6 +32,9 @@ const createEventSchema = z.object({
   return true;
 }, {
   message: "Invalid inputs/outputs for the specified eventType",
+}).refine(data => data.eventType !== 'shipping' || data.outputs.length === 0, {
+  message: "Shipping events have no output lots",
+  path: ["outputs"],
 });
 
 const amendEventSchema = createEventSchema.and(z.object({

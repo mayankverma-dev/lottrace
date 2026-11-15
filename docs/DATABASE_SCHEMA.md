@@ -341,6 +341,11 @@ materialized `events.status` / `events.status_reason` and `attachments` rows. Mi
 
 ### `event_lot_links`
 Many-to-many between events and lots. Enables trace traversal.
+
+**Direction by CTE:** `creation` → `output`; `receiving` → `input`;
+`transformation` → row-declared `input` or `output`; `shipping` → `input`.
+Shipping consumes the lot and has no produced output lot.
+
 ```sql
 CREATE TABLE event_lot_links (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),

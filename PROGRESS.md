@@ -2,8 +2,8 @@
 
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
-**Last Updated:** 2026-11-14
-**Last Session:** 2026-11-14 — P0-12, P1-03, P1-29, and P1-30 fixed. Operators can read events and dashboards; report export has RBAC, validation, per-org rate limiting, and `report.export` audit logging; event/export controls now match API permissions. Full backend suite and frontend build pass; live API and Playwright verification on a fresh disposable database passed.
+**Last Updated:** 2026-11-15
+**Last Session:** 2026-11-15 — P0-10 fixed. Imported shipping rows now create `input` links, matching manual entry; shipping events with output lots are rejected at validation. Full backend suite and frontend build pass; scan-PWA build passes with existing plugin warnings.
 
 ---
 
@@ -55,6 +55,14 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P0-10 — import shipping direction:
+- `backend/src/jobs/workers/import-direction.js` (new: fixed CTE direction mapping; `shipping` → `input`)
+- `backend/src/jobs/workers/import-event.js` (new: import group processor extracted for testable DB coverage)
+- `backend/src/jobs/workers/import-processor.js` (uses the shared direction mapping; obsolete inline branch deleted)
+- `backend/src/modules/events/events.validation.js` (shipping rejects any output lot)
+- Tests: `backend/src/jobs/workers/import-direction.test.js` (6 unit), `backend/src/modules/events/events.shipping-links.test.js` (4 schema), `backend/src/jobs/workers/import-event.test.js` (3 DB), `frontend/src/pages/events/recordEventPayload.test.js` (shipping input-only case)
+- Docs: `docs/AUDIT_REPORT.md`, `docs/VALIDATION_RULES.md`, `docs/DATABASE_SCHEMA.md`, `PROGRESS.md`
 
 P0-12, P1-03, P1-29, P1-30 — operator access and report/export RBAC:
 - `backend/src/modules/events/events.routes.js` (`GET /events` and `GET /events/:eventId` include `operator`)
