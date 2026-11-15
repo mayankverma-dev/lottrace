@@ -121,7 +121,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-30 | P1 | Operator UI offers Amend/Void actions the API denies | Fixed (2026-11-14, 45df0e1) |
 | P1-31 | P1 | Organization settings exposes write controls to read-only roles | Fixed (2026-11-14, 12a5cf4) |
 | P1-32 | P1 | Location deactivate control uses update permission | Fixed (2026-11-14, 12a5cf4) |
-| P1-33 | P1 | Manual receiving accepts output lots | Fixed (commit pending) |
+| P1-33 | P1 | Manual receiving accepts output lots | Fixed (2026-11-15, 10cca16) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Open |
 | P2-02 | P2 | API response pagination shape is inconsistent | Fixed (2026-11-14, fdb11d7) |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Open |
@@ -634,7 +634,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-33 — Manual receiving accepts output lots
 
-- **Severity:** P1 · **Area:** backend / events + frontend · **Status:** Fixed (commit pending)
+- **Severity:** P1 · **Area:** backend / events + frontend · **Status:** Fixed (2026-11-15, 10cca16)
 - **Evidence:** `backend/src/modules/events/events.validation.js:23-25` accepted a receiving event when `outputs.length > 0 || inputs.length > 0`. `backend/src/jobs/workers/import-direction.js` maps every receiving row to `input`, and trace treats receiving as a consumption event.
 - **What happens:** Manual entry and the API could record a receiving event whose lots are `outputs`, inventing a produced lot that the import path can never create. The same physical receipt therefore produced different links depending on entry path — the same asymmetry P0-10 fixed for shipping.
 - **Real-world impact:** A receipt could appear as a production event in trace, breaking the forward/backward graph and giving recall investigators an edge that never happened.
