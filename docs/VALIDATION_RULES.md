@@ -248,6 +248,11 @@ const createReceivingEventSchema = eventBaseSchema.extend({
 });
 ```
 
+Receiving consumes the received lot. It produces no output lot. `POST /events`
+and amend require at least one entry in `inputs` and reject any entry in
+`outputs` with `422 VALIDATION_ERROR` (`details[].field = "outputs"`). Imports
+map every receiving row to an `input` link.
+
 ### Transformation CTE
 ```javascript
 const createTransformationEventSchema = eventBaseSchema.extend({

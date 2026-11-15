@@ -1,7 +1,7 @@
 import { fromDateTimeLocal } from '../../utils/dateTimeLocal.js';
 
 const SHOWS_INPUTS = ['receiving', 'transformation', 'shipping'];
-const SHOWS_OUTPUTS = ['creation', 'receiving', 'transformation'];
+const SHOWS_OUTPUTS = ['creation', 'transformation'];
 
 export const hasAmendReason = (value) => typeof value === 'string' && value.trim().length > 0;
 

@@ -78,6 +78,19 @@ test('shipping payload sends input lots only', () => {
   assert.deepEqual(payload.outputs, []);
 });
 
+test('receiving payload sends input lots only', () => {
+  const payload = buildEventPayload({
+    formData: formData({ eventType: 'receiving', counterpartyName: 'Supplier' }),
+    inputs: links,
+    outputs: links,
+    kdePayload: {},
+    isAmending: false,
+  });
+
+  assert.deepEqual(payload.inputs, links);
+  assert.deepEqual(payload.outputs, []);
+});
+
 test('empty amendment reason is invalid', () => {
   assert.equal(hasAmendReason(''), false);
   assert.equal(hasAmendReason('   '), false);

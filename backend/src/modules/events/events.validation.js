@@ -21,7 +21,7 @@ const createEventSchema = z.object({
     return data.outputs.length > 0;
   }
   if (data.eventType === 'receiving') {
-    return data.outputs.length > 0 || data.inputs.length > 0;
+    return data.inputs.length > 0;
   }
   if (data.eventType === 'transformation') {
     return data.inputs.length > 0 && data.outputs.length > 0;
@@ -34,6 +34,9 @@ const createEventSchema = z.object({
   message: "Invalid inputs/outputs for the specified eventType",
 }).refine(data => data.eventType !== 'shipping' || data.outputs.length === 0, {
   message: "Shipping events have no output lots",
+  path: ["outputs"],
+}).refine(data => data.eventType !== 'receiving' || data.outputs.length === 0, {
+  message: "Receiving events have no output lots",
   path: ["outputs"],
 });
 

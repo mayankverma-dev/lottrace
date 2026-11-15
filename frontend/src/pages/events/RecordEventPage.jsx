@@ -30,7 +30,7 @@ const CTE_TYPES = [
 ];
 
 const SHOWS_INPUTS = ['receiving', 'transformation', 'shipping'];
-const SHOWS_OUTPUTS = ['creation', 'receiving', 'transformation'];
+const SHOWS_OUTPUTS = ['creation', 'transformation'];
 
 const emptyLotRow = () => ({ lotId: '', quantity: 1, uom: 'kg' });
 
