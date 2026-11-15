@@ -496,7 +496,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-19 — Trace cache invalidation misses upstream lots
 
-- **Severity:** P1 · **Area:** backend / cache · **Status:** Open
+- **Severity:** P1 · **Area:** backend / cache · **Status:** Fixed (2026-11-15, 3915392)
 - **Evidence:** `backend/src/modules/events/events.service.js:124-128` (invalidates only lots directly linked to the new event); `backend/src/modules/trace/trace.service.js:16-18,282-290` (cache key is per starting lot).
 - **What happens:** A forward trace from lot A caches the graph A → B. Later, an event consumes B and produces C. The code invalidates B and C, but not A. Tracing A again returns the cached graph without C, so the recall result is stale until TTL expiry (if any). Backward traces from downstream lots have the mirror problem. Invalidation also happens before the transaction commits (P2-03).
 - **Real-world impact:** After new production or shipping activity, tracing an upstream lot silently omits downstream lots — exactly the direction a recall investigation needs. The UI gives no indication that the result is stale.
@@ -668,7 +668,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P2-03 — Cache invalidation runs before transaction commit
 
-- **Severity:** P2 · **Area:** backend / cache · **Status:** Open
+- **Severity:** P2 · **Area:** backend / cache · **Status:** Fixed (2026-11-15, 3915392)
 - **Evidence:** `backend/src/modules/events/events.service.js:124-128` (inside the `db.transaction` callback, before commit); same pattern in `import-processor.js:205-210`.
 - **What happens:** The cache is cleared before the new event is visible to other connections. A concurrent trace request can repopulate the cache with the pre-commit graph, and that stale value survives the commit. If the transaction rolls back, the invalidation was unnecessary (harmless, but noisy).
 - **Real-world impact:** Stale trace results immediately after a write — the most likely moment for a user to check the result.
