@@ -37,6 +37,11 @@ jest.mock('../../config/redis', () => {
       });
       return deleted;
     }),
+    incr: jest.fn(async (key) => {
+      const next = Number.parseInt(store.get(key) || '0', 10) + 1;
+      store.set(key, String(next));
+      return next;
+    }),
     __store: store,
   };
 });
@@ -153,14 +158,11 @@ describeDb('P1-23 event void invalidates trace cache', () => {
     expect(warm.edges).toEqual([
       expect.objectContaining({ from: org.inputLotId, to: org.outputLotId, eventId: event.id }),
     ]);
-    expect(redis.__store.has(`trace:v2:${org.orgId}:${org.inputLotId}:full`)).toBe(true);
+    expect(redis.__store.has(`trace:v3:${org.orgId}:v1:${org.inputLotId}:full`)).toBe(true);
 
     await eventsService.voidEvent(event.id, 'wrong lot recorded', org.orgId);
 
-    const lotKeys = [...redis.__store.keys()].filter(
-      (key) => key.startsWith(`trace:v2:${org.orgId}:`),
-    );
-    expect(lotKeys).toEqual([]);
+    expect(redis.__store.get(`trace-version:${org.orgId}`)).toBe('2');
 
     const afterVoid = await traceService.fullTrace(org.inputLotId, org.orgId);
     expect(afterVoid.cached).toBeUndefined();
@@ -180,6 +182,6 @@ describeDb('P1-23 event void invalidates trace cache', () => {
       eventsService.voidEvent(event.id, 'second void', org.orgId),
     ).rejects.toMatchObject({ code: 'EVENT_IMMUTABLE', statusCode: 409 });
 
-    expect(redis.__store.has(`trace:v2:${org.orgId}:${org.inputLotId}:full`)).toBe(true);
+    expect(redis.__store.has(`trace:v3:${org.orgId}:v2:${org.inputLotId}:full`)).toBe(true);
   });
 });

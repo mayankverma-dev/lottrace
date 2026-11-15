@@ -10,11 +10,34 @@ const MAX_HOPS = 50;
  * Build Redis cache key for trace results.
  * @param {string} orgId
  * @param {string} lotId
+ * @param {number} version
  * @param {string} direction - forward | backward | full
  * @returns {string}
  */
-const cacheKey = (orgId, lotId, direction) =>
-  `trace:v2:${orgId}:${lotId}:${direction}`;
+const cacheKey = (orgId, version, lotId, direction) =>
+  `trace:v3:${orgId}:v${version}:${lotId}:${direction}`;
+
+const versionKey = (orgId) => `trace-version:${orgId}`;
+
+const getTraceCacheVersion = async (organizationId) => {
+  try {
+    const version = await redis.get(versionKey(organizationId));
+    const parsed = Number.parseInt(version, 10);
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+  } catch (err) {
+    logger.warn({ err, organizationId }, 'Failed to read trace cache version');
+    return 0;
+  }
+};
+
+const bumpTraceCacheVersion = async (organizationId) => {
+  try {
+    return await redis.incr(versionKey(organizationId));
+  } catch (err) {
+    logger.warn({ err, organizationId }, 'Failed to bump trace cache version');
+    return null;
+  }
+};
 
 /**
  * Try to get cached trace result from Redis.
@@ -60,7 +83,8 @@ const verifyLot = async (lotId, organizationId) => {
  * @returns {Promise<Object>} { nodes, edges, hops, truncated, startLot }
  */
 const forwardTrace = async (lotId, organizationId) => {
-  const key = cacheKey(organizationId, lotId, 'forward');
+  const version = await getTraceCacheVersion(organizationId);
+  const key = cacheKey(organizationId, version, lotId, 'forward');
   const cached = await getCached(key);
   if (cached) return { ...cached, cached: true };
 
@@ -133,7 +157,8 @@ const forwardTrace = async (lotId, organizationId) => {
  * Mirror of forward — swap input/output directions.
  */
 const backwardTrace = async (lotId, organizationId) => {
-  const key = cacheKey(organizationId, lotId, 'backward');
+  const version = await getTraceCacheVersion(organizationId);
+  const key = cacheKey(organizationId, version, lotId, 'backward');
   const cached = await getCached(key);
   if (cached) return { ...cached, cached: true };
 
@@ -201,7 +226,8 @@ const backwardTrace = async (lotId, organizationId) => {
  * Full trace: combine forward + backward, deduplicate nodes.
  */
 const fullTrace = async (lotId, organizationId) => {
-  const key = cacheKey(organizationId, lotId, 'full');
+  const version = await getTraceCacheVersion(organizationId);
+  const key = cacheKey(organizationId, version, lotId, 'full');
   const cached = await getCached(key);
   if (cached) return { ...cached, cached: true };
 
@@ -311,26 +337,13 @@ const buildTraceResult = async (rows, startLot, direction, cacheKeyStr) => {
 };
 
 /**
- * Invalidate trace cache for a lot (call when new events created).
- * Clears forward, backward, and full cache for the lot.
+ * Bump organization trace cache version after a committed graph change.
+ * Every starting-lot cache key becomes unreachable without ancestor traversal.
  * @param {string} organizationId
- * @param {string} lotId
  */
-const invalidateTraceCache = async (organizationId, lotId) => {
-  try {
-    await Promise.all([
-      redis.del(cacheKey(organizationId, lotId, 'forward')),
-      redis.del(cacheKey(organizationId, lotId, 'backward')),
-      redis.del(cacheKey(organizationId, lotId, 'full')),
-    ]);
-  } catch (err) {
-    logger.warn({ err, lotId }, 'Failed to invalidate trace cache');
-  }
-};
-
 module.exports = {
   forwardTrace,
   backwardTrace,
   fullTrace,
-  invalidateTraceCache,
+  bumpTraceCacheVersion,
 };

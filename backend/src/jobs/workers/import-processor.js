@@ -9,6 +9,7 @@ const { parse } = require('csv-parse');
 const { v4: uuidv4 } = require('uuid');
 const { GENESIS_HASH, getChainTip, nextChainSeq } = require('../../utils/hashChain');
 const { processEventGroup } = require('./import-event');
+const { bumpTraceCacheVersion } = require('../../modules/trace/trace.service');
 const logger = require('../../utils/logger');
 const crc32 = require('crc-32');
 
@@ -186,8 +187,12 @@ const importWorker = new Worker(
             const chainTip = await getChainTip(trx, organizationId);
             const prevHash = chainTip ? chainTip.record_hash : GENESIS_HASH;
 
-            await processEventGroup(trx, group, trxId, cteType, organizationId, userId, productMap, locationMap, prevHash, nextChainSeq(chainTip));
+           await processEventGroup(trx, group, trxId, cteType, organizationId, userId, productMap, locationMap, prevHash, nextChainSeq(chainTip));
           });
+
+          // The transaction has committed. Invalidate every starting-lot trace
+          // in this organization without walking upstream ancestors.
+          await bumpTraceCacheVersion(organizationId);
 
           validGroupsCount += group.length; // Count rows processed
         } catch (err) {

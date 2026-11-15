@@ -13,7 +13,7 @@ if (RUN_DB_TESTS) {
 }
 
 jest.mock('../trace/trace.service', () => ({
-  invalidateTraceCache: jest.fn().mockResolvedValue(undefined),
+  bumpTraceCacheVersion: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('bullmq', () => ({
   Worker: jest.fn(() => ({ on: jest.fn() })),

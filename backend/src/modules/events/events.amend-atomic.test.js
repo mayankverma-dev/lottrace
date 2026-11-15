@@ -41,6 +41,11 @@ jest.mock('../../config/redis', () => {
       });
       return deleted;
     }),
+    incr: jest.fn(async (key) => {
+      const next = Number.parseInt(store.get(key) || '0', 10) + 1;
+      store.set(key, String(next));
+      return next;
+    }),
     __store: store,
   };
 });
@@ -368,9 +373,9 @@ describeDb('P0-04 atomic event amendment', () => {
     // a lot that only the replacement will reference.
     await traceService.backwardTrace(org.oldOutputLotId, org.orgId);
     await traceService.fullTrace(org.inputLotId, org.orgId);
-    const oldKey = `trace:v2:${org.orgId}:${org.oldOutputLotId}:backward`;
-    const inputKey = `trace:v2:${org.orgId}:${org.inputLotId}:full`;
-    const newKey = `trace:v2:${org.orgId}:${org.newOutputLotId}:backward`;
+    const oldKey = `trace:v3:${org.orgId}:v1:${org.oldOutputLotId}:backward`;
+    const inputKey = `trace:v3:${org.orgId}:v1:${org.inputLotId}:full`;
+    const newKey = `trace:v3:${org.orgId}:v1:${org.newOutputLotId}:backward`;
     await redis.set(newKey, JSON.stringify({ marker: 'stale' }));
     expect(redis.__store.has(oldKey)).toBe(true);
     expect(redis.__store.has(inputKey)).toBe(true);
@@ -382,14 +387,15 @@ describeDb('P0-04 atomic event amendment', () => {
       org.userId,
     );
 
-    expect(redis.__store.has(oldKey)).toBe(false);
-    expect(redis.__store.has(inputKey)).toBe(false);
-    expect(redis.__store.has(newKey)).toBe(false);
+    expect(redis.__store.get(`trace-version:${org.orgId}`)).toBe('2');
+    expect(redis.__store.has(oldKey)).toBe(true);
+    expect(redis.__store.has(inputKey)).toBe(true);
+    expect(redis.__store.has(newKey)).toBe(true);
 
     // A rejected amendment must not evict a valid cache entry.
     const second = await createTransformation(org);
     await traceService.fullTrace(org.inputLotId, org.orgId);
-    const warmKey = `trace:v2:${org.orgId}:${org.inputLotId}:full`;
+    const warmKey = `trace:v3:${org.orgId}:v3:${org.inputLotId}:full`;
     expect(redis.__store.has(warmKey)).toBe(true);
 
     await expect(

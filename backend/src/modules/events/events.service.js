@@ -15,7 +15,7 @@ const logger = require('../../utils/logger');
 const { assertLotsBelongToOrganization } = require('../../utils/tenantLots');
 const { buildPagination } = require('../../utils/pagination');
 const crc32 = require('crc-32');
-const { invalidateTraceCache } = require('../trace/trace.service');
+const { bumpTraceCacheVersion } = require('../trace/trace.service');
 const { checkComplianceGaps } = require('./compliance');
 
 const getAdvisoryLockId = (orgId) => Math.abs(crc32.str(orgId));
@@ -33,7 +33,7 @@ const getAdvisoryLockId = (orgId) => Math.abs(crc32.str(orgId));
  * @param {string} organizationId
  * @param {string} userId
  * @param {string|null} [supersedesEventId]
- * @returns {Promise<{ event: Object, lotIds: string[] }>} sealed event and linked lot ids
+ * @returns {Promise<{ event: Object }>} sealed event
  */
 const insertEvent = async (qb, data, organizationId, userId, supersedesEventId = null) => {
   let locationName = null;
@@ -120,7 +120,6 @@ const insertEvent = async (qb, data, organizationId, userId, supersedesEventId =
   // Definitive graph; side effects (email) run after commit.
   return {
     event: sealedEvent,
-    lotIds: [...new Set(links.map(l => l.lot_id))],
     complianceGapAlert: complianceGaps
       ? {
         eventId,
@@ -166,16 +165,16 @@ const enqueueComplianceGapAlert = async (alert, organizationId) => {
 const createEvent = async (data, organizationId, userId) => {
   const lockId = getAdvisoryLockId(organizationId);
 
-  const { event, lotIds, complianceGapAlert } = await db.transaction(async (trx) => {
+  const { event, complianceGapAlert } = await db.transaction(async (trx) => {
     // Acquire org-level lock to prevent concurrent hash chain generation
     await trx.raw('SELECT pg_advisory_xact_lock(?)', [lockId]);
     return insertEvent(trx, data, organizationId, userId);
   });
 
-  // Invalidate only after commit: a rolled-back write must not evict a valid
-  // cached trace, and a pre-commit eviction can be repopulated with stale data.
+  // Bump only after commit: a rolled-back write must not invalidate a valid
+  // cached trace, and a pre-commit bump can be observed before graph data exists.
   await Promise.all([
-    ...lotIds.map(lotId => invalidateTraceCache(organizationId, lotId)),
+    bumpTraceCacheVersion(organizationId),
     enqueueComplianceGapAlert(complianceGapAlert, organizationId),
   ]);
 
@@ -262,7 +261,7 @@ const getEventById = async (eventId, organizationId) => {
 };
 
 const voidEvent = async (eventId, voidReason, organizationId, userId = null) => {
-  const { voided, linkedLotIds } = await db.transaction(async (trx) => {
+  const { voided } = await db.transaction(async (trx) => {
     const event = await trx('events')
       .where({ id: eventId, organization_id: organizationId })
       .forUpdate()
@@ -291,22 +290,14 @@ const voidEvent = async (eventId, voidReason, organizationId, userId = null) => 
       },
     }, event.record_hash);
 
-    const links = await trx('event_lot_links')
-      .where({ event_id: eventId })
-      .select('lot_id');
-
     return {
       voided: updated,
-      linkedLotIds: [...new Set(links.map(link => link.lot_id))],
     };
   });
 
-  // Invalidate only after commit so a rolled-back void cannot evict a valid
-  // cached trace (P1-23). Linked lots cover every trace that can contain this
-  // event directly; upstream lots remain P1-19.
-  await Promise.all(
-    linkedLotIds.map(lotId => invalidateTraceCache(organizationId, lotId))
-  );
+  // Bump only after commit so a rolled-back void cannot invalidate a valid
+  // cached trace. Organization versioning covers upstream starting lots.
+  await bumpTraceCacheVersion(organizationId);
 
   return voided;
 };
@@ -317,7 +308,7 @@ const amendEvent = async (eventId, data, organizationId, userId) => {
   // One transaction, one connection: the replacement row, the status change on
   // the superseded row, and its signed evidence all commit together or not at
   // all (P0-04). Lock order is fixed: organization advisory lock, then row lock.
-  const { replacement, lotIds, complianceGapAlert } = await db.transaction(async (trx) => {
+  const { replacement, complianceGapAlert } = await db.transaction(async (trx) => {
     // Serialize every chain writer for this organization, including creates.
     await trx.raw('SELECT pg_advisory_xact_lock(?)', [lockId]);
 
@@ -344,10 +335,6 @@ const amendEvent = async (eventId, data, organizationId, userId) => {
     }
     const replacementData = { ...data, source: oldEvent.source };
 
-    const oldLotIds = (await trx('event_lot_links')
-      .where({ event_id: eventId })
-      .select('lot_id')).map(link => link.lot_id);
-
     // Create the replacement that supersedes the old one, same transaction.
     const created = await insertEvent(trx, replacementData, organizationId, userId, eventId);
 
@@ -373,9 +360,6 @@ const amendEvent = async (eventId, data, organizationId, userId) => {
 
     return {
       replacement: created.event,
-      // The superseded event's lots can differ from the replacement's, so both
-      // sets need invalidation or the old graph survives its 5-minute TTL.
-      lotIds: [...new Set([...oldLotIds, ...created.lotIds])],
       complianceGapAlert: created.complianceGapAlert,
     };
   });
@@ -383,7 +367,7 @@ const amendEvent = async (eventId, data, organizationId, userId) => {
   // After commit only, so a rolled-back amendment cannot evict a valid cache
   // and cannot email an alert for an event that never committed.
   await Promise.all([
-    ...lotIds.map(lotId => invalidateTraceCache(organizationId, lotId)),
+    bumpTraceCacheVersion(organizationId),
     enqueueComplianceGapAlert(complianceGapAlert, organizationId),
   ]);
 

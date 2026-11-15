@@ -37,6 +37,11 @@ jest.mock('../../config/redis', () => {
       });
       return deleted;
     }),
+    incr: jest.fn(async (key) => {
+      const next = Number.parseInt(store.get(key) || '0', 10) + 1;
+      store.set(key, String(next));
+      return next;
+    }),
     __store: store,
   };
 });
@@ -193,7 +198,7 @@ describeDb('P0-11 trace excludes amended events', () => {
 
     // The pre-amendment full-trace cache for the input lot must be gone.
     const inputCacheKeys = [...redis.__store.keys()].filter(
-      (key) => key.startsWith(`trace:v2:${org.orgId}:${org.inputLotId}:`),
+      (key) => key.startsWith(`trace:v3:${org.orgId}:v2:${org.inputLotId}:`),
     );
     expect(inputCacheKeys).toEqual([]);
 
@@ -286,6 +291,35 @@ describeDb('P0-11 trace excludes amended events', () => {
     expect(backward.edges).toHaveLength(2);
     expect(backward.edges.some((edge) => edge.eventId === replacement.id)).toBe(true);
     expect(backward.edges.some((edge) => edge.eventId === second.id)).toBe(false);
+  });
+
+  it('invalidates an upstream warm trace when a downstream event commits', async () => {
+    const org = await seedOrganization();
+    const first = await createTransformation(org);
+
+    const warm = await traceService.forwardTrace(org.inputLotId, org.orgId);
+    expect(warm.nodes.map((node) => node.id).sort()).toEqual(
+      [org.inputLotId, org.oldOutputLotId].sort(),
+    );
+    expect(redis.__store.has(`trace:v3:${org.orgId}:v1:${org.inputLotId}:forward`)).toBe(true);
+
+    const second = await createTransformation(org, {
+      inputs: [{ lotId: org.oldOutputLotId, quantity: 8, uom: 'kg' }],
+      outputs: [{ lotId: org.newOutputLotId, quantity: 7, uom: 'kg' }],
+      eventDatetime: '2026-11-11T13:00:00.000Z',
+    });
+
+    const after = await traceService.forwardTrace(org.inputLotId, org.orgId);
+    expect(after.cached).toBeUndefined();
+    expect(after.nodes.map((node) => node.id).sort()).toEqual([
+      org.inputLotId,
+      org.oldOutputLotId,
+      org.newOutputLotId,
+    ].sort());
+    expect(after.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ eventId: first.id }),
+      expect.objectContaining({ eventId: second.id }),
+    ]));
   });
 
   it('keeps the superseded event available through event detail and the event list', async () => {

@@ -32,6 +32,11 @@ jest.mock('../../config/redis', () => {
       return 'OK';
     }),
     del: jest.fn(async () => 0),
+    incr: jest.fn(async (key) => {
+      const next = Number.parseInt(store.get(key) || '0', 10) + 1;
+      store.set(key, String(next));
+      return next;
+    }),
     __store: store,
   };
 });

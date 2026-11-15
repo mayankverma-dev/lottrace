@@ -15,7 +15,7 @@ if (RUN_DB_TESTS) {
 require('express-async-errors');
 
 jest.mock('../../modules/trace/trace.service', () => ({
-  invalidateTraceCache: jest.fn().mockResolvedValue(undefined),
+  bumpTraceCacheVersion: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../jobs/queues', () => ({
   connection: {},

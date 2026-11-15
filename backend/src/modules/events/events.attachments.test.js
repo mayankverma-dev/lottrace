@@ -44,7 +44,7 @@ jest.mock('../../lib/storage', () => ({
 }));
 
 jest.mock('../trace/trace.service', () => ({
-  invalidateTraceCache: jest.fn(),
+  bumpTraceCacheVersion: jest.fn(),
 }));
 
 const db = require('../../db/knex');

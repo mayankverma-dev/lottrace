@@ -6,7 +6,6 @@ const {
   sealEventHash,
 } = require('../../utils/hashChain');
 const { assertLotsBelongToOrganization } = require('../../utils/tenantLots');
-const { invalidateTraceCache } = require('../../modules/trace/trace.service');
 const { checkComplianceGaps } = require('../../modules/events/compliance');
 const { determineLinkDirection } = require('./import-direction');
 
@@ -40,7 +39,6 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
   const hasCounterparty = Object.keys(counterpartyInfo).length > 0;
 
   const eventId = uuidv4();
-  const affectedLotIds = new Set();
   const eventLotLinks = [];
 
   // 3. Process each Lot in the group
@@ -87,7 +85,6 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
       uom,
     });
 
-    affectedLotIds.add(lot.id);
   }
 
   // Same tenant guard as manual creation. Import resolves or creates lots in
@@ -137,11 +134,6 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
   }
 
   const sealedEvent = await sealEventHash(trx, eventId, prevHash);
-
-  // 6. Invalidate cache
-  for (const lid of affectedLotIds) {
-    try { await invalidateTraceCache(organizationId, lid); } catch (_) { /* non-fatal */ }
-  }
 
   return sealedEvent;
 };

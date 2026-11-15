@@ -38,6 +38,11 @@ jest.mock('../../config/redis', () => {
       });
       return deleted;
     }),
+    incr: jest.fn(async (key) => {
+      const next = Number.parseInt(store.get(key) || '0', 10) + 1;
+      store.set(key, String(next));
+      return next;
+    }),
     __store: store,
   };
 });
@@ -58,6 +63,7 @@ describeDb('P0-10 import shipping consumes the lot', () => {
   let traceService;
   let eventsService;
   let processEventGroup;
+  let bumpTraceCacheVersion;
 
   const seedOrganization = async (label, customKdeSchema = []) => {
     const orgId = uuidv4();
@@ -160,6 +166,7 @@ describeDb('P0-10 import shipping consumes the lot', () => {
         hashChain.nextChainSeq(tip),
       );
     });
+    await bumpTraceCacheVersion(org.orgId);
   };
 
   const importedEvent = (org, transactionId) => db('events')
@@ -183,6 +190,7 @@ describeDb('P0-10 import shipping consumes the lot', () => {
     traceService = require('../../modules/trace/trace.service');
     eventsService = require('../../modules/events/events.service');
     ({ processEventGroup } = require('./import-event'));
+    ({ bumpTraceCacheVersion } = traceService);
 
     await db.raw('DROP SCHEMA IF EXISTS public CASCADE');
     await db.raw('CREATE SCHEMA public');
@@ -235,6 +243,38 @@ describeDb('P0-10 import shipping consumes the lot', () => {
     const forward = await traceService.forwardTrace(lot.id, org.orgId);
     expect(forward.nodes.map((node) => node.id)).toEqual([lot.id]);
     expect(forward.edges).toEqual([]);
+  });
+
+  it('invalidates an upstream trace after an import transaction commits', async () => {
+    const org = await seedOrganization('post-commit-cache');
+    const raw = await insertLot(org, 'P0-10-RAW-CACHE', 100);
+
+    const warm = await traceService.forwardTrace(raw.id, org.orgId);
+    expect(warm.nodes.map((node) => node.id)).toEqual([raw.id]);
+    expect(redis.__store.has(`trace:v3:${org.orgId}:v0:${raw.id}:forward`)).toBe(true);
+
+    const transactionId = 'TRX-P0-10-POST-COMMIT-CACHE';
+    await importGroup(org, 'transformation', transactionId, [
+      csvRow(org, {
+        transaction_id: transactionId,
+        direction: 'input',
+        traceability_lot_code: raw.traceability_lot_code,
+        quantity: '90',
+      }),
+      csvRow(org, {
+        transaction_id: transactionId,
+        direction: 'output',
+        traceability_lot_code: 'P0-10-FINAL-CACHE',
+        quantity: '80',
+      }),
+    ]);
+
+    const after = await traceService.forwardTrace(raw.id, org.orgId);
+    expect(after.cached).toBeUndefined();
+    expect(after.nodes.map((node) => node.traceabilityLotCode).sort()).toEqual([
+      'P0-10-FINAL-CACHE',
+      'P0-10-RAW-CACHE',
+    ]);
   });
 
   it('maps creation, receiving, transformation, and shipping consistently', async () => {
