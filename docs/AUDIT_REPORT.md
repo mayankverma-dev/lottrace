@@ -89,7 +89,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-10 | P0 | Import maps shipping rows to the wrong trace direction | Fixed (2026-11-15, 46e8846) |
 | P0-11 | P0 | Trace includes superseded (amended) events | Fixed (2026-11-11, 298465f) |
 | P0-12 | P0 | Operators can create events but cannot read them | Fixed (2026-11-14, c541874) |
-| P1-01 | P1 | Imports never compute compliance gaps | Open |
+| P1-01 | P1 | Imports never compute compliance gaps | Fixed (2026-11-15, 25973da) |
 | P1-02 | P1 | Export pipeline produces an unreachable file and ignores format | Open |
 | P1-03 | P1 | Reports endpoints have no RBAC or input validation | Fixed (2026-11-14, d589217) |
 | P1-04 | P1 | Audit log export exports events, not audit records | Open |
@@ -321,7 +321,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-01 — Imports never compute compliance gaps
 
-- **Severity:** P1 · **Area:** backend / compliance · **Status:** Open
+- **Severity:** P1 · **Area:** backend / compliance · **Status:** Fixed (2026-11-15, 25973da)
 - **Evidence:** `backend/src/jobs/workers/import-processor.js:118-128` (payload always `kdePayload: {}`), `:195-210` (direct insert, no `compliance_gaps`), `backend/src/modules/events/events.service.js:10-38` (`checkComplianceGaps` is private to the manual path).
 - **What happens:** Imported events are inserted directly, bypassing `checkComplianceGaps`. `compliance_gaps` stays `NULL`, so the generated `has_compliance_gaps` column is `false` and the compliance-gap report, dashboard counter, and email alert all ignore imported data. A CSV full of FTL products with missing required KDEs imports "clean."
 - **Real-world impact:** The main onboarding path produces records that look compliant but are not. An FDA inspection would find missing KDEs that the product reported as complete.
