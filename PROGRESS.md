@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-15
-**Last Session:** 2026-11-15 — P0-10 fixed. Imported shipping rows now create `input` links, matching manual entry; shipping events with output lots are rejected at validation. Full backend suite and frontend build pass; scan-PWA build passes with existing plugin warnings.
+**Last Session:** 2026-11-15 — P1-33 and P2-21 fixed. Receiving events now accept input lots only, in both API and web form. The 5-per-minute import worker limiter is documented and surfaced on the Imports page. Full backend suite passes (42 suites, 338 tests); frontend and scan-PWA builds pass.
 
 ---
 
@@ -55,6 +55,17 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P1-33 — receiving events take input lots only:
+- `backend/src/modules/events/events.validation.js` (receiving requires at least one input, rejects any output lot)
+- `frontend/src/pages/events/recordEventPayload.js`, `frontend/src/pages/events/RecordEventPage.jsx` (`SHOWS_OUTPUTS` = `creation`, `transformation`; receiving form hides Output Lots)
+- Tests: `backend/src/modules/events/events.receiving-links.test.js` (5 schema), `frontend/src/pages/events/recordEventPayload.test.js` (receiving input-only case)
+- Docs: `docs/AUDIT_REPORT.md`, `docs/VALIDATION_RULES.md`, `PROGRESS.md`
+
+P2-21 — import queue limit surfaced:
+- `frontend/src/pages/imports/ImportPage.jsx` (note while any import is `pending` or `processing`: files process at up to 5 per minute and start automatically)
+- `docs/ARCHITECTURE.md` (import job flow documents the 5-per-minute worker limiter)
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P0-10 — import shipping direction:
 - `backend/src/jobs/workers/import-direction.js` (new: fixed CTE direction mapping; `shipping` → `input`)

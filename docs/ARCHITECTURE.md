@@ -278,6 +278,13 @@ Upload CSV → store in S3 → create imports record (status: pending)
 → Enqueue email job → notify user
 ```
 
+The import worker is rate-limited to **5 jobs per minute**
+(`jobs/workers/import-processor.js`, `limiter: { max: 5, duration: 60000 }`) so a
+bulk of large CSVs cannot saturate the database. Uploads beyond that stay
+`pending` for up to a minute and start automatically; the Imports page tells the
+user this while any import is queued or running. This is deliberate throttling,
+not a lost job.
+
 ---
 
 ## 7. File Storage

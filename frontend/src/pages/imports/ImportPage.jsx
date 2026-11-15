@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import {
   Upload, FileText, CheckCircle, AlertCircle, Clock,
-  Download, X, FileUp, Loader2, ChevronDown, AlertTriangle
+  Download, X, FileUp, Loader2, ChevronDown, AlertTriangle, Info
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -395,6 +395,15 @@ export default function ImportPage() {
             </div>
           </CardHeader>
           <CardContent>
+            {hasActiveImport && (
+              <p className="mb-3 flex items-start gap-1.5 text-xs text-muted-foreground">
+                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <span>
+                  Imports process at up to 5 files per minute. Queued files stay Pending
+                  and start automatically — no need to upload again.
+                </span>
+              </p>
+            )}
             {isLoading ? (
               <div className="space-y-3">
                 {Array.from({ length: 4 }).map((_, i) => (
