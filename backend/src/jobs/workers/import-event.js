@@ -7,6 +7,7 @@ const {
 } = require('../../utils/hashChain');
 const { assertLotsBelongToOrganization } = require('../../utils/tenantLots');
 const { invalidateTraceCache } = require('../../modules/trace/trace.service');
+const { checkComplianceGaps } = require('../../modules/events/compliance');
 const { determineLinkDirection } = require('./import-direction');
 
 /**
@@ -97,6 +98,16 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
     organizationId,
   );
 
+  const complianceGaps = await checkComplianceGaps(trx, {
+    kdePayload: {},
+    inputs: eventLotLinks
+      .filter(link => link.direction === 'input')
+      .map(link => ({ lotId: link.lot_id })),
+    outputs: eventLotLinks
+      .filter(link => link.direction === 'output')
+      .map(link => ({ lotId: link.lot_id })),
+  }, organizationId);
+
   // 4. Create Event. The hash covers persisted values, so it is sealed after
   // the row and its links exist (P0-01).
   await trx('events').insert({
@@ -109,6 +120,7 @@ const processEventGroup = async (trx, group, trxId, cteType, organizationId, use
     recorded_by: userId,
     source: 'import',
     kde_payload: JSON.stringify({}),
+    compliance_gaps: complianceGaps ? JSON.stringify(complianceGaps) : null,
     notes: (firstRow.notes || '').trim() || null,
     record_hash: PENDING_RECORD_HASH,
     prev_hash: prevHash,

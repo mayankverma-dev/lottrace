@@ -16,39 +16,9 @@ const { assertLotsBelongToOrganization } = require('../../utils/tenantLots');
 const { buildPagination } = require('../../utils/pagination');
 const crc32 = require('crc-32');
 const { invalidateTraceCache } = require('../trace/trace.service');
+const { checkComplianceGaps } = require('./compliance');
 
 const getAdvisoryLockId = (orgId) => Math.abs(crc32.str(orgId));
-
-// `qb` is the caller's transaction. It must NOT fall back to the global pool:
-// the caller already holds a connection for its transaction, so a second
-// connection here exhausts the pool under concurrent event creation.
-const checkComplianceGaps = async (qb, data, organizationId) => {
-  const lotIds = [...(data.inputs || []), ...(data.outputs || [])].map(l => l.lotId);
-  if (lotIds.length === 0) return null;
-  
-  const lots = await qb('lots')
-    .join('products', 'lots.product_id', 'products.id')
-    .whereIn('lots.id', lotIds)
-    .andWhere('lots.organization_id', organizationId)
-    .select('products.custom_kde_schema');
-
-  const gaps = [];
-
-  lots.forEach(lot => {
-    if (lot.custom_kde_schema) {
-      const schema = typeof lot.custom_kde_schema === 'string' ? JSON.parse(lot.custom_kde_schema) : lot.custom_kde_schema;
-      schema.forEach(field => {
-        if (field.required && !data.kdePayload?.[field.name]) {
-          if (!gaps.find(g => g.field === field.name)) {
-            gaps.push({ field: field.name, message: `${field.label || field.name} is required` });
-          }
-        }
-      });
-    }
-  });
-
-  return gaps.length > 0 ? JSON.stringify(gaps) : null;
-};
 
 /**
  * Inserts and seals one event inside the caller's transaction.
@@ -99,7 +69,7 @@ const insertEvent = async (qb, data, organizationId, userId, supersedesEventId =
     recorded_by: userId,
     source: data.source,
     kde_payload: JSON.stringify(data.kdePayload || {}),
-    compliance_gaps: complianceGaps,
+    compliance_gaps: complianceGaps ? JSON.stringify(complianceGaps) : null,
     notes: data.notes || null,
     // The hash covers persisted values, so it is sealed after the row and
     // its links exist (P0-01). Same transaction; never rewritten later.
@@ -157,7 +127,7 @@ const insertEvent = async (qb, data, organizationId, userId, supersedesEventId =
         locationName: locationName || 'Unknown Location',
         eventType: data.eventType,
         timestamp: data.eventDatetime,
-        gaps: JSON.parse(complianceGaps),
+        gaps: complianceGaps,
       }
       : null,
   };

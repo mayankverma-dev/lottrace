@@ -59,7 +59,7 @@ describeDb('P0-10 import shipping consumes the lot', () => {
   let eventsService;
   let processEventGroup;
 
-  const seedOrganization = async (label) => {
+  const seedOrganization = async (label, customKdeSchema = []) => {
     const orgId = uuidv4();
     const userId = uuidv4();
     const productId = uuidv4();
@@ -89,7 +89,7 @@ describeDb('P0-10 import shipping consumes the lot', () => {
       name: productName,
       is_ftl: false,
       default_uom: 'kg',
-      custom_kde_schema: JSON.stringify([]),
+      custom_kde_schema: JSON.stringify(customKdeSchema),
     });
 
     await db('locations').insert({
@@ -213,6 +213,8 @@ describeDb('P0-10 import shipping consumes the lot', () => {
     const event = await importedEvent(org, transactionId);
     expect(event.event_type).toBe('shipping');
     expect(event.source).toBe('import');
+    expect(event.compliance_gaps).toBeNull();
+    expect(event.has_compliance_gaps).toBe(false);
     expect(event.record_hash).toMatch(/^[a-f0-9]{64}$/);
 
     const links = await linksFor(event.id);
@@ -391,5 +393,103 @@ describeDb('P0-10 import shipping consumes the lot', () => {
     expect(manualPayload.outputs).toHaveLength(0);
     expect(importedPayload.inputs).toHaveLength(1);
     expect(importedPayload.outputs).toHaveLength(0);
+  });
+
+  it('stores compliance gaps for an imported product with missing required KDEs', async () => {
+    const org = await seedOrganization('compliance-gap', [
+      { name: 'harvestDate', required: true, label: 'Harvest Date' },
+    ]);
+    const lot = await insertLot(org, 'P1-01-GAP');
+    const transactionId = 'TRX-P1-01-GAP';
+
+    await importGroup(org, 'creation', transactionId, [
+      csvRow(org, {
+        transaction_id: transactionId,
+        traceability_lot_code: lot.traceability_lot_code,
+      }),
+    ]);
+
+    const event = await importedEvent(org, transactionId);
+    expect(event.compliance_gaps).toEqual([
+      { field: 'harvestDate', message: 'Harvest Date is required' },
+    ]);
+    expect(event.has_compliance_gaps).toBe(true);
+  });
+
+  it('deduplicates the same required KDE across multiple imported lots', async () => {
+    const org = await seedOrganization('compliance-dedupe', [
+      { name: 'harvestDate', required: true, label: 'Harvest Date' },
+    ]);
+    const firstLot = await insertLot(org, 'P1-01-DEDUPE-1');
+    const secondLot = await insertLot(org, 'P1-01-DEDUPE-2');
+    const transactionId = 'TRX-P1-01-DEDUPE';
+
+    await importGroup(org, 'transformation', transactionId, [
+      csvRow(org, {
+        transaction_id: transactionId,
+        direction: 'input',
+        traceability_lot_code: firstLot.traceability_lot_code,
+      }),
+      csvRow(org, {
+        transaction_id: transactionId,
+        direction: 'output',
+        traceability_lot_code: secondLot.traceability_lot_code,
+      }),
+    ]);
+
+    const event = await importedEvent(org, transactionId);
+    expect(event.compliance_gaps).toEqual([
+      { field: 'harvestDate', message: 'Harvest Date is required' },
+    ]);
+  });
+
+  it('stores all missing required KDEs across multiple imported products', async () => {
+    const org = await seedOrganization('compliance-products', [
+      { name: 'harvestDate', required: true, label: 'Harvest Date' },
+    ]);
+    const secondProductId = uuidv4();
+    await db('products').insert({
+      id: secondProductId,
+      organization_id: org.orgId,
+      name: `${org.productName} second`,
+      is_ftl: true,
+      default_uom: 'kg',
+      custom_kde_schema: JSON.stringify([
+        { name: 'supplierLot', required: true, label: 'Supplier Lot' },
+      ]),
+    });
+    const secondProduct = await db('products').where({ id: secondProductId }).first();
+    org.productMap.set(secondProduct.name.toLowerCase().trim(), secondProduct);
+    const firstLot = await insertLot(org, 'P1-01-PRODUCT-1');
+    const [secondLot] = await db('lots').insert({
+      id: uuidv4(),
+      organization_id: org.orgId,
+      product_id: secondProductId,
+      traceability_lot_code: 'P1-01-PRODUCT-2',
+      quantity: 100,
+      uom: 'kg',
+      created_by: org.userId,
+    }).returning('*');
+    const transactionId = 'TRX-P1-01-PRODUCTS';
+
+    await importGroup(org, 'transformation', transactionId, [
+      csvRow(org, {
+        transaction_id: transactionId,
+        direction: 'input',
+        traceability_lot_code: firstLot.traceability_lot_code,
+      }),
+      csvRow(org, {
+        transaction_id: transactionId,
+        product_name: secondProduct.name,
+        direction: 'output',
+        traceability_lot_code: secondLot.traceability_lot_code,
+      }),
+    ]);
+
+    const event = await importedEvent(org, transactionId);
+    expect(event.compliance_gaps).toEqual([
+      { field: 'harvestDate', message: 'Harvest Date is required' },
+      { field: 'supplierLot', message: 'Supplier Lot is required' },
+    ]);
   });
 });
