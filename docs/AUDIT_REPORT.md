@@ -107,7 +107,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-16 | P1 | Seed script truncates any database it is pointed at | Fixed (2026-11-09, 93bfed5) |
 | P1-17 | P1 | Database TLS disables certificate verification | Open |
 | P1-18 | P1 | Hash coverage and keying are insufficient for tamper evidence | Fixed (2026-11-11, 64ea1b3) |
-| P1-19 | P1 | Trace cache invalidation misses upstream lots | Open |
+| P1-19 | P1 | Trace cache invalidation misses upstream lots | Fixed (2026-11-15, 3915392) |
 | P1-20 | P1 | No tests, CI, Dockerfiles, or frontend SPA rewrite | Open |
 | P1-21 | P1 | Fresh database migration fails on unique-constraint index | Fixed (2026-11-09, 85b091e) |
 | P1-22 | P1 | Lot create/update/void actions are not written to `audit_log` | Fixed (2026-11-11, 1f2150e) |
@@ -124,7 +124,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-33 | P1 | Manual receiving accepts output lots | Fixed (2026-11-15, 10cca16) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Open |
 | P2-02 | P2 | API response pagination shape is inconsistent | Fixed (2026-11-14, fdb11d7) |
-| P2-03 | P2 | Cache invalidation runs before transaction commit | Open |
+| P2-03 | P2 | Cache invalidation runs before transaction commit | Fixed (2026-11-15, 3915392) |
 | P2-04 | P2 | Trace product lookup is not organization-scoped | Open |
 | P2-05 | P2 | Event list search and filters are not indexed for scale | Open |
 | P2-06 | P2 | Local infrastructure uses default credentials and exposed consoles | Open |
