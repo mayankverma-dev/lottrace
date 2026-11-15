@@ -142,7 +142,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-18 | P2 | `pnpm lint` fails because the root install has no `eslint` binary | Fixed (2026-11-14, 04a7d7b) |
 | P2-19 | P2 | `dateTimeLocal` tests depend on the machine time zone | Fixed (2026-11-14, bde73e2) |
 | P2-20 | P2 | `checkComplianceGaps` declares an unused `isFtl` | Fixed (2026-11-14, 928859e) |
-| P2-21 | P2 | Import uploads queue silently behind the 5/minute worker limiter | Fixed (commit pending) |
+| P2-21 | P2 | Import uploads queue silently behind the 5/minute worker limiter | Fixed (2026-11-15, 943ac17) |
 
 ---
 
@@ -828,7 +828,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P2-21 — Import uploads queue silently behind the 5/minute worker limiter
 
-- **Severity:** P2 · **Area:** backend / imports · **Status:** Fixed (commit pending)
+- **Severity:** P2 · **Area:** backend / imports · **Status:** Fixed (2026-11-15, 943ac17)
 - **Evidence:** `backend/src/jobs/workers/import-processor.js:273` sets `limiter: { max: 5, duration: 60000 }`; it is the only worker with a limiter. Neither `docs/ARCHITECTURE.md` nor `frontend/src/pages/imports/ImportPage.jsx` mentioned it.
 - **What happens:** Uploading six or more CSVs in one minute leaves the extras `pending` for up to a minute with no explanation. Measured with ten rapid creation uploads: the first five completed in 144–360 ms, the next five at 59,978–60,034 ms. All completed; no job was lost. The earlier suspicion of an orphaned BullMQ job after a restart was wrong — the observed incident was the sixth upload in one limiter window.
 - **Real-world impact:** Operators see a stalled Pending row, assume the upload failed, and re-upload the same file. Idempotency prevents duplicate events for imports, but the confusion wastes time and generates duplicate import records with error/no-op results.
