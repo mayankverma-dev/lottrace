@@ -86,7 +86,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-07 | P0 | "Amend event" always fails in the web UI | Fixed (2026-11-13, 0a9f87d) |
 | P0-08 | P0 | Event detail page crashes when compliance gaps exist | Fixed (2026-11-14, cfc8a26) |
 | P0-09 | P0 | Event timestamps shift by the browser UTC offset | Fixed (2026-11-13, 7ac1afb) |
-| P0-10 | P0 | Import maps shipping rows to the wrong trace direction | Fixed (commit pending) |
+| P0-10 | P0 | Import maps shipping rows to the wrong trace direction | Fixed (2026-11-15, 46e8846) |
 | P0-11 | P0 | Trace includes superseded (amended) events | Fixed (2026-11-11, 298465f) |
 | P0-12 | P0 | Operators can create events but cannot read them | Fixed (2026-11-14, c541874) |
 | P1-01 | P1 | Imports never compute compliance gaps | Open |
@@ -278,7 +278,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-10 — Import maps shipping rows to the wrong trace direction
 
-- **Severity:** P0 · **Area:** backend / import + trace · **Status:** Fixed (commit pending)
+- **Severity:** P0 · **Area:** backend / import + trace · **Status:** Fixed (2026-11-15, 46e8846)
 - **Evidence:** `backend/src/jobs/workers/import-processor.js:167-172` (`else if (cteType === 'shipping') direction = 'output'`); manual event UI treats shipping as an input event (`frontend/src/pages/events/RecordEventPage.jsx` `SHOWS_INPUTS`); trace CTEs rely on `direction`.
 - **What happens:** A shipping event is the terminal event for a lot: the lot is consumed by the shipment and has no produced output lot. The manual path records that as an `input` link, but the importer records it as an `output`. The same real-world shipment therefore produces opposite graphs depending on how it was entered. Forward trace from the lot either stops at the event (correct) or invents an output edge that does not exist (imported), and backward trace from a customer lot cannot find the shipment.
 - **Real-world impact:** A recall investigation gives different answers for manual vs imported data. Since imports are the normal onboarding path, most historical shipments will be wrong. This is a direct patient-safety/compliance failure.
