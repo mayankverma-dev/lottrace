@@ -7,6 +7,8 @@ const TENANT_TABLES = [
   'event_lot_links',
   'attachments',
   'audit_log',
+  'api_keys',
+  'webhooks',
 ];
 
 /**
