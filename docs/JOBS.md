@@ -170,6 +170,9 @@ different tenant or format.
 
 - CSV and JSON contain the same 22 event columns. JSON fields remain structured
   in JSON and are JSON-stringified in CSV.
+- CSV scalar cells whose value starts with `=`, `+`, `-`, `@`, TAB, or CR are
+  prefixed with a single quote so spreadsheet programs treat them as text, not
+  formulas. JSON output is unchanged.
 - Empty exports complete with `row_count = 0`; CSV is header-only and JSON is
   `[]`.
 - Storage key format: `exports/org_<organizationId>/<exportId>.<ext>`.

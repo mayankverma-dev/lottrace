@@ -3,6 +3,7 @@ const {
   contentTypeFor,
   extensionFor,
   formatEventRow,
+  sanitizeCsvCell,
   csvHeader,
   serializeCsvBatch,
   serializeJsonBatch,
@@ -70,6 +71,28 @@ describe('P1-02 export formatting', () => {
     expect(csv).toContain('TLC-1');
     expect(csv).not.toContain('[object Object]');
     expect(csv).toContain('2026-11-16T10:00:00.000Z');
+  });
+
+  it('neutralizes every spreadsheet formula prefix in scalar CSV cells', () => {
+    const triggers = ['=1+1', '+1', '-1', '@SUM(A1)', '\tvalue', '\rvalue'];
+
+    for (const trigger of triggers) {
+      expect(sanitizeCsvCell(trigger)).toBe(`'${trigger}`);
+    }
+
+    expect(sanitizeCsvCell('Received')).toBe('Received');
+    expect(sanitizeCsvCell('')).toBe('');
+    expect(sanitizeCsvCell(null)).toBeNull();
+    expect(sanitizeCsvCell(42)).toBe(42);
+
+    const csv = serializeCsvBatch([{ ...event, notes: '=HYPERLINK("http://evil.test")' }]);
+    expect(csv).toContain(`'=HYPERLINK`);
+  });
+
+  it('leaves JSON columns untouched when neutralizing CSV cells', () => {
+    const csv = serializeCsvBatch([{ ...event, kde_payload: { formula: '=1+1' } }]);
+
+    expect(csv).toContain('"{""formula"":""=1+1""}"');
   });
 
   it('writes JSON as an array split across batches', () => {

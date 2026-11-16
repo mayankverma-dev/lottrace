@@ -39,6 +39,16 @@ const CONTENT_TYPES = {
   json: 'application/json',
 };
 
+// Spreadsheet programs treat a cell beginning with one of these characters as a
+// formula. Prefixing the cell with a single quote keeps the value readable while
+// forcing it to be treated as text.
+const CSV_FORMULA_PREFIXES = new Set(['=', '+', '-', '@', '\t', '\r']);
+
+const sanitizeCsvCell = (value) => {
+  if (typeof value !== 'string' || value.length === 0) return value;
+  return CSV_FORMULA_PREFIXES.has(value[0]) ? `'${value}` : value;
+};
+
 const toIso = (value) => (value instanceof Date ? value.toISOString() : value);
 
 const formatEventRow = (event) => ({
@@ -74,7 +84,7 @@ const toCsvRow = (row) => {
     if (CSV_JSON_COLUMNS.has(column)) {
       csvRow[column] = value == null ? '' : JSON.stringify(value);
     } else {
-      csvRow[column] = value == null ? '' : value;
+      csvRow[column] = sanitizeCsvCell(value == null ? '' : value);
     }
   }
 
@@ -102,6 +112,7 @@ module.exports = {
   EXPORT_BATCH_SIZE,
   EXPORT_COLUMNS,
   formatEventRow,
+  sanitizeCsvCell,
   csvHeader,
   serializeCsvBatch,
   serializeJsonBatch,
