@@ -182,6 +182,9 @@ different tenant or format.
 - Exports are capped at 1,000,000 rows or 512 MiB. Exceeding either limit fails
   the export with `error_code = 'EXPORT_LIMIT_EXCEEDED'` and an `export_failed`
   notification; the API returns a safe message and code.
+- If enqueueing fails, the API returns `503 EXPORT_QUEUE_UNAVAILABLE`, marks the
+  row failed, and still creates the `export_failed` notification so a client that
+  timed out has a later signal.
 
 **Retention:** the `export_cleanup` maintenance job runs daily at `03:15 UTC`.
 It marks `queued`/`processing` rows older than one hour as failed, then deletes

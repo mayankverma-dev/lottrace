@@ -445,6 +445,30 @@ describeDb('P1-02 persistent export pipeline', () => {
     expect(download.body.error.code).toBe('EXPORT_FAILED');
   });
 
+  it('marks the export failed and notifies the requester when queueing fails', async () => {
+    const org = await seedOrganization('enqueue');
+    exportQueue.add.mockRejectedValueOnce(new Error('redis unavailable'));
+
+    const response = await postExport(org.actor, { format: 'csv' });
+
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe('EXPORT_QUEUE_UNAVAILABLE');
+
+    const record = await db('report_exports')
+      .where({ organization_id: org.orgId })
+      .first();
+    expect(record.status).toBe('failed');
+    expect(record.error).toBe('Failed to queue export');
+    expect(record.completed_at).not.toBeNull();
+
+    const notification = await db('notifications')
+      .where({ entity_id: record.id, type: 'export_failed' })
+      .first();
+    expect(notification).toBeDefined();
+    expect(notification.user_id).toBe(org.userId);
+    expect(notification.link).toBe(`/reports/exports/${record.id}`);
+  });
+
   it('fails an export that exceeds the row cap and reports a safe limit error', async () => {
     const org = await seedOrganization('limit');
     for (let chainSeq = 1; chainSeq <= 3; chainSeq += 1) {

@@ -470,6 +470,10 @@ limit fails with `errorCode: "EXPORT_LIMIT_EXCEEDED"` and a safe message asking
 the caller to narrow the export. Failed records expose `error` and `errorCode`;
 raw internal errors and storage keys are never returned.
 
+If the job cannot be queued, the request returns `503 EXPORT_QUEUE_UNAVAILABLE`,
+the record is marked failed, and the requester still receives an `export_failed`
+notification.
+
 Recall:
 GET    /api/v1/recall/simulations
 POST   /api/v1/recall/simulations

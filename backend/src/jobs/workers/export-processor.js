@@ -1,10 +1,13 @@
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
 const db = require('../../db/knex');
 const { uploadFile } = require('../../lib/storage');
 const logger = require('../../utils/logger');
+const {
+  notifyExportFailed,
+  notifyExportReady,
+} = require('../../modules/reports/reports.notifications');
 const {
   EXPORT_BATCH_SIZE,
   EXPORT_LIMITS,
@@ -49,24 +52,6 @@ const getEventBatch = async (organizationId, afterChainSeq) => {
   }
 
   return query;
-};
-
-const createNotification = async (record, type, title, message) => {
-  try {
-    await db('notifications').insert({
-      id: uuidv4(),
-      organization_id: record.organization_id,
-      user_id: record.requested_by,
-      type,
-      title,
-      message,
-      link: `/reports/exports/${record.id}`,
-      entity_type: 'report_export',
-      entity_id: record.id,
-    });
-  } catch (err) {
-    logger.warn({ err, exportId: record.id }, 'Failed to create export notification');
-  }
 };
 
 const processExport = async (exportId, { limits = EXPORT_LIMITS } = {}) => {
@@ -148,12 +133,7 @@ const processExport = async (exportId, { limits = EXPORT_LIMITS } = {}) => {
         error_code: null,
       });
 
-    await createNotification(
-      claimed,
-      'export_ready',
-      'Export ready',
-      `Your ${claimed.format.toUpperCase()} export is ready to download (${rowCount} events).`,
-    );
+    await notifyExportReady(claimed, rowCount);
 
     logger.info({ exportId, rowCount, format: claimed.format }, 'Export completed');
 
@@ -170,12 +150,7 @@ const processExport = async (exportId, { limits = EXPORT_LIMITS } = {}) => {
         completed_at: db.fn.now(),
       });
 
-    await createNotification(
-      claimed,
-      'export_failed',
-      'Export failed',
-      `Your ${claimed.format.toUpperCase()} export failed. Please request a new export.`,
-    );
+    await notifyExportFailed(claimed);
 
     logger.error({ err, exportId }, 'Export failed');
     throw err;

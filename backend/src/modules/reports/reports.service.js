@@ -4,6 +4,7 @@ const AppError = require('../../utils/AppError');
 const logger = require('../../utils/logger');
 const { exportQueue } = require('../../jobs/queues');
 const { generatePresignedDownloadUrl } = require('../../lib/storage');
+const { notifyExportFailed } = require('./reports.notifications');
 
 const DOWNLOAD_URL_TTL_SECONDS = 300;
 
@@ -82,6 +83,7 @@ const requestExport = async ({ format }, organizationId, userId) => {
         error: 'Failed to queue export',
         completed_at: db.fn.now(),
       });
+    await notifyExportFailed(record);
     throw new AppError('Export queue unavailable', 'EXPORT_QUEUE_UNAVAILABLE', 503);
   }
 
