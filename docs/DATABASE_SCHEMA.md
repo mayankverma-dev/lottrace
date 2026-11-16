@@ -549,25 +549,29 @@ CREATE INDEX idx_notifications_org ON notifications(organization_id, created_at 
 ---
 
 ### `report_exports`
-Persistent event export jobs and their downloadable S3 objects.
+Persistent event and audit-log export jobs and their downloadable S3 objects.
+`filters` holds the audit list filters (`action`, `entityType`, `entityId`,
+`actorId`) for `type = 'audit'`; it is `{}` for event exports.
 ```sql
 CREATE TABLE report_exports (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   requested_by    uuid NOT NULL REFERENCES users(id),
-  type            text NOT NULL DEFAULT 'events',        -- events
+  type            text NOT NULL DEFAULT 'events',        -- events | audit
   format          text NOT NULL,                         -- csv | json
   status          text NOT NULL DEFAULT 'queued',        -- queued | processing | complete | failed
   storage_key     text,                                  -- never returned to clients
   row_count       integer,
+  filters         jsonb NOT NULL DEFAULT '{}'::jsonb,    -- audit list filters
   error           text,
   error_code      text,                                  -- e.g. EXPORT_LIMIT_EXCEEDED
   created_at      timestamptz NOT NULL DEFAULT NOW(),
   started_at      timestamptz,
   completed_at    timestamptz,
-  CHECK (type IN ('events')),
+  CHECK (type IN ('events', 'audit')),
   CHECK (format IN ('csv', 'json')),
   CHECK (status IN ('queued', 'processing', 'complete', 'failed')),
+  CHECK (jsonb_typeof(filters) = 'object'),
   CHECK (row_count IS NULL OR row_count >= 0)
 );
 

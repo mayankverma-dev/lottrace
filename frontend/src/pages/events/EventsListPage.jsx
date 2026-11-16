@@ -40,7 +40,7 @@ const EventsListPage = () => {
   const { mutate: requestExport, isPending: isExporting } = useRequestExport();
 
   const handleExport = (format) => {
-    requestExport({ format }, {
+    requestExport({ type: 'events', format }, {
       onSuccess: (response) => {
         toast.success('Export queued. You will be notified when it is ready.');
         navigate(`/reports/exports/${response.data.id}`);

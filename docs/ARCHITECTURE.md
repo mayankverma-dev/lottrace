@@ -288,11 +288,12 @@ not a lost job.
 
 ### Export Job Flow
 ```
-POST /reports/export (format: csv | json)
+POST /reports/export (type: events | audit, format: csv | json[, filters])
 → insert report_exports row (status: queued)
 → enqueue export job { exportId }
 → return 202 with the queued record
-→ Worker: status = processing; read events in chain_seq batches
+→ Worker: status = processing; read events by chain_seq or filtered audit_log
+  rows by (created_at, id)
 → append batches to a temp CSV/JSON file
 → upload file to S3 and store the key
 → status = complete, row_count, completed_at

@@ -139,12 +139,14 @@ if (isDuplicate) {
 
 ---
 
-## Queue 2: `export` — Event Exports
+## Queue 2: `export` — Report Exports
 
 **Files:** `src/jobs/workers/export-generator.js` (BullMQ worker) and
 `src/jobs/workers/export-processor.js` (job logic).
 
-**Triggered by:** `POST /api/v1/reports/export`
+**Triggered by:** `POST /api/v1/reports/export` with `type: "events" | "audit"`.
+Audit exports also accept `filters` (`action`, `entityType`, `entityId`,
+`actorId`).
 
 **Job Payload:**
 ```json
@@ -152,15 +154,17 @@ if (isDuplicate) {
 ```
 
 The worker reads `report_exports` by ID. The database row is the source of truth
-for `organization_id`, `format`, and `requested_by`; job data cannot choose a
-different tenant or format.
+for `organization_id`, `type`, `format`, `filters`, and `requested_by`; job data
+cannot choose a different tenant, type, format, or filter.
 
 **Status lifecycle:** `queued → processing → complete | failed`.
 
 **Worker logic:**
 ```javascript
 // 1. Read the report_exports row and set status = processing, started_at = now.
-// 2. Read events in batches of 500 ordered by chain_seq (stable, append-only).
+// 2. Events: read in batches of 500 ordered by chain_seq.
+//    Audit: read organization-scoped audit_log rows with the stored filters,
+//    ordered by (created_at, id), using an exact-microsecond keyset cursor.
 // 3. Append each batch to a temporary CSV or JSON file.
 // 4. Upload the temp file with a streamed PutObject (ContentLength from fs.stat).
 // 5. Set status = complete, storage_key, row_count, completed_at.
@@ -168,8 +172,10 @@ different tenant or format.
 // 7. On failure: set status = failed, error, completed_at; insert export_failed.
 ```
 
-- CSV and JSON contain the same 22 event columns. JSON fields remain structured
-  in JSON and are JSON-stringified in CSV.
+- Event CSV and JSON contain the same 22 event columns. Audit CSV and JSON
+  contain the immutable audit record (actor, action, entity, before/after state,
+  metadata, IP, timestamp) without `organization_id`. JSON fields remain
+  structured in JSON and are JSON-stringified in CSV.
 - CSV scalar cells whose value starts with `=`, `+`, `-`, `@`, TAB, or CR are
   prefixed with a single quote so spreadsheet programs treat them as text, not
   formulas. JSON output is unchanged.

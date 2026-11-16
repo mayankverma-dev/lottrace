@@ -61,19 +61,20 @@ const getComplianceGaps = async (organizationId, { page = 1, limit = 50 } = {}) 
   };
 };
 
-const requestExport = async ({ format }, organizationId, userId) => {
+const requestExport = async ({ type, format, filters = {} }, organizationId, userId) => {
   const [record] = await db('report_exports')
     .insert({
       organization_id: organizationId,
       requested_by: userId,
-      type: 'events',
+      type,
       format,
+      filters: JSON.stringify(filters),
       status: 'queued',
     })
     .returning('*');
 
   try {
-    await exportQueue.add('export-events', { exportId: record.id }, { jobId: record.id });
+    await exportQueue.add(`export-${type}`, { exportId: record.id }, { jobId: record.id });
   } catch (err) {
     logger.error({ err, exportId: record.id }, 'Failed to enqueue export job');
     await db('report_exports')
@@ -120,7 +121,7 @@ const getExportDownload = async (exportId, organizationId) => {
   }
 
   const contentType = record.format === 'json' ? 'application/json' : 'text/csv';
-  const filename = `lottrace-events-${record.id}.${record.format}`;
+  const filename = `lottrace-${record.type}-${record.id}.${record.format}`;
   const downloadUrl = await generatePresignedDownloadUrl(record.storage_key, {
     expiresIn: DOWNLOAD_URL_TTL_SECONDS,
     filename,

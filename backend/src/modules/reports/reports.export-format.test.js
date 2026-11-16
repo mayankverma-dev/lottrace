@@ -1,15 +1,20 @@
 const {
   EXPORT_COLUMNS,
+  AUDIT_EXPORT_COLUMNS,
   EXPORT_LIMITS,
   EXPORT_LIMIT_ERROR_CODE,
   assertExportWithinLimits,
   contentTypeFor,
   extensionFor,
   formatEventRow,
+  formatAuditRow,
   sanitizeCsvCell,
   csvHeader,
+  auditCsvHeader,
   serializeCsvBatch,
+  serializeAuditCsvBatch,
   serializeJsonBatch,
+  serializeAuditJsonBatch,
 } = require('../../jobs/workers/export-format');
 
 const event = {
@@ -37,6 +42,25 @@ const event = {
   created_at: new Date('2026-11-16T10:06:00.000Z'),
   organization_id: 'must-not-be-exported',
   idempotency_key: 'must-not-be-exported',
+};
+
+const auditLog = {
+  id: '33333333-3333-4333-8333-333333333333',
+  organization_id: 'must-not-be-exported',
+  actor_id: '44444444-4444-4444-8444-444444444444',
+  actor_type: 'user',
+  actor_first_name: 'Pat',
+  actor_last_name: 'Auditor',
+  actor_email: 'pat@example.test',
+  actor_label: null,
+  action: 'lot.void',
+  entity_type: 'lot',
+  entity_id: '55555555-5555-4555-8555-555555555555',
+  before_state: { status: 'active' },
+  after_state: { status: 'void' },
+  metadata: { url: '/api/v1/lots/55555555-5555-4555-8555-555555555555/void' },
+  ip_address: '127.0.0.1',
+  created_at: new Date('2026-11-16T11:00:00.000Z'),
 };
 
 describe('P1-02 export formatting', () => {
@@ -131,6 +155,47 @@ describe('P1-02 export formatting', () => {
       bytes: 0,
       limits: { maxRows: 2, maxBytes: 1024 },
     });
+  });
+
+  it('exports the agreed audit column set only', () => {
+    const row = formatAuditRow(auditLog);
+
+    expect(Object.keys(row)).toEqual(AUDIT_EXPORT_COLUMNS);
+    expect(row.actor_name).toBe('Pat Auditor');
+    expect(row).not.toHaveProperty('organization_id');
+    expect(row).not.toHaveProperty('actor_first_name');
+  });
+
+  it('writes an audit CSV header with every agreed column', () => {
+    const header = auditCsvHeader();
+
+    expect(header.endsWith('\n')).toBe(true);
+    expect(header.split(',')).toHaveLength(AUDIT_EXPORT_COLUMNS.length);
+    expect(header).toContain('action');
+    expect(header).toContain('metadata');
+    expect(header).not.toContain('event_type');
+  });
+
+  it('serializes audit JSON fields correctly in CSV and JSON', () => {
+    const csv = serializeAuditCsvBatch([auditLog]);
+
+    expect(csv).toContain('lot.void');
+    expect(csv).toContain('127.0.0.1');
+    expect(csv).toContain('2026-11-16T11:00:00.000Z');
+    expect(csv).toContain('{""status"":""void""}');
+    expect(csv).not.toContain('[object Object]');
+
+    const jsonRows = JSON.parse(`[${serializeAuditJsonBatch([auditLog], true)}]`);
+    expect(jsonRows).toHaveLength(1);
+    expect(jsonRows[0].before_state).toEqual({ status: 'active' });
+    expect(jsonRows[0].after_state).toEqual({ status: 'void' });
+    expect(jsonRows[0].created_at).toBe('2026-11-16T11:00:00.000Z');
+  });
+
+  it('neutralizes spreadsheet formula prefixes in audit CSV cells', () => {
+    const csv = serializeAuditCsvBatch([{ ...auditLog, action: '=HYPERLINK("http://evil.test")' }]);
+
+    expect(csv).toContain(`'=HYPERLINK`);
   });
 
   it('maps formats to content types and extensions', () => {

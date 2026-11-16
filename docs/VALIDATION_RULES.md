@@ -319,10 +319,28 @@ const createImportSchema = z.object({
 
 ### Request Export
 ```javascript
-const requestExportSchema = z.object({
-  format: z.enum(['csv', 'json']).optional().default('csv'),
+const auditLogFiltersSchema = z.object({
+  action: z.string().min(1).max(200).optional(),
+  entityType: z.string().min(1).max(100).optional(),
+  entityId: z.string().uuid().optional(),
+  actorId: z.string().uuid().optional(),
 }).strict();
+
+const requestExportSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('events'),
+    format: z.enum(['csv', 'json']).optional().default('csv'),
+  }).strict(),
+  z.object({
+    type: z.literal('audit'),
+    format: z.enum(['csv', 'json']).optional().default('csv'),
+    filters: auditLogFiltersSchema.optional().default({}),
+  }).strict(),
+]);
 ```
+
+`type` is required. Event exports reject `filters`; audit exports accept only
+the same filters as `GET /api/v1/audit`.
 
 ### Export ID Param
 ```javascript

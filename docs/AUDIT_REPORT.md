@@ -92,7 +92,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-01 | P1 | Imports never compute compliance gaps | Fixed (2026-11-15, 25973da) |
 | P1-02 | P1 | Export pipeline produces an unreachable file and ignores format | Fixed (2026-11-16, fec1370) |
 | P1-03 | P1 | Reports endpoints have no RBAC or input validation | Fixed (2026-11-14, d589217) |
-| P1-04 | P1 | Audit log export exports events, not audit records | Open |
+| P1-04 | P1 | Audit log export exports events, not audit records | Fixed (commit pending) |
 | P1-05 | P1 | Compliance gaps page reads the wrong pagination field | Fixed (2026-11-14, 0324cae) |
 | P1-06 | P1 | Recall simulations page breaks pagination | Fixed (2026-11-14, 0324cae) |
 | P1-07 | P1 | Permission map hides pages from roles that can use them | Fixed (2026-11-14, 4faf8a9) |
@@ -358,12 +358,14 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-04 — Audit log export exports events, not audit records
 
-- **Severity:** P1 · **Area:** frontend / audit · **Status:** Open
+- **Severity:** P1 · **Area:** frontend / audit · **Status:** Fixed (commit pending)
 - **Evidence:** `frontend/src/pages/audit/AuditLogPage.jsx:27-38` (`useRequestExport` → `POST /reports/export`); `backend/src/jobs/workers/export-generator.js:12-30` (queries `events`).
 - **What happens:** The Audit Log page's Export button queues the generic events export. The downloaded file contains events, not the audit entries currently on screen (and it ignores the page's action/user/date filters). A user requesting audit evidence receives the wrong dataset with no warning.
 - **Real-world impact:** An auditor investigating who changed a record gets an event list. During an inspection this looks like obstruction or incompetence, and the real audit trail is not exported at all.
 - **Fix direction:** Either implement an audit export type (`reports.type = 'audit'` with the same filters as the list endpoint and CSV columns matching the table), or remove/disable the button until it exists. Do not silently reuse the events export. If implemented, include actor, action, entity type/ID, IP, user agent, and timestamp, and note that audit records are immutable.
 - **Verification:** Export from the Audit Log page with an action filter; the file contains only matching audit rows and column headers match the UI.
+- **Fix:** `report_exports` gained `type = events | audit` and a `filters jsonb` column. `POST /reports/export` now requires `type`; audit requests accept the same `action`, `entityType`, `entityId`, and `actorId` filters as the list endpoint. The worker dispatches to an audit handler that reads organization-scoped `audit_log` rows ordered by `(created_at, id)` with an exact-microsecond keyset cursor, so rows with sub-millisecond timestamps are read once. Audit CSV/JSON export the immutable record (actor, action, entity, before/after state, metadata, IP, timestamp) without `organization_id`. Notifications, filenames, and the export-detail page are type-aware. The audit list and export share `buildAuditLogQuery` and `auditLogFiltersSchema`. Both frontend export callers send `type`, and the Audit Log page sends the active action filter. Export RBAC is unchanged: `org_admin` and `compliance_manager` only; auditors stay read-only.
+- **Verified:** `backend/src/modules/reports/reports.export-format.test.js` (audit columns, CSV escaping, JSON structure), `reports.rbac.test.js` (type and filter validation, RBAC), `reports.export-pipeline.test.js` (audit CSV/JSON filters, sub-millisecond timestamp, empty export, event/audit separation, org isolation), and `audit.service.test.js` (shared filters and pagination) pass against disposable local PostgreSQL. `frontend/src/lib/auditExport.test.js` and the frontend build pass.
 
 ## P1-05 — Compliance gaps page reads the wrong pagination field
 

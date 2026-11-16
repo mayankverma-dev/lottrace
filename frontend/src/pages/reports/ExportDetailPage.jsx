@@ -57,6 +57,10 @@ const ExportDetailPage = () => {
   const downloadExport = useDownloadExport();
 
   const record = data?.data;
+  const isAudit = record?.type === 'audit';
+  const backPath = isAudit ? '/audit' : '/events';
+  const backLabel = isAudit ? 'Back to audit log' : 'Back to events';
+  const exportLabel = isAudit ? 'audit log' : 'event';
 
   const handleDownload = () => {
     downloadExport.mutate(exportId, {
@@ -100,7 +104,7 @@ const ExportDetailPage = () => {
         icon={FileText}
         title="Export not found"
         description="This export does not exist or is no longer available."
-        action={<Button asChild><Link to="/events">Back to events</Link></Button>}
+        action={<Button asChild><Link to={backPath}>{backLabel}</Link></Button>}
       />
     );
   }
@@ -108,13 +112,15 @@ const ExportDetailPage = () => {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Export details"
-        subtitle="Download your event export when it is ready."
+        title={isAudit ? 'Audit log export' : 'Export details'}
+        subtitle={isAudit
+          ? 'Download your audit log export when it is ready.'
+          : 'Download your event export when it is ready.'}
         action={
           <Button variant="outline" asChild>
-            <Link to="/events">
+            <Link to={backPath}>
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to events
+              {backLabel}
             </Link>
           </Button>
         }
@@ -124,7 +130,7 @@ const ExportDetailPage = () => {
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-brand-600" />
-            {record.format.toUpperCase()} export
+            {record.format.toUpperCase()} {exportLabel} export
           </CardTitle>
           <StatusBadge status={record.status} />
         </CardHeader>
@@ -175,7 +181,7 @@ const ExportDetailPage = () => {
           {record.status === 'failed' && (
             <div>
               <Button asChild variant="outline">
-                <Link to="/events">Request another export</Link>
+                <Link to={backPath}>Request another export</Link>
               </Button>
             </div>
           )}

@@ -83,7 +83,7 @@ const ROUTES = [
     path: '/export',
     allowed: ['org_admin', 'compliance_manager'],
     successStatus: 202,
-    body: { format: 'csv' },
+    body: { type: 'events', format: 'csv' },
   },
   {
     name: 'GET /exports/:exportId',
@@ -182,9 +182,16 @@ describe('P1-03 report route RBAC, validation, and audit', () => {
 
   describe('export body validation', () => {
     it.each([
-      ['unsupported format', { format: 'exe' }],
-      ['unknown format', { format: 'pdf' }],
-      ['unknown field', { format: 'csv', scope: 'org' }],
+      ['unsupported format', { type: 'events', format: 'exe' }],
+      ['unknown format', { type: 'events', format: 'pdf' }],
+      ['unknown field', { type: 'events', format: 'csv', scope: 'org' }],
+      ['missing type', { format: 'csv' }],
+      ['unknown type', { type: 'lots', format: 'csv' }],
+      ['filters on events', { type: 'events', format: 'csv', filters: { action: 'lot.void' } }],
+      ['unknown audit filter', { type: 'audit', format: 'csv', filters: { scope: 'org' } }],
+      ['invalid entity id', { type: 'audit', filters: { entityId: 'not-a-uuid' } }],
+      ['invalid actor id', { type: 'audit', filters: { actorId: 'not-a-uuid' } }],
+      ['empty action filter', { type: 'audit', filters: { action: '' } }],
     ])('rejects %s', async (_name, body) => {
       const res = await request(app)
         .post(`${REPORTS_BASE}/export`)
@@ -199,7 +206,7 @@ describe('P1-03 report route RBAC, validation, and audit', () => {
       const res = await request(app)
         .post(`${REPORTS_BASE}/export`)
         .set('x-test-role', 'compliance_manager')
-        .send({});
+        .send({ type: 'events' });
 
       expect(res.status).toBe(202);
     });
@@ -208,7 +215,25 @@ describe('P1-03 report route RBAC, validation, and audit', () => {
       const res = await request(app)
         .post(`${REPORTS_BASE}/export`)
         .set('x-test-role', 'compliance_manager')
-        .send({ format: 'json' });
+        .send({ type: 'events', format: 'json' });
+
+      expect(res.status).toBe(202);
+    });
+
+    it('accepts an audit export with validated filters', async () => {
+      const res = await request(app)
+        .post(`${REPORTS_BASE}/export`)
+        .set('x-test-role', 'compliance_manager')
+        .send({
+          type: 'audit',
+          format: 'csv',
+          filters: {
+            action: 'lot.void',
+            entityType: 'lot',
+            entityId: '22222222-2222-4222-8222-222222222222',
+            actorId: '33333333-3333-4333-8333-333333333333',
+          },
+        });
 
       expect(res.status).toBe(202);
     });
@@ -217,7 +242,7 @@ describe('P1-03 report route RBAC, validation, and audit', () => {
       const res = await request(app)
         .post(`${REPORTS_BASE}/export`)
         .set('x-test-role', 'operator')
-        .send({ format: 'exe' });
+        .send({ type: 'events', format: 'exe' });
 
       expect(res.status).toBe(403);
       expect(res.body.error.code).toBe('AUTH_FORBIDDEN');
@@ -229,7 +254,7 @@ describe('P1-03 report route RBAC, validation, and audit', () => {
       const res = await request(app)
         .post(`${REPORTS_BASE}/export`)
         .set('x-test-role', 'compliance_manager')
-        .send({ format: 'csv' });
+        .send({ type: 'events', format: 'csv' });
 
       expect(res.status).toBe(202);
       await flushAudit();
@@ -242,7 +267,7 @@ describe('P1-03 report route RBAC, validation, and audit', () => {
         entityType: 'report',
         entityId: EXPORT_ID,
         metadata: expect.objectContaining({
-          body: { format: 'csv' },
+          body: { type: 'events', format: 'csv' },
         }),
       }));
     });
@@ -268,7 +293,7 @@ describe('P1-03 report route RBAC, validation, and audit', () => {
       const res = await request(app)
         .post(`${REPORTS_BASE}/export`)
         .set('x-test-role', 'operator')
-        .send({ format: 'csv' });
+        .send({ type: 'events', format: 'csv' });
 
       expect(res.status).toBe(403);
       await flushAudit();

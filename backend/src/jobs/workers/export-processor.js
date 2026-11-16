@@ -2,6 +2,7 @@ const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
 const db = require('../../db/knex');
+const { buildAuditLogQuery } = require('../../modules/audit/audit.service');
 const { uploadFile } = require('../../lib/storage');
 const logger = require('../../utils/logger');
 const {
@@ -16,8 +17,11 @@ const {
   contentTypeFor,
   extensionFor,
   csvHeader,
+  auditCsvHeader,
   serializeCsvBatch,
+  serializeAuditCsvBatch,
   serializeJsonBatch,
+  serializeAuditJsonBatch,
 } = require('./export-format');
 
 const EXPORT_TEMP_DIR = path.join(os.tmpdir(), 'lottrace-exports');
@@ -54,6 +58,47 @@ const getEventBatch = async (organizationId, afterChainSeq) => {
   return query;
 };
 
+const getAuditBatch = async (organizationId, filters, cursor) => {
+  let query = buildAuditLogQuery(filters, organizationId)
+    // Keep the exact microsecond value for the keyset cursor. pg converts
+    // timestamptz to a millisecond Date, which would re-read the same row.
+    .select(db.raw('audit_log.created_at::text as cursor_created_at'))
+    .orderBy('audit_log.created_at', 'asc')
+    .orderBy('audit_log.id', 'asc')
+    .limit(EXPORT_BATCH_SIZE);
+
+  if (cursor) {
+    query = query.whereRaw(
+      '(audit_log.created_at, audit_log.id) > (?, ?)',
+      [cursor.createdAt, cursor.id],
+    );
+  }
+
+  return query;
+};
+
+const EXPORT_HANDLERS = {
+  events: {
+    csvHeader,
+    fetchBatch: ({ organizationId, cursor }) => getEventBatch(organizationId, cursor),
+    serializeCsv: serializeCsvBatch,
+    serializeJson: serializeJsonBatch,
+    nextCursor: (rows) => rows[rows.length - 1].chain_seq,
+  },
+  audit: {
+    csvHeader: auditCsvHeader,
+    fetchBatch: ({ organizationId, filters, cursor }) => (
+      getAuditBatch(organizationId, filters, cursor)
+    ),
+    serializeCsv: serializeAuditCsvBatch,
+    serializeJson: serializeAuditJsonBatch,
+    nextCursor: (rows) => {
+      const lastRow = rows[rows.length - 1];
+      return { createdAt: lastRow.cursor_created_at, id: lastRow.id };
+    },
+  },
+};
+
 const processExport = async (exportId, { limits = EXPORT_LIMITS } = {}) => {
   const record = await db('report_exports').where({ id: exportId }).first();
 
@@ -80,6 +125,11 @@ const processExport = async (exportId, { limits = EXPORT_LIMITS } = {}) => {
     throw new Error(`Report export ${exportId} could not be claimed`);
   }
 
+  const handler = EXPORT_HANDLERS[claimed.type];
+  if (!handler) {
+    throw new Error(`Unsupported export type ${claimed.type}`);
+  }
+
   const extension = extensionFor(claimed.format);
   const filePath = path.join(EXPORT_TEMP_DIR, `${exportId}.${extension}`);
   const storageKey = `exports/org_${claimed.organization_id}/${exportId}.${extension}`;
@@ -87,23 +137,27 @@ const processExport = async (exportId, { limits = EXPORT_LIMITS } = {}) => {
   try {
     await fs.mkdir(EXPORT_TEMP_DIR, { recursive: true });
 
-    const header = claimed.format === 'csv' ? csvHeader() : '[';
+    const header = claimed.format === 'csv' ? handler.csvHeader() : '[';
     await fs.writeFile(filePath, header);
 
-    let afterChainSeq = null;
+    let cursor = null;
     let rowCount = 0;
     let bytesWritten = Buffer.byteLength(header);
     let isFirstJsonBatch = true;
     const closingBytes = claimed.format === 'json' ? 1 : 0;
 
     for (;;) {
-      const events = await getEventBatch(claimed.organization_id, afterChainSeq);
-      if (!events.length) break;
+      const rows = await handler.fetchBatch({
+        organizationId: claimed.organization_id,
+        filters: claimed.filters || {},
+        cursor,
+      });
+      if (!rows.length) break;
 
       const chunk = claimed.format === 'csv'
-        ? serializeCsvBatch(events)
-        : serializeJsonBatch(events, isFirstJsonBatch);
-      const nextRowCount = rowCount + events.length;
+        ? handler.serializeCsv(rows)
+        : handler.serializeJson(rows, isFirstJsonBatch);
+      const nextRowCount = rowCount + rows.length;
       const nextBytes = bytesWritten + Buffer.byteLength(chunk) + closingBytes;
 
       assertExportWithinLimits({ rowCount: nextRowCount, bytes: nextBytes, limits });
@@ -113,7 +167,7 @@ const processExport = async (exportId, { limits = EXPORT_LIMITS } = {}) => {
       isFirstJsonBatch = false;
       rowCount = nextRowCount;
       bytesWritten += Buffer.byteLength(chunk);
-      afterChainSeq = events[events.length - 1].chain_seq;
+      cursor = handler.nextCursor(rows);
     }
 
     if (claimed.format === 'json') {
@@ -135,7 +189,7 @@ const processExport = async (exportId, { limits = EXPORT_LIMITS } = {}) => {
 
     await notifyExportReady(claimed, rowCount);
 
-    logger.info({ exportId, rowCount, format: claimed.format }, 'Export completed');
+    logger.info({ exportId, rowCount, format: claimed.format, type: claimed.type }, 'Export completed');
 
     return { exportId, status: 'complete', rowCount };
   } catch (err) {

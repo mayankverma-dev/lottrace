@@ -20,16 +20,20 @@ const createExportNotification = async (record, { type, title, message }) => {
   }
 };
 
+const exportSubject = (record) => (
+  record.type === 'audit' ? 'audit log export' : 'event export'
+);
+
 const notifyExportReady = (record, rowCount) => createExportNotification(record, {
   type: 'export_ready',
   title: 'Export ready',
-  message: `Your ${record.format.toUpperCase()} export is ready to download (${rowCount} events).`,
+  message: `Your ${record.format.toUpperCase()} ${exportSubject(record)} is ready to download (${rowCount} rows).`,
 });
 
 const notifyExportFailed = (record) => createExportNotification(record, {
   type: 'export_failed',
   title: 'Export failed',
-  message: `Your ${record.format.toUpperCase()} export failed. Please request a new export.`,
+  message: `Your ${record.format.toUpperCase()} ${exportSubject(record)} failed. Please request a new export.`,
 });
 
 const notifyExportTimedOut = (record) => createExportNotification(record, {

@@ -459,7 +459,10 @@ POST   /api/v1/reports/export
 GET    /api/v1/reports/exports/:exportId
 GET    /api/v1/reports/exports/:exportId/download
 
-Export requests return `202` with the queued record. Status is one of
+Export requests return `202` with the queued record. The body requires
+`type: "events" | "audit"` and optional `format: "csv" | "json"` (default
+`csv`); audit exports also accept `filters` with the same fields as
+`GET /api/v1/audit`. Status is one of
 `queued`, `processing`, `complete`, or `failed`. The download endpoint returns
 `200` with a short-lived presigned URL only when the export is complete; it
 returns `409 EXPORT_NOT_READY` or `409 EXPORT_FAILED` otherwise, and `404` for

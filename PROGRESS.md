@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-16
-**Last Session:** 2026-11-16 — P1-02 fixed. Exports are persisted in `report_exports`, honor CSV and JSON, report `queued → processing → complete | failed`, notify the requester, and download through an org-scoped presigned URL. Retention cleanup and a frontend export-detail page are in place. Targeted backend report tests, frontend helper tests, and both builds pass.
+**Last Session:** 2026-11-16 — P1-04 fixed. Audit log export now exports immutable audit records instead of events, with the list filters, type-aware notifications/filenames/detail page, and a microsecond-safe keyset. Targeted backend DB and format/RBAC tests, frontend helper tests, and the frontend build pass. P1-02 exports remain events-only and both callers send an explicit `type`.
 
 ---
 
@@ -55,6 +55,15 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P1-04 — audit log export:
+- `backend/src/db/migrations/20240101000020_create_report_exports.js` (`type = events | audit`, `filters jsonb`)
+- `backend/src/modules/audit/audit.validation.js`, `audit.service.js` (shared filters + `buildAuditLogQuery`)
+- `backend/src/modules/reports/reports.validation.js`, `reports.service.js`, `reports.notifications.js` (type-aware export)
+- `backend/src/jobs/workers/export-format.js`, `export-processor.js` (audit columns, JSON/CSV, exact-microsecond keyset)
+- `frontend/src/lib/auditExport.js`, `frontend/src/pages/audit/AuditLogPage.jsx`, `frontend/src/pages/events/EventsListPage.jsx`, `frontend/src/pages/reports/ExportDetailPage.jsx`
+- Tests: `backend/src/modules/reports/reports.export-pipeline.test.js` (DB), `reports.export-format.test.js`, `reports.rbac.test.js`, `backend/src/modules/audit/audit.service.test.js` (DB), `frontend/src/lib/auditExport.test.js`
+- Docs: `docs/AUDIT_REPORT.md`, `docs/API_STANDARDS.md`, `docs/DATABASE_SCHEMA.md`, `docs/JOBS.md`, `docs/VALIDATION_RULES.md`, `docs/ARCHITECTURE.md`, `docs/BACKEND_ARCHITECTURE.md`, `PROGRESS.md`
 
 P1-02 — persistent export pipeline:
 - `backend/src/db/migrations/20240101000020_create_report_exports.js`

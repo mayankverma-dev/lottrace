@@ -16,6 +16,7 @@ exports.up = async function (knex) {
     table.text('status').notNullable().defaultTo('queued');
     table.text('storage_key');
     row_count: table.integer('row_count');
+    table.jsonb('filters').notNullable().defaultTo(knex.raw("'{}'::jsonb"));
     table.text('error');
     table.text('error_code');
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
@@ -25,8 +26,9 @@ exports.up = async function (knex) {
     table.index(['organization_id', 'created_at'], 'idx_report_exports_org_created');
     table.index(['status', 'created_at'], 'idx_report_exports_status_created');
 
-    table.check("type IN ('events')", [], 'report_exports_type_check');
+    table.check("type IN ('events', 'audit')", [], 'report_exports_type_check');
     table.check("format IN ('csv', 'json')", [], 'report_exports_format_check');
+    table.check("jsonb_typeof(filters) = 'object'", [], 'report_exports_filters_object_check');
     table.check(
       "status IN ('queued', 'processing', 'complete', 'failed')",
       [],

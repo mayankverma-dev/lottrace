@@ -78,7 +78,7 @@ const { exportQueue } = require('../../jobs/queues');
 const storage = require('../../lib/storage');
 const { writeAuditLog } = require('../../utils/auditTrail');
 const { processExport } = require('../../jobs/workers/export-processor');
-const { csvHeader, EXPORT_LIMITS } = require('../../jobs/workers/export-format');
+const { csvHeader, auditCsvHeader, AUDIT_EXPORT_COLUMNS, EXPORT_LIMITS } = require('../../jobs/workers/export-format');
 
 const describeDb = RUN_DB_TESTS ? describe : describe.skip;
 const MIGRATIONS_DIR = path.join(__dirname, '../../db/migrations');
@@ -198,10 +198,42 @@ describeDb('P1-02 persistent export pipeline', () => {
     return { productId, lotId };
   };
 
+  const insertAuditLog = async ({
+    orgId,
+    actorId,
+    action,
+    entityType = 'lot',
+    entityId = uuidv4(),
+    beforeState = null,
+    afterState = null,
+    metadata = {},
+    ipAddress = '127.0.0.1',
+    createdAt = null,
+  }) => {
+    const [row] = await db('audit_log')
+      .insert({
+        id: uuidv4(),
+        organization_id: orgId,
+        actor_id: actorId,
+        actor_type: 'user',
+        action,
+        entity_type: entityType,
+        entity_id: entityId,
+        before_state: beforeState ? JSON.stringify(beforeState) : null,
+        after_state: afterState ? JSON.stringify(afterState) : null,
+        metadata: JSON.stringify(metadata),
+        ip_address: ipAddress,
+        ...(createdAt ? { created_at: createdAt } : {}),
+      })
+      .returning('*');
+
+    return row;
+  };
+
   const postExport = (actor, body) => as(
     request(app).post(`${REPORTS_BASE}/export`),
     actor,
-  ).send(body);
+  ).send({ type: 'events', ...body });
 
   const insertExportRecord = async (actor, overrides = {}) => {
     const [record] = await db('report_exports')
@@ -386,6 +418,230 @@ describeDb('P1-02 persistent export pipeline', () => {
     const notifications = await db('notifications')
       .whereIn('entity_id', [csvCreated.body.data.id, jsonCreated.body.data.id]);
     expect(notifications).toHaveLength(2);
+  });
+
+  it('exports only matching audit rows for an audit CSV export', async () => {
+    const org = await seedOrganization('audit-csv');
+    const otherOrg = await seedOrganization('audit-csv-other');
+    const voidedLotId = uuidv4();
+
+    const matching = await insertAuditLog({
+      orgId: org.orgId,
+      actorId: org.userId,
+      action: 'lot.void',
+      entityType: 'lot',
+      entityId: voidedLotId,
+      beforeState: { status: 'active' },
+      afterState: { status: 'void' },
+      metadata: { url: `/api/v1/lots/${voidedLotId}/void` },
+      ipAddress: '10.0.0.7',
+      createdAt: new Date('2026-11-16T10:00:00.000Z'),
+    });
+    const nonMatching = await insertAuditLog({
+      orgId: org.orgId,
+      actorId: org.userId,
+      action: 'lot.update',
+      entityType: 'lot',
+      createdAt: new Date('2026-11-16T10:01:00.000Z'),
+    });
+    const foreign = await insertAuditLog({
+      orgId: otherOrg.orgId,
+      actorId: otherOrg.userId,
+      action: 'lot.void',
+      createdAt: new Date('2026-11-16T10:02:00.000Z'),
+    });
+
+    const created = await postExport(org.actor, {
+      type: 'audit',
+      format: 'csv',
+      filters: { action: 'lot.void' },
+    });
+
+    expect(created.status).toBe(202);
+    expect(created.body.data.type).toBe('audit');
+    expect(created.body.data.status).toBe('queued');
+    expect(exportQueue.add).toHaveBeenCalledWith(
+      'export-audit',
+      { exportId: created.body.data.id },
+      { jobId: created.body.data.id },
+    );
+
+    const exportId = created.body.data.id;
+    const record = await db('report_exports').where({ id: exportId }).first();
+    expect(record.type).toBe('audit');
+    expect(record.filters).toEqual({ action: 'lot.void' });
+
+    const result = await processExport(exportId);
+    expect(result).toEqual({ exportId, status: 'complete', rowCount: 1 });
+
+    expect(mockUploads).toHaveLength(1);
+    expect(mockUploads[0].key).toBe(`exports/org_${org.orgId}/${exportId}.csv`);
+    expect(mockUploads[0].contentType).toBe('text/csv');
+
+    const csv = mockUploads[0].content;
+    expect(csv.startsWith(auditCsvHeader())).toBe(true);
+    expect(csv).toContain(matching.id);
+    expect(csv).toContain('lot.void');
+    expect(csv).toContain(`${org.userId}@example.test`);
+    expect(csv).toContain('10.0.0.7');
+    expect(csv).toContain('2026-11-16T10:00:00.000Z');
+    expect(csv).not.toContain(nonMatching.id);
+    expect(csv).not.toContain(foreign.id);
+    expect(csv).not.toContain('event_type');
+
+    const status = await as(
+      request(app).get(`${REPORTS_BASE}/exports/${exportId}`),
+      org.actor,
+    );
+    expect(status.status).toBe(200);
+    expect(status.body.data.type).toBe('audit');
+    expect(status.body.data.rowCount).toBe(1);
+
+    const notification = await db('notifications')
+      .where({ entity_id: exportId, type: 'export_ready' })
+      .first();
+    expect(notification).toBeDefined();
+    expect(notification.user_id).toBe(org.userId);
+    expect(notification.link).toBe(`/reports/exports/${exportId}`);
+
+    const download = await as(
+      request(app).get(`${REPORTS_BASE}/exports/${exportId}/download`),
+      org.actor,
+    );
+    expect(download.status).toBe(200);
+    expect(download.body.data.filename).toBe(`lottrace-audit-${exportId}.csv`);
+    expect(storage.generatePresignedDownloadUrl).toHaveBeenCalledWith(
+      `exports/org_${org.orgId}/${exportId}.csv`,
+      expect.objectContaining({
+        filename: `lottrace-audit-${exportId}.csv`,
+        contentType: 'text/csv',
+      }),
+    );
+  });
+
+  it('applies audit JSON filters and keeps audit JSON fields structured', async () => {
+    const org = await seedOrganization('audit-json');
+    const otherUserId = uuidv4();
+
+    await db('users').insert({
+      id: otherUserId,
+      organization_id: org.orgId,
+      first_name: 'Other',
+      last_name: 'Actor',
+      email: `${otherUserId}@example.test`,
+      role: 'auditor',
+      status: 'active',
+    });
+
+    const matching = await insertAuditLog({
+      orgId: org.orgId,
+      actorId: org.userId,
+      action: 'lot.void',
+      entityType: 'lot',
+      beforeState: { status: 'active' },
+      afterState: { status: 'void' },
+      metadata: { reason: 'damaged' },
+      createdAt: new Date('2026-11-16T10:00:00.000Z'),
+    });
+    await insertAuditLog({
+      orgId: org.orgId,
+      actorId: otherUserId,
+      action: 'lot.void',
+      entityType: 'lot',
+      createdAt: new Date('2026-11-16T10:01:00.000Z'),
+    });
+    await insertAuditLog({
+      orgId: org.orgId,
+      actorId: org.userId,
+      action: 'event.void',
+      entityType: 'event',
+      createdAt: new Date('2026-11-16T10:02:00.000Z'),
+    });
+
+    const created = await postExport(org.actor, {
+      type: 'audit',
+      format: 'json',
+      filters: { entityType: 'lot', actorId: org.userId },
+    });
+    const exportId = created.body.data.id;
+    await processExport(exportId);
+
+    expect(mockUploads[0].key).toBe(`exports/org_${org.orgId}/${exportId}.json`);
+    expect(mockUploads[0].contentType).toBe('application/json');
+
+    const rows = JSON.parse(mockUploads[0].content);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(matching.id);
+    expect(rows[0].before_state).toEqual({ status: 'active' });
+    expect(rows[0].after_state).toEqual({ status: 'void' });
+    expect(rows[0].metadata).toEqual({ reason: 'damaged' });
+    expect(rows[0].created_at).toBe('2026-11-16T10:00:00.000Z');
+    expect(rows[0]).not.toHaveProperty('organization_id');
+  });
+
+  it('exports audit rows whose timestamp has sub-millisecond precision', async () => {
+    const org = await seedOrganization('audit-sub-ms');
+    const auditLog = await insertAuditLog({
+      orgId: org.orgId,
+      actorId: org.userId,
+      action: 'lot.void',
+      createdAt: '2026-11-16T10:00:00.123456Z',
+    });
+
+    const created = await postExport(org.actor, { type: 'audit', format: 'csv' });
+    const result = await processExport(created.body.data.id);
+
+    expect(result.rowCount).toBe(1);
+    expect(mockUploads[0].content.split(auditLog.id).length - 1).toBe(1);
+  }, 20000);
+
+  it('completes an empty audit export with a header-only CSV and an empty JSON array', async () => {
+    const org = await seedOrganization('audit-empty');
+
+    const csvCreated = await postExport(org.actor, { type: 'audit', format: 'csv' });
+    await processExport(csvCreated.body.data.id);
+
+    expect(mockUploads[0].content).toBe(auditCsvHeader());
+    expect(auditCsvHeader().split(',')).toHaveLength(AUDIT_EXPORT_COLUMNS.length);
+    const csvStatus = await as(
+      request(app).get(`${REPORTS_BASE}/exports/${csvCreated.body.data.id}`),
+      org.actor,
+    );
+    expect(csvStatus.body.data.type).toBe('audit');
+    expect(csvStatus.body.data.rowCount).toBe(0);
+
+    const jsonCreated = await postExport(org.actor, { type: 'audit', format: 'json' });
+    await processExport(jsonCreated.body.data.id);
+
+    expect(JSON.parse(mockUploads[1].content)).toEqual([]);
+  });
+
+  it('keeps event and audit exports separate', async () => {
+    const org = await seedOrganization('separate');
+    const eventId = await insertEvent({
+      orgId: org.orgId,
+      userId: org.userId,
+      chainSeq: 1,
+    });
+    const auditLog = await insertAuditLog({
+      orgId: org.orgId,
+      actorId: org.userId,
+      action: 'lot.void',
+    });
+
+    const eventExport = await postExport(org.actor, { type: 'events', format: 'csv' });
+    await processExport(eventExport.body.data.id);
+
+    expect(mockUploads[0].content.startsWith(csvHeader())).toBe(true);
+    expect(mockUploads[0].content).toContain(eventId);
+    expect(mockUploads[0].content).not.toContain(auditLog.id);
+
+    const auditExport = await postExport(org.actor, { type: 'audit', format: 'csv' });
+    await processExport(auditExport.body.data.id);
+
+    expect(mockUploads[1].content.startsWith(auditCsvHeader())).toBe(true);
+    expect(mockUploads[1].content).toContain(auditLog.id);
+    expect(mockUploads[1].content).not.toContain(eventId);
   });
 
   it('rejects download before completion and after failure', async () => {
