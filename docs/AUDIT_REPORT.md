@@ -143,6 +143,11 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-19 | P2 | `dateTimeLocal` tests depend on the machine time zone | Fixed (2026-11-14, bde73e2) |
 | P2-20 | P2 | `checkComplianceGaps` declares an unused `isFtl` | Fixed (2026-11-14, 928859e) |
 | P2-21 | P2 | Import uploads queue silently behind the 5/minute worker limiter | Fixed (2026-11-15, 943ac17) |
+| P2-22 | P2 | CSV exports allow spreadsheet formula injection | Fixed (2026-11-16, 078ea44) |
+| P2-23 | P2 | Export retention deletes rows when object deletion fails | Fixed (2026-11-16, e6c35c5) |
+| P2-24 | P2 | Exports have no row or byte size cap | Fixed (2026-11-16, cf687ec) |
+| P2-25 | P2 | Queue failures do not notify export requesters | Fixed (2026-11-16, 5568249) |
+| P2-26 | P2 | Export detail status badge is misaligned | Fixed (2026-11-16, 058f63c) |
 
 ---
 
@@ -836,6 +841,45 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Real-world impact:** Operators see a stalled Pending row, assume the upload failed, and re-upload the same file. Idempotency prevents duplicate events for imports, but the confusion wastes time and generates duplicate import records with error/no-op results.
 - **Fix:** Keep the limiter — it protects the database from a bulk of large CSVs. Document the cap in `docs/ARCHITECTURE.md` and show a note on the Imports page while any import is `pending` or `processing`: files process at up to 5 per minute and start automatically. No worker, threshold, schema, or API change.
 - **Verified:** Ten rapid uploads reproduce the 5-per-minute pattern exactly; the Imports page shows the note while a queued import exists (Playwright), and both production builds pass.
+
+## P2-22 — CSV exports allow spreadsheet formula injection
+
+- **Severity:** P2 · **Area:** backend / security · **Status:** Fixed (2026-11-16, 078ea44)
+- **Evidence:** `backend/src/jobs/workers/export-format.js` serialized scalar CSV values directly, allowing user-controlled notes, names, statuses, and identifiers beginning with `=`, `+`, `-`, or `@` to be interpreted as spreadsheet formulas.
+- **What happens:** Opening a CSV in a spreadsheet application could execute or evaluate attacker-controlled formula content.
+- **Fix:** Scalar CSV cells beginning with `=`, `+`, `-`, `@`, TAB, or CR are prefixed with a single quote. Structured JSON columns remain unchanged; JSON exports are unchanged.
+- **Verified:** Formatter tests cover all six prefixes, normal and empty values, non-string values, and JSON columns. Targeted formatter and pipeline tests pass.
+
+## P2-23 — Export retention deletes rows when object deletion fails
+
+- **Severity:** P2 · **Area:** backend / storage · **Status:** Fixed (2026-11-16, e6c35c5)
+- **Evidence:** `reports.retention.js` deleted every expired `report_exports` row after attempting its S3 deletion, even when `deleteObject` failed.
+- **What happens:** A transient storage failure left an orphaned S3 object with no database row available for a later retry.
+- **Fix:** Rows with a storage key are deleted only after successful object deletion. Failed objects remain for the next cleanup run; rows without a storage key remain deletable. Cleanup reports `objectsFailed` and avoids retry-loop starvation within one run.
+- **Verified:** Retention tests cover failed deletion, a later successful retry, mixed rows, stuck-export notifications, and audit-row preservation. Targeted retention tests pass.
+
+## P2-24 — Export size has no row or byte cap
+
+- **Severity:** P2 · **Area:** backend / resource safety · **Status:** Fixed (2026-11-16, cf687ec)
+- **Evidence:** The export worker streamed events to a temporary file without a row or file-size limit.
+- **What happens:** A large organization could consume excessive temporary disk and keep a worker occupied indefinitely.
+- **Fix:** Exports are capped at 1,000,000 rows and 512 MiB. The existing report-export migration now stores `error_code`; the worker checks row and byte totals while streaming and records `EXPORT_LIMIT_EXCEEDED`. The API returns a safe limit-specific message and never exposes the internal error text.
+- **Verified:** Local disposable database was reset and migrated from scratch (22 migrations, including `error_code`). Boundary and injected-limit tests pass; the pipeline verifies failed status, notification, safe API response, and download rejection.
+
+## P2-25 — Queue failures do not notify export requesters
+
+- **Severity:** P2 · **Area:** backend / notifications · **Status:** Fixed (2026-11-16, 5568249)
+- **Evidence:** `requestExport` marked the row failed when BullMQ enqueueing failed but did not create an `export_failed` notification. Notification inserts were also duplicated across worker and retention code.
+- **What happens:** A client that timed out or lost the `503` response received no later signal that its export could not start.
+- **Fix:** Added the shared reports notification helper and reused it for ready, failed, timeout, and queue-failure notifications. Queue failures still return `503 EXPORT_QUEUE_UNAVAILABLE`, mark the row failed, and notify the requester.
+- **Verified:** Pipeline tests cover queue rejection, failed-row persistence, requester notification, and the existing worker failure/limit paths. Full backend suite passes: 45 suites, 380 passed, 4 skipped.
+
+## P2-26 — Export detail status badge is misaligned
+
+- **Severity:** Minor · **Area:** frontend / reports · **Status:** Fixed (2026-11-16, 058f63c)
+- **Evidence:** `CardHeader` supplies `grid` by default, while the page used `flex-row` without switching the display mode, so the status badge stacked below the export title.
+- **Fix:** `ExportDetailPage.jsx` now applies `flex flex-row items-center justify-between` to replace the base grid layout.
+- **Verified:** Frontend production build passes. Headless Chromium measured the header as `display: flex`, with title and badge sharing a row and the badge positioned at the right; screenshot verification passed.
 
 ---
 
