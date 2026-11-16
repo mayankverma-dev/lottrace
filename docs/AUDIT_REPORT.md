@@ -659,12 +659,12 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P2-01 — Pagination inputs are unvalidated (`NaN`, huge limits)
 
-- **Severity:** P2 · **Area:** backend / API robustness · **Status:** Open
-- **Evidence:** `backend/src/modules/reports/reports.controller.js:5-15` (`parseInt` with no schema), `:17-26`; compare `backend/src/modules/events/events.validation.js:44-53` which does validate.
-- **What happens:** `?page=abc` produces `NaN` and reaches Knex as `OFFSET NaN`, causing a 500. `?limit=1000000` is accepted, loading the entire table into memory. Negative values are also accepted. Only some modules validate query params, so behavior varies by endpoint.
+- **Severity:** P2 · **Area:** backend / API robustness · **Status:** Fixed (2026-11-16, a2ac086)
+- **Evidence:** `backend/src/modules/recall/controller.js:10-11` used `parseInt` fallbacks without query middleware; `backend/src/modules/recall/routes.js:19-23` had no list-query schema. Events and users parsed their schemas inside controllers instead of using route middleware.
+- **What happens:** Recall accepted `?limit=1000000` and negative values, then silently clamped them inside `paginate()`. Malformed values fell back to defaults instead of returning `422`. Query validation behavior varied by endpoint.
 - **Real-world impact:** Trivial 500s and a cheap memory/DB exhaustion vector.
-- **Fix direction:** Add a shared `paginationSchema` (`page` positive int default 1, `limit` positive int max 100/200) and apply it to every list endpoint through the existing `validate` middleware. Remove ad-hoc `parseInt` from controllers. Add tests for `abc`, `0`, `-1`, and `1000000`.
-- **Verification:** Invalid pagination returns 422 with field details; large limits are rejected or clamped; no endpoint returns a 500 for malformed query strings.
+- **Fix direction:** Add a shared `paginationSchema` (`page` positive int default 1, `limit` positive int max 100) and apply it to every list endpoint through the existing `validate` middleware. Remove ad-hoc `parseInt` from controllers. Add tests for `abc`, `0`, `-1`, and `1000000`.
+- **Verification:** Invalid pagination returns 422 with field details; large limits are rejected; no endpoint returns a 500 for malformed query strings.
 
 ## P2-02 — API response pagination shape is inconsistent
 
