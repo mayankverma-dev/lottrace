@@ -90,7 +90,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-11 | P0 | Trace includes superseded (amended) events | Fixed (2026-11-11, 298465f) |
 | P0-12 | P0 | Operators can create events but cannot read them | Fixed (2026-11-14, c541874) |
 | P1-01 | P1 | Imports never compute compliance gaps | Fixed (2026-11-15, 25973da) |
-| P1-02 | P1 | Export pipeline produces an unreachable file and ignores format | Open |
+| P1-02 | P1 | Export pipeline produces an unreachable file and ignores format | Fixed (2026-11-16, fec1370) |
 | P1-03 | P1 | Reports endpoints have no RBAC or input validation | Fixed (2026-11-14, d589217) |
 | P1-04 | P1 | Audit log export exports events, not audit records | Open |
 | P1-05 | P1 | Compliance gaps page reads the wrong pagination field | Fixed (2026-11-14, 0324cae) |
@@ -330,7 +330,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-02 — Export pipeline produces an unreachable file and ignores format
 
-- **Severity:** P1 · **Area:** backend / reports · **Status:** Fixed (commit pending)
+- **Severity:** P1 · **Area:** backend / reports · **Status:** Fixed (2026-11-16, fec1370)
 - **Evidence:** `backend/src/jobs/workers/export-generator.js:16-36`; `backend/src/modules/reports/reports.controller.js:17-26`.
 - **What happens:** The worker exports only five columns (`id, event_type, event_datetime, status, has_compliance_gaps`), always writes CSV regardless of the requested `format`, persists no database record, sends no notification (the comment says "here we would normally…"), and exposes no download endpoint. The API returns only a BullMQ `jobId`, which no client can use to retrieve the file. An empty result returns `{status:'empty'}` with no feedback. Large exports load every event into memory and stringify synchronously.
 - **Real-world impact:** "Export" is a dead button. A compliance manager cannot produce the event history an auditor requests, and the UI's "you will be notified" promise is false.
