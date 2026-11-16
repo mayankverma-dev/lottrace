@@ -60,9 +60,12 @@ const getEventBatch = async (organizationId, afterChainSeq) => {
 
 const getAuditBatch = async (organizationId, filters, cursor) => {
   let query = buildAuditLogQuery(filters, organizationId)
-    // Keep the exact microsecond value for the keyset cursor. pg converts
-    // timestamptz to a millisecond Date, which would re-read the same row.
-    .select(db.raw('audit_log.created_at::text as cursor_created_at'))
+    // pg decodes timestamptz to a millisecond Date, which both truncates the
+    // exported value and makes the keyset re-read rows. Format the exact
+    // microsecond value in SQL and use it for output and paging.
+    .select(db.raw(
+      `to_char(audit_log.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at_iso`
+    ))
     .orderBy('audit_log.created_at', 'asc')
     .orderBy('audit_log.id', 'asc')
     .limit(EXPORT_BATCH_SIZE);
@@ -94,7 +97,7 @@ const EXPORT_HANDLERS = {
     serializeJson: serializeAuditJsonBatch,
     nextCursor: (rows) => {
       const lastRow = rows[rows.length - 1];
-      return { createdAt: lastRow.cursor_created_at, id: lastRow.id };
+      return { createdAt: lastRow.created_at_iso, id: lastRow.id };
     },
   },
 };

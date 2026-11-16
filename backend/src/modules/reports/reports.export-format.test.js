@@ -60,7 +60,7 @@ const auditLog = {
   after_state: { status: 'void' },
   metadata: { url: '/api/v1/lots/55555555-5555-4555-8555-555555555555/void' },
   ip_address: '127.0.0.1',
-  created_at: new Date('2026-11-16T11:00:00.000Z'),
+  created_at_iso: '2026-11-16T11:00:00.000000Z',
 };
 
 describe('P1-02 export formatting', () => {
@@ -181,7 +181,7 @@ describe('P1-02 export formatting', () => {
 
     expect(csv).toContain('lot.void');
     expect(csv).toContain('127.0.0.1');
-    expect(csv).toContain('2026-11-16T11:00:00.000Z');
+    expect(csv).toContain('2026-11-16T11:00:00.000000Z');
     expect(csv).toContain('{""status"":""void""}');
     expect(csv).not.toContain('[object Object]');
 
@@ -189,7 +189,19 @@ describe('P1-02 export formatting', () => {
     expect(jsonRows).toHaveLength(1);
     expect(jsonRows[0].before_state).toEqual({ status: 'active' });
     expect(jsonRows[0].after_state).toEqual({ status: 'void' });
-    expect(jsonRows[0].created_at).toBe('2026-11-16T11:00:00.000Z');
+    expect(jsonRows[0].created_at).toBe('2026-11-16T11:00:00.000000Z');
+  });
+
+  it('keeps the exact microsecond audit timestamp in CSV and JSON', () => {
+    const preciseAuditLog = {
+      ...auditLog,
+      created_at_iso: '2026-11-16T11:00:00.123456Z',
+    };
+
+    expect(serializeAuditCsvBatch([preciseAuditLog])).toContain('2026-11-16T11:00:00.123456Z');
+
+    const jsonRows = JSON.parse(`[${serializeAuditJsonBatch([preciseAuditLog], true)}]`);
+    expect(jsonRows[0].created_at).toBe('2026-11-16T11:00:00.123456Z');
   });
 
   it('neutralizes spreadsheet formula prefixes in audit CSV cells', () => {

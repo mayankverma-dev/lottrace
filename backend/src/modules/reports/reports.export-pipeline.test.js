@@ -484,7 +484,7 @@ describeDb('P1-02 persistent export pipeline', () => {
     expect(csv).toContain('lot.void');
     expect(csv).toContain(`${org.userId}@example.test`);
     expect(csv).toContain('10.0.0.7');
-    expect(csv).toContain('2026-11-16T10:00:00.000Z');
+    expect(csv).toContain('2026-11-16T10:00:00.000000Z');
     expect(csv).not.toContain(nonMatching.id);
     expect(csv).not.toContain(foreign.id);
     expect(csv).not.toContain('event_type');
@@ -575,7 +575,7 @@ describeDb('P1-02 persistent export pipeline', () => {
     expect(rows[0].before_state).toEqual({ status: 'active' });
     expect(rows[0].after_state).toEqual({ status: 'void' });
     expect(rows[0].metadata).toEqual({ reason: 'damaged' });
-    expect(rows[0].created_at).toBe('2026-11-16T10:00:00.000Z');
+    expect(rows[0].created_at).toBe('2026-11-16T10:00:00.000000Z');
     expect(rows[0]).not.toHaveProperty('organization_id');
   });
 
@@ -593,6 +593,14 @@ describeDb('P1-02 persistent export pipeline', () => {
 
     expect(result.rowCount).toBe(1);
     expect(mockUploads[0].content.split(auditLog.id).length - 1).toBe(1);
+    expect(mockUploads[0].content).toContain('2026-11-16T10:00:00.123456Z');
+
+    const jsonCreated = await postExport(org.actor, { type: 'audit', format: 'json' });
+    await processExport(jsonCreated.body.data.id);
+
+    const rows = JSON.parse(mockUploads[1].content);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].created_at).toBe('2026-11-16T10:00:00.123456Z');
   }, 20000);
 
   it('completes an empty audit export with a header-only CSV and an empty JSON array', async () => {

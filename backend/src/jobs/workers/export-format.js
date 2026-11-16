@@ -116,7 +116,7 @@ const formatEventRow = (event) => ({
 
 const formatAuditRow = (auditLog) => ({
   id: auditLog.id,
-  created_at: toIso(auditLog.created_at),
+  created_at: auditLog.created_at_iso,
   actor_type: auditLog.actor_type,
   actor_id: auditLog.actor_id,
   actor_name: [auditLog.actor_first_name, auditLog.actor_last_name]
