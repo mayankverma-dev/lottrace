@@ -38,9 +38,11 @@ exports.up = async function (knex) {
   });
 
   await knex.raw('ALTER TABLE report_exports ENABLE ROW LEVEL SECURITY');
+  await knex.raw('ALTER TABLE report_exports FORCE ROW LEVEL SECURITY');
   await knex.raw(`
     CREATE POLICY tenant_isolation_report_exports ON report_exports
-    USING (organization_id = current_setting('app.current_org_id', true)::uuid)
+    USING (organization_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)
   `);
 };
 
@@ -50,5 +52,6 @@ exports.up = async function (knex) {
  */
 exports.down = async function (knex) {
   await knex.raw('DROP POLICY IF EXISTS tenant_isolation_report_exports ON report_exports');
+  await knex.raw('ALTER TABLE report_exports NO FORCE ROW LEVEL SECURITY');
   await knex.schema.dropTableIfExists('report_exports');
 };

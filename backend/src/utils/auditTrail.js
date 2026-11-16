@@ -1,4 +1,6 @@
 const db = require('../db/knex');
+const { withTenantTransaction } = require('../db/tenantTransaction');
+const { getTenantTransaction } = require('../db/tenantContext');
 const { v4: uuidv4 } = require('uuid');
 
 /**
@@ -17,7 +19,7 @@ const { v4: uuidv4 } = require('uuid');
  * @param {import('knex').Knex | import('knex').Knex.Transaction} [qb=db] - caller transaction, if any
  */
 const writeAuditLog = async (params, qb = db) => {
-  await qb('audit_log').insert({
+  const write = (queryBuilder) => queryBuilder('audit_log').insert({
     id: uuidv4(),
     organization_id: params.organizationId || null,
     actor_id: params.actorId || null,
@@ -30,6 +32,13 @@ const writeAuditLog = async (params, qb = db) => {
     metadata: params.metadata ? JSON.stringify(params.metadata) : null,
     ip_address: params.ipAddress || null,
   });
+
+  if (qb === db && params.organizationId && !getTenantTransaction()) {
+    await withTenantTransaction(params.organizationId, write);
+    return;
+  }
+
+  await write(qb);
 };
 
 module.exports = { writeAuditLog };

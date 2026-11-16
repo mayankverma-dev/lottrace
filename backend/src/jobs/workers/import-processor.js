@@ -12,6 +12,7 @@ const { processEventGroup } = require('./import-event');
 const { bumpTraceCacheVersion } = require('../../modules/trace/trace.service');
 const logger = require('../../utils/logger');
 const crc32 = require('crc-32');
+const { withTenantTransaction } = require('../../db/tenantTransaction');
 
 const BUCKET = env.S3_BUCKET || 'lottrace-dev';
 const getAdvisoryLockId = (orgId) => Math.abs(crc32.str(orgId));
@@ -72,21 +73,23 @@ const validateRow = (row, cteType, rowNum) => {
  * Build a lookup cache for products and locations within an org.
  */
 const buildLookupCaches = async (organizationId) => {
-  const products = await knex('products')
-    .where({ organization_id: organizationId, is_active: true })
-    .select('id', 'name', 'default_uom', 'custom_kde_schema', 'is_ftl');
+  return withTenantTransaction(organizationId, async () => {
+    const products = await knex('products')
+      .where({ organization_id: organizationId, is_active: true })
+      .select('id', 'name', 'default_uom', 'custom_kde_schema', 'is_ftl');
 
-  const locations = await knex('locations')
-    .where({ organization_id: organizationId, is_active: true })
-    .select('id', 'name');
+    const locations = await knex('locations')
+      .where({ organization_id: organizationId, is_active: true })
+      .select('id', 'name');
 
-  const productMap = new Map();
-  products.forEach(p => productMap.set(p.name.toLowerCase().trim(), p));
+    const productMap = new Map();
+    products.forEach(p => productMap.set(p.name.toLowerCase().trim(), p));
 
-  const locationMap = new Map();
-  locations.forEach(l => locationMap.set(l.name.toLowerCase().trim(), l));
+    const locationMap = new Map();
+    locations.forEach(l => locationMap.set(l.name.toLowerCase().trim(), l));
 
-  return { productMap, locationMap };
+    return { productMap, locationMap };
+  });
 };
 
 // ─── Worker Definition ──────────────────────────────────────
@@ -98,10 +101,9 @@ const importWorker = new Worker(
     logger.info({ importId, cteType }, 'Starting import processing');
 
     // Mark as processing
-    await knex('imports').where('id', importId).update({
-      status: 'processing',
-      started_at: knex.fn.now(),
-    });
+    await withTenantTransaction(organizationId, () => knex('imports')
+      .where({ id: importId, organization_id: organizationId })
+      .update({ status: 'processing', started_at: knex.fn.now() }));
 
     try {
       // 1. Fetch CSV from S3
@@ -180,6 +182,7 @@ const importWorker = new Worker(
       for (const [trxId, group] of groupEntries) {
         try {
           await knex.transaction(async (trx) => {
+            await trx.raw('SELECT set_config(?, ?, true)', ['app.current_org_id', organizationId]);
             // Acquire advisory lock for hash chain consistency
             await trx.raw('SELECT pg_advisory_xact_lock(?)', [lockId]);
 
@@ -230,14 +233,16 @@ const importWorker = new Worker(
       }
 
       // 8. Update import record
-      await knex('imports').where('id', importId).update({
-        status: finalStatus,
-        total_rows: rows.length,
-        valid_rows: validGroupsCount,
-        error_rows: errorCount,
-        error_report_key: errorReportKey,
-        completed_at: knex.fn.now(),
-      });
+      await withTenantTransaction(organizationId, () => knex('imports')
+        .where({ id: importId, organization_id: organizationId })
+        .update({
+          status: finalStatus,
+          total_rows: rows.length,
+          valid_rows: validGroupsCount,
+          error_rows: errorCount,
+          error_report_key: errorReportKey,
+          completed_at: knex.fn.now(),
+        }));
 
       // 9. Create notification for the user who started the import
       try {
@@ -245,7 +250,7 @@ const importWorker = new Worker(
           : finalStatus === 'complete_with_errors' ? 'completed with errors'
           : 'failed';
 
-        await knex('notifications').insert({
+        await withTenantTransaction(organizationId, () => knex('notifications').insert({
           id: uuidv4(),
           organization_id: organizationId,
           user_id: userId,
@@ -255,7 +260,7 @@ const importWorker = new Worker(
           link: `/imports`,
           entity_type: 'import',
           entity_id: importId,
-        });
+        }));
       } catch (notifErr) {
         logger.warn({ err: notifErr }, 'Failed to create import notification');
       }
@@ -265,10 +270,9 @@ const importWorker = new Worker(
 
     } catch (err) {
       logger.error({ err, importId }, 'Import processing failed');
-      await knex('imports').where('id', importId).update({
-        status: 'failed',
-        completed_at: knex.fn.now(),
-      });
+      await withTenantTransaction(organizationId, () => knex('imports')
+        .where({ id: importId, organization_id: organizationId })
+        .update({ status: 'failed', completed_at: knex.fn.now() }));
       throw err;
     }
   },

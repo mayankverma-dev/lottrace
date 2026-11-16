@@ -100,6 +100,10 @@ const as = (req, actor) => req
   .set('x-test-org-id', actor.orgId);
 
 const flushAudit = () => new Promise((resolve) => setImmediate(resolve));
+const runExport = (exportId, organizationId, options = {}) => processExport(
+  exportId,
+  { ...options, organizationId },
+);
 
 describeDb('P1-02 persistent export pipeline', () => {
   jest.setTimeout(120000);
@@ -300,12 +304,12 @@ describeDb('P1-02 persistent export pipeline', () => {
     expect(created.body.data).not.toHaveProperty('jobId');
     expect(exportQueue.add).toHaveBeenCalledWith(
       'export-events',
-      { exportId: created.body.data.id },
+      { exportId: created.body.data.id, organizationId: org.orgId },
       { jobId: created.body.data.id },
     );
 
     const exportId = created.body.data.id;
-    const result = await processExport(exportId);
+    const result = await runExport(exportId, org.orgId);
 
     expect(result).toEqual({ exportId, status: 'complete', rowCount: 2 });
     expect(mockUploads).toHaveLength(1);
@@ -378,7 +382,7 @@ describeDb('P1-02 persistent export pipeline', () => {
 
     const created = await postExport(org.actor, { format: 'json' });
     const exportId = created.body.data.id;
-    await processExport(exportId);
+    await runExport(exportId, org.orgId);
 
     expect(mockUploads[0].key).toBe(`exports/org_${org.orgId}/${exportId}.json`);
     expect(mockUploads[0].contentType).toBe('application/json');
@@ -395,7 +399,7 @@ describeDb('P1-02 persistent export pipeline', () => {
     const org = await seedOrganization('empty');
 
     const csvCreated = await postExport(org.actor, { format: 'csv' });
-    await processExport(csvCreated.body.data.id);
+    await runExport(csvCreated.body.data.id, org.orgId);
 
     expect(mockUploads[0].content).toBe(csvHeader());
     const csvStatus = await as(
@@ -406,7 +410,7 @@ describeDb('P1-02 persistent export pipeline', () => {
     expect(csvStatus.body.data.rowCount).toBe(0);
 
     const jsonCreated = await postExport(org.actor, { format: 'json' });
-    await processExport(jsonCreated.body.data.id);
+    await runExport(jsonCreated.body.data.id, org.orgId);
 
     expect(JSON.parse(mockUploads[1].content)).toEqual([]);
     const jsonStatus = await as(
@@ -462,7 +466,7 @@ describeDb('P1-02 persistent export pipeline', () => {
     expect(created.body.data.status).toBe('queued');
     expect(exportQueue.add).toHaveBeenCalledWith(
       'export-audit',
-      { exportId: created.body.data.id },
+      { exportId: created.body.data.id, organizationId: org.orgId },
       { jobId: created.body.data.id },
     );
 
@@ -471,7 +475,7 @@ describeDb('P1-02 persistent export pipeline', () => {
     expect(record.type).toBe('audit');
     expect(record.filters).toEqual({ action: 'lot.void' });
 
-    const result = await processExport(exportId);
+    const result = await runExport(exportId, org.orgId);
     expect(result).toEqual({ exportId, status: 'complete', rowCount: 1 });
 
     expect(mockUploads).toHaveLength(1);
@@ -564,7 +568,7 @@ describeDb('P1-02 persistent export pipeline', () => {
       filters: { entityType: 'lot', actorId: org.userId },
     });
     const exportId = created.body.data.id;
-    await processExport(exportId);
+    await runExport(exportId, org.orgId);
 
     expect(mockUploads[0].key).toBe(`exports/org_${org.orgId}/${exportId}.json`);
     expect(mockUploads[0].contentType).toBe('application/json');
@@ -589,14 +593,14 @@ describeDb('P1-02 persistent export pipeline', () => {
     });
 
     const created = await postExport(org.actor, { type: 'audit', format: 'csv' });
-    const result = await processExport(created.body.data.id);
+    const result = await runExport(created.body.data.id, org.orgId);
 
     expect(result.rowCount).toBe(1);
     expect(mockUploads[0].content.split(auditLog.id).length - 1).toBe(1);
     expect(mockUploads[0].content).toContain('2026-11-16T10:00:00.123456Z');
 
     const jsonCreated = await postExport(org.actor, { type: 'audit', format: 'json' });
-    await processExport(jsonCreated.body.data.id);
+    await runExport(jsonCreated.body.data.id, org.orgId);
 
     const rows = JSON.parse(mockUploads[1].content);
     expect(rows).toHaveLength(1);
@@ -607,7 +611,7 @@ describeDb('P1-02 persistent export pipeline', () => {
     const org = await seedOrganization('audit-empty');
 
     const csvCreated = await postExport(org.actor, { type: 'audit', format: 'csv' });
-    await processExport(csvCreated.body.data.id);
+    await runExport(csvCreated.body.data.id, org.orgId);
 
     expect(mockUploads[0].content).toBe(auditCsvHeader());
     expect(auditCsvHeader().split(',')).toHaveLength(AUDIT_EXPORT_COLUMNS.length);
@@ -619,7 +623,7 @@ describeDb('P1-02 persistent export pipeline', () => {
     expect(csvStatus.body.data.rowCount).toBe(0);
 
     const jsonCreated = await postExport(org.actor, { type: 'audit', format: 'json' });
-    await processExport(jsonCreated.body.data.id);
+    await runExport(jsonCreated.body.data.id, org.orgId);
 
     expect(JSON.parse(mockUploads[1].content)).toEqual([]);
   });
@@ -638,14 +642,14 @@ describeDb('P1-02 persistent export pipeline', () => {
     });
 
     const eventExport = await postExport(org.actor, { type: 'events', format: 'csv' });
-    await processExport(eventExport.body.data.id);
+    await runExport(eventExport.body.data.id, org.orgId);
 
     expect(mockUploads[0].content.startsWith(csvHeader())).toBe(true);
     expect(mockUploads[0].content).toContain(eventId);
     expect(mockUploads[0].content).not.toContain(auditLog.id);
 
     const auditExport = await postExport(org.actor, { type: 'audit', format: 'csv' });
-    await processExport(auditExport.body.data.id);
+    await runExport(auditExport.body.data.id, org.orgId);
 
     expect(mockUploads[1].content.startsWith(auditCsvHeader())).toBe(true);
     expect(mockUploads[1].content).toContain(auditLog.id);
@@ -688,7 +692,7 @@ describeDb('P1-02 persistent export pipeline', () => {
     const exportId = created.body.data.id;
     storage.uploadFile.mockRejectedValueOnce(new Error('S3 unavailable'));
 
-    await expect(processExport(exportId)).rejects.toThrow('S3 unavailable');
+    await expect(runExport(exportId, org.orgId)).rejects.toThrow('S3 unavailable');
 
     const record = await db('report_exports').where({ id: exportId }).first();
     expect(record.status).toBe('failed');
@@ -743,7 +747,7 @@ describeDb('P1-02 persistent export pipeline', () => {
     const created = await postExport(org.actor, { format: 'csv' });
     const exportId = created.body.data.id;
 
-    await expect(processExport(exportId, {
+    await expect(runExport(exportId, org.orgId, {
       limits: { maxRows: 2, maxBytes: EXPORT_LIMITS.maxBytes },
     })).rejects.toMatchObject({ code: 'EXPORT_LIMIT_EXCEEDED' });
 

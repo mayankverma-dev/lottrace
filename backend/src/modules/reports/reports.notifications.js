@@ -1,10 +1,12 @@
 const { v4: uuidv4 } = require('uuid');
 const db = require('../../db/knex');
+const { withTenantTransaction } = require('../../db/tenantTransaction');
+const { getTenantTransaction } = require('../../db/tenantContext');
 const logger = require('../../utils/logger');
 
 const createExportNotification = async (record, { type, title, message }) => {
   try {
-    await db('notifications').insert({
+    const insert = (qb) => qb('notifications').insert({
       id: uuidv4(),
       organization_id: record.organization_id,
       user_id: record.requested_by,
@@ -15,6 +17,11 @@ const createExportNotification = async (record, { type, title, message }) => {
       entity_type: 'report_export',
       entity_id: record.id,
     });
+    if (!getTenantTransaction()) {
+      await withTenantTransaction(record.organization_id, insert);
+    } else {
+      await insert(db);
+    }
   } catch (err) {
     logger.warn({ err, exportId: record.id, type }, 'Failed to create export notification');
   }

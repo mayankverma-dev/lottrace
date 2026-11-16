@@ -68,9 +68,11 @@ exports.up = async (knex) => {
   `);
 
   await knex.raw('ALTER TABLE event_evidence ENABLE ROW LEVEL SECURITY;');
+  await knex.raw('ALTER TABLE event_evidence FORCE ROW LEVEL SECURITY;');
   await knex.raw(`
     CREATE POLICY tenant_isolation_event_evidence ON event_evidence
-    USING (organization_id = current_setting('app.current_org_id', true)::uuid);
+    USING (organization_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid);
   `);
 };
 

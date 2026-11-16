@@ -7,7 +7,7 @@ const exportWorker = new Worker(
   'export-queue',
   async (job) => {
     logger.info({ jobId: job.id, exportId: job.data.exportId }, 'Processing export job');
-    return processExport(job.data.exportId);
+    return processExport(job.data.exportId, { organizationId: job.data.organizationId });
   },
   { connection, concurrency: 2 },
 );

@@ -13,7 +13,8 @@
     "migrate": "knex migrate:latest --knexfile knexfile.js",
     "migrate:rollback": "knex migrate:rollback --knexfile knexfile.js",
     "migrate:status": "knex migrate:status --knexfile knexfile.js",
-    "seed": "knex seed:run --knexfile knexfile.js"
+    "seed": "knex seed:run --knexfile knexfile.js",
+    "db:provision-app-role": "node src/db/provision-app-role.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",

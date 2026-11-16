@@ -74,7 +74,11 @@ const requestExport = async ({ type, format, filters = {} }, organizationId, use
     .returning('*');
 
   try {
-    await exportQueue.add(`export-${type}`, { exportId: record.id }, { jobId: record.id });
+  await exportQueue.add(
+    `export-${type}`,
+    { exportId: record.id, organizationId },
+    { jobId: record.id },
+  );
   } catch (err) {
     logger.error({ err, exportId: record.id }, 'Failed to enqueue export job');
     await db('report_exports')

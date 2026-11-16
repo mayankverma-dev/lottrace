@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const argon2 = require('argon2');
 const jwt = require('jsonwebtoken');
 const knex = require('../../db/knex');
+const { withTenantTransaction } = require('../../db/tenantTransaction');
 const env = require('../../config/env');
 const AppError = require('../../utils/AppError');
 const uuid = require('uuid');
@@ -46,7 +47,10 @@ const generateTokens = (user, sessionFamily = uuid.v4()) => {
 };
 
 const register = async ({ firstName, lastName, email, password, organizationName }) => {
-  const existingUser = await knex('users').where({ email }).first();
+  const existingUser = await knex.transaction(async (trx) => {
+    await trx.raw('SELECT set_config(?, ?, true)', ['app.auth_email', email]);
+    return trx('users').where({ email }).first();
+  });
   if (existingUser) {
     throw new AppError('Email already in use', 'EMAIL_IN_USE', 400);
   }
@@ -87,7 +91,10 @@ const register = async ({ firstName, lastName, email, password, organizationName
 };
 
 const login = async ({ email, password }) => {
-  const user = await knex('users').where({ email, status: 'active' }).first();
+  const user = await knex.transaction(async (trx) => {
+    await trx.raw('SELECT set_config(?, ?, true)', ['app.auth_email', email]);
+    return trx('users').where({ email, status: 'active' }).first();
+  });
   if (!user || !user.password_hash) {
     throw new AppError('Invalid credentials', 'INVALID_CREDENTIALS', 401);
   }
@@ -100,15 +107,16 @@ const login = async ({ email, password }) => {
   // Pending unverified users are now in Redis and won't exist in PostgreSQL.
   // We can remove the old !user.email_verified check here.
 
-  await knex('users').where({ id: user.id }).update({ last_login_at: knex.fn.now() });
-
   const tokens = generateTokens(user);
-
-  await knex('refresh_tokens').insert({
-    user_id: user.id,
-    token_hash: tokens.refreshTokenHash,
-    session_family: tokens.sessionFamily,
-    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  await withTenantTransaction(user.organization_id, async (trx) => {
+    await trx('users').where({ id: user.id, organization_id: user.organization_id })
+      .update({ last_login_at: trx.fn.now() });
+    await trx('refresh_tokens').insert({
+      user_id: user.id,
+      token_hash: tokens.refreshTokenHash,
+      session_family: tokens.sessionFamily,
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
   });
 
   return {
@@ -146,6 +154,7 @@ const verifyEmail = async ({ email, otp }) => {
       plan_tier: 'starter',
       status: 'active',
     });
+    await trx.raw('SELECT set_config(?, ?, true)', ['app.current_org_id', orgId]);
 
     const userId = uuid.v4();
 
@@ -248,12 +257,15 @@ const refresh = async ({ refreshToken }) => {
     throw new AppError('Refresh token expired', 'TOKEN_EXPIRED', 401);
   }
 
-  const user = await knex('users').where({ id: storedToken.user_id, status: 'active' }).first();
+  const user = await knex.transaction(async (trx) => {
+    await trx.raw('SELECT set_config(?, ?, true)', ['app.auth_user_id', storedToken.user_id]);
+    return trx('users').where({ id: storedToken.user_id, status: 'active' }).first();
+  });
   if (!user) {
     throw new AppError('User not found or inactive', 'USER_INVALID', 401);
   }
 
-  return knex.transaction(async (trx) => {
+  return withTenantTransaction(user.organization_id, async (trx) => {
     await trx('refresh_tokens').where({ id: storedToken.id }).update({ is_used: true });
 
     const tokens = generateTokens(user, storedToken.session_family);
@@ -293,7 +305,10 @@ const logout = async ({ refreshToken, accessToken }) => {
 };
 
 const forgotPassword = async ({ email }) => {
-  const user = await knex('users').where({ email, status: 'active' }).first();
+  const user = await knex.transaction(async (trx) => {
+    await trx.raw('SELECT set_config(?, ?, true)', ['app.auth_email', email]);
+    return trx('users').where({ email, status: 'active' }).first();
+  });
   if (!user) {
     // Silently succeed to prevent email enumeration
     return;
@@ -303,13 +318,13 @@ const forgotPassword = async ({ email }) => {
   const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
   const resetExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-  await knex('users')
-    .where({ id: user.id })
+  await withTenantTransaction(user.organization_id, (trx) => trx('users')
+    .where({ id: user.id, organization_id: user.organization_id })
     .update({
       password_reset_token_hash: resetTokenHash,
       password_reset_expires_at: resetExpiresAt,
-      updated_at: knex.fn.now()
-    });
+      updated_at: trx.fn.now()
+    }));
 
   const emailService = require('../../utils/email');
   await emailService.sendPasswordResetEmail(user.email, resetToken);
@@ -352,9 +367,10 @@ const resetPassword = async ({ token, newPassword }) => {
 const acceptInvite = async ({ token, email, password }) => {
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-  const user = await knex('users')
-    .where({ email, invite_token_hash: tokenHash, status: 'invited' })
-    .first();
+  const user = await knex.transaction(async (trx) => {
+    await trx.raw('SELECT set_config(?, ?, true)', ['app.auth_email', email]);
+    return trx('users').where({ email, invite_token_hash: tokenHash, status: 'invited' }).first();
+  });
 
   if (!user || !user.invite_expires_at || new Date() > new Date(user.invite_expires_at)) {
     throw new AppError('Invalid or expired invitation', 'INVALID_TOKEN', 400);
@@ -362,7 +378,7 @@ const acceptInvite = async ({ token, email, password }) => {
 
   const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
 
-  return knex.transaction(async (trx) => {
+  return withTenantTransaction(user.organization_id, async (trx) => {
     await trx('users')
       .where({ id: user.id })
       .update({

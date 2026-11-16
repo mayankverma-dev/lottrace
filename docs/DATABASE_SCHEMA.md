@@ -658,6 +658,16 @@ CREATE POLICY tenant_isolation ON lots
 
 -- The API sets this at the start of each transaction:
 -- SET LOCAL app.current_org_id = '<uuid>';
+
+-- Runtime RLS requirements:
+-- * Tenant tables use FORCE ROW LEVEL SECURITY and explicit USING/WITH CHECK policies.
+-- * API connections should use a non-owner role (lottrace_app), separate from the
+--   migration/owner role in DATABASE_URL. APP_DATABASE_URL selects that runtime URL.
+-- * Local role provisioning: APP_DB_ROLE=lottrace_app APP_DB_PASSWORD=<secret>
+--   pnpm --filter backend db:provision-app-role. Production uses equivalent
+--   deployment role provisioning; the API role is never the migration owner.
+-- * Every authenticated request and worker transaction sets app.current_org_id with
+--   set_config(..., true). Missing context fails closed.
 ```
 
 ---

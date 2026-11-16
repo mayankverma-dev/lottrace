@@ -1,6 +1,7 @@
 const { Worker } = require('bullmq');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../../db/knex');
+const { withTenantTransaction } = require('../../db/tenantTransaction');
 const logger = require('../../utils/logger');
 const { connection } = require('../queues');
 const { writeAuditLog } = require('../../utils/auditTrail');
@@ -192,8 +193,9 @@ const verifyHashChain = async ({ organizationId, keyRing = getKeyRing() } = {}) 
   const results = [];
 
   for (const org of organizations) {
-    logger.info(`Starting hash verification for org: ${org.id}`);
-    const startedAt = Date.now();
+    await withTenantTransaction(org.id, async () => {
+      logger.info(`Starting hash verification for org: ${org.id}`);
+      const startedAt = Date.now();
 
     // Fetch events in chain order. chain_seq is the only total order for an
     // organization: created_at is the transaction start time and can be
@@ -333,14 +335,15 @@ const verifyHashChain = async ({ organizationId, keyRing = getKeyRing() } = {}) 
       failureReason: failureMetadata ? failureMetadata.reason : null,
     }, 'Hash verification completed');
 
-    results.push({
-      organizationId: org.id,
-      status,
-      eventsChecked,
-      durationMs,
-      failure: failedEvent
-        ? { eventId: failedEvent.id, reason: failureMetadata.reason }
-        : null,
+      results.push({
+        organizationId: org.id,
+        status,
+        eventsChecked,
+        durationMs,
+        failure: failedEvent
+          ? { eventId: failedEvent.id, reason: failureMetadata.reason }
+          : null,
+      });
     });
   }
 

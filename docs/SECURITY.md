@@ -50,8 +50,9 @@ NEVER accept `organization_id` from request body, query params, or URL.
 ### Implementation Checklist
 - [ ] Every DB query that reads tenant data includes `WHERE organization_id = $1`
 - [ ] Cross-tenant resource access returns **404** not 403 (don't confirm existence)
-- [ ] PostgreSQL RLS enabled on all tenant tables as defense-in-depth
-- [ ] `SET LOCAL app.current_org_id = $1` at request start (via `tenantScope` middleware)
+- [ ] PostgreSQL RLS enabled and forced on all tenant tables as defense-in-depth
+- [ ] Transaction-local `app.current_org_id` set at request start (via `tenantScope` middleware)
+- [ ] Runtime API role is not the migration/table-owner role and does not have `BYPASSRLS`
 - [ ] Every new table added gets RLS policy in the same migration
 
 ### Insecure Direct Object Reference (IDOR) Prevention

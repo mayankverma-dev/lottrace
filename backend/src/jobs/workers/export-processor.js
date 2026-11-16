@@ -5,6 +5,7 @@ const db = require('../../db/knex');
 const { buildAuditLogQuery } = require('../../modules/audit/audit.service');
 const { uploadFile } = require('../../lib/storage');
 const logger = require('../../utils/logger');
+const { withTenantTransaction } = require('../../db/tenantTransaction');
 const {
   notifyExportFailed,
   notifyExportReady,
@@ -102,117 +103,125 @@ const EXPORT_HANDLERS = {
   },
 };
 
-const processExport = async (exportId, { limits = EXPORT_LIMITS } = {}) => {
-  const record = await db('report_exports').where({ id: exportId }).first();
+const processExport = async (exportId, { organizationId, limits = EXPORT_LIMITS } = {}) => {
+  if (!organizationId) throw new Error('Export organization is required');
 
-  if (!record) {
-    throw new Error(`Report export ${exportId} not found`);
-  }
-
-  if (record.status === 'complete' || record.status === 'failed') {
-    return { exportId, status: record.status, rowCount: record.row_count };
-  }
-
-  const [claimed] = await db('report_exports')
-    .where({ id: exportId })
-    .update({
-      status: 'processing',
-      started_at: db.fn.now(),
-      completed_at: null,
-      error: null,
-      error_code: null,
-    })
-    .returning('*');
-
-  if (!claimed) {
-    throw new Error(`Report export ${exportId} could not be claimed`);
-  }
-
-  const handler = EXPORT_HANDLERS[claimed.type];
-  if (!handler) {
-    throw new Error(`Unsupported export type ${claimed.type}`);
-  }
-
-  const extension = extensionFor(claimed.format);
-  const filePath = path.join(EXPORT_TEMP_DIR, `${exportId}.${extension}`);
-  const storageKey = `exports/org_${claimed.organization_id}/${exportId}.${extension}`;
-
+  let claimed;
   try {
-    await fs.mkdir(EXPORT_TEMP_DIR, { recursive: true });
+    return await withTenantTransaction(organizationId, async () => {
+      const record = await db('report_exports')
+        .where({ id: exportId, organization_id: organizationId })
+        .first();
 
-    const header = claimed.format === 'csv' ? handler.csvHeader() : '[';
-    await fs.writeFile(filePath, header);
+      if (!record) {
+        throw new Error(`Report export ${exportId} not found`);
+      }
 
-    let cursor = null;
-    let rowCount = 0;
-    let bytesWritten = Buffer.byteLength(header);
-    let isFirstJsonBatch = true;
-    const closingBytes = claimed.format === 'json' ? 1 : 0;
+      if (record.status === 'complete' || record.status === 'failed') {
+        return { exportId, status: record.status, rowCount: record.row_count };
+      }
 
-    for (;;) {
-      const rows = await handler.fetchBatch({
-        organizationId: claimed.organization_id,
-        filters: claimed.filters || {},
-        cursor,
-      });
-      if (!rows.length) break;
+      [claimed] = await db('report_exports')
+        .where({ id: exportId, organization_id: organizationId })
+        .update({
+          status: 'processing',
+          started_at: db.fn.now(),
+          completed_at: null,
+          error: null,
+          error_code: null,
+        })
+        .returning('*');
 
-      const chunk = claimed.format === 'csv'
-        ? handler.serializeCsv(rows)
-        : handler.serializeJson(rows, isFirstJsonBatch);
-      const nextRowCount = rowCount + rows.length;
-      const nextBytes = bytesWritten + Buffer.byteLength(chunk) + closingBytes;
+      if (!claimed) {
+        throw new Error(`Report export ${exportId} could not be claimed`);
+      }
 
-      assertExportWithinLimits({ rowCount: nextRowCount, bytes: nextBytes, limits });
+      const handler = EXPORT_HANDLERS[claimed.type];
+      if (!handler) {
+        throw new Error(`Unsupported export type ${claimed.type}`);
+      }
 
-      await fs.appendFile(filePath, chunk);
+      const extension = extensionFor(claimed.format);
+      const filePath = path.join(EXPORT_TEMP_DIR, `${exportId}.${extension}`);
+      const storageKey = `exports/org_${claimed.organization_id}/${exportId}.${extension}`;
 
-      isFirstJsonBatch = false;
-      rowCount = nextRowCount;
-      bytesWritten += Buffer.byteLength(chunk);
-      cursor = handler.nextCursor(rows);
-    }
+      try {
+        await fs.mkdir(EXPORT_TEMP_DIR, { recursive: true });
 
-    if (claimed.format === 'json') {
-      await fs.appendFile(filePath, ']');
-    }
+        const header = claimed.format === 'csv' ? handler.csvHeader() : '[';
+        await fs.writeFile(filePath, header);
 
-    await uploadFile(storageKey, filePath, contentTypeFor(claimed.format));
+        let cursor = null;
+        let rowCount = 0;
+        let bytesWritten = Buffer.byteLength(header);
+        let isFirstJsonBatch = true;
+        const closingBytes = claimed.format === 'json' ? 1 : 0;
 
-    await db('report_exports')
-      .where({ id: exportId, organization_id: claimed.organization_id })
-      .update({
-        status: 'complete',
-        storage_key: storageKey,
-        row_count: rowCount,
-        completed_at: db.fn.now(),
-        error: null,
-        error_code: null,
-      });
+        for (;;) {
+          const rows = await handler.fetchBatch({
+            organizationId: claimed.organization_id,
+            filters: claimed.filters || {},
+            cursor,
+          });
+          if (!rows.length) break;
 
-    await notifyExportReady(claimed, rowCount);
+          const chunk = claimed.format === 'csv'
+            ? handler.serializeCsv(rows)
+            : handler.serializeJson(rows, isFirstJsonBatch);
+          const nextRowCount = rowCount + rows.length;
+          const nextBytes = bytesWritten + Buffer.byteLength(chunk) + closingBytes;
 
-    logger.info({ exportId, rowCount, format: claimed.format, type: claimed.type }, 'Export completed');
+          assertExportWithinLimits({ rowCount: nextRowCount, bytes: nextBytes, limits });
 
-    return { exportId, status: 'complete', rowCount };
+          await fs.appendFile(filePath, chunk);
+
+          isFirstJsonBatch = false;
+          rowCount = nextRowCount;
+          bytesWritten += Buffer.byteLength(chunk);
+          cursor = handler.nextCursor(rows);
+        }
+
+        if (claimed.format === 'json') {
+          await fs.appendFile(filePath, ']');
+        }
+
+        await uploadFile(storageKey, filePath, contentTypeFor(claimed.format));
+
+        await db('report_exports')
+          .where({ id: exportId, organization_id: claimed.organization_id })
+          .update({
+            status: 'complete',
+            storage_key: storageKey,
+            row_count: rowCount,
+            completed_at: db.fn.now(),
+            error: null,
+            error_code: null,
+          });
+
+        await notifyExportReady(claimed, rowCount);
+
+        logger.info({ exportId, rowCount, format: claimed.format, type: claimed.type }, 'Export completed');
+
+        return { exportId, status: 'complete', rowCount };
+      } finally {
+        await fs.unlink(filePath).catch(() => {});
+      }
+    });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-
-    await db('report_exports')
-      .where({ id: exportId, organization_id: claimed.organization_id })
-      .update({
-        status: 'failed',
-        error: message.slice(0, 2000),
-        error_code: err.code === EXPORT_LIMIT_ERROR_CODE ? EXPORT_LIMIT_ERROR_CODE : null,
-        completed_at: db.fn.now(),
-      });
-
-    await notifyExportFailed(claimed);
-
+    if (claimed) {
+      const message = err instanceof Error ? err.message : String(err);
+      await withTenantTransaction(organizationId, (trx) => trx('report_exports')
+        .where({ id: exportId, organization_id: organizationId })
+        .update({
+          status: 'failed',
+          error: message.slice(0, 2000),
+          error_code: err.code === EXPORT_LIMIT_ERROR_CODE ? EXPORT_LIMIT_ERROR_CODE : null,
+          completed_at: trx.fn.now(),
+        }));
+      await notifyExportFailed(claimed);
+    }
     logger.error({ err, exportId }, 'Export failed');
     throw err;
-  } finally {
-    await fs.unlink(filePath).catch(() => {});
   }
 };
 
