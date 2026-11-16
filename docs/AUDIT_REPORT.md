@@ -148,6 +148,8 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-24 | P2 | Exports have no row or byte size cap | Fixed (2026-11-16, cf687ec) |
 | P2-25 | P2 | Queue failures do not notify export requesters | Fixed (2026-11-16, 5568249) |
 | P2-26 | P2 | Export detail status badge is misaligned | Fixed (2026-11-16, 058f63c) |
+| P2-27 | P2 | Audit export timestamps lose microsecond precision | Fixed (2026-11-16, 35ea91c) |
+| P2-28 | P2 | Audit page shows generic error when role lacks audit access | Fixed (2026-11-16, 3824bdd) |
 
 ---
 
@@ -882,6 +884,22 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Evidence:** `CardHeader` supplies `grid` by default, while the page used `flex-row` without switching the display mode, so the status badge stacked below the export title.
 - **Fix:** `ExportDetailPage.jsx` now applies `flex flex-row items-center justify-between` to replace the base grid layout.
 - **Verified:** Frontend production build passes. Headless Chromium measured the header as `display: flex`, with title and badge sharing a row and the badge positioned at the right; screenshot verification passed.
+
+## P2-27 — Audit export timestamps lose microsecond precision
+
+- **Severity:** P2 · **Area:** backend / exports · **Status:** Fixed (2026-11-16, 35ea91c)
+- **Evidence:** `backend/src/jobs/workers/export-format.js` converted audit `created_at` values through JavaScript `Date`, which only preserves milliseconds.
+- **What happens:** Audit exports changed `2026-11-16T10:00:00.123456Z` to `2026-11-16T10:00:00.123Z`, losing immutable audit timestamp precision.
+- **Fix:** The audit export query formats `created_at` in PostgreSQL as UTC text with six fractional digits. The exact value feeds CSV, JSON, and the keyset cursor. Event export behavior remains unchanged.
+- **Verified:** Formatter tests and DB-backed export pipeline tests assert six-digit timestamps. Live JSON export returned `2026-11-16T10:00:00.123456Z`.
+
+## P2-28 — Audit page shows generic error when role lacks audit access
+
+- **Severity:** P2 · **Area:** frontend / audit / RBAC · **Status:** Fixed (2026-11-16, 3824bdd)
+- **Evidence:** `frontend/src/pages/audit/AuditLogPage.jsx` rendered `Failed to load audit logs` for the API's intentional `403` response. Operators lack `audit.read`.
+- **What happens:** Operators navigating directly to `/audit` saw a generic failure instead of a clear access decision.
+- **Fix:** The audit query is disabled when the current user lacks `audit.read`. The page renders `Access denied` with a permission explanation for unauthorized users and for API `403` responses.
+- **Verified:** Playwright login as `operator@a.test` showed `Access denied`, no audit request, and no export button. Permission regression test confirms operators lack `audit.read`.
 
 ---
 
