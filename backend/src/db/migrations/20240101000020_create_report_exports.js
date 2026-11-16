@@ -15,7 +15,7 @@ exports.up = async function (knex) {
     table.text('format').notNullable();
     table.text('status').notNullable().defaultTo('queued');
     table.text('storage_key');
-    row_count: table.integer('row_count');
+    table.integer('row_count');
     table.jsonb('filters').notNullable().defaultTo(knex.raw("'{}'::jsonb"));
     table.text('error');
     table.text('error_code');
