@@ -121,7 +121,7 @@ const ExportDetailPage = () => {
       />
 
       <Card>
-        <CardHeader className="flex-row items-center justify-between gap-3">
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-brand-600" />
             {record.format.toUpperCase()} export
