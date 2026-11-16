@@ -92,7 +92,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-01 | P1 | Imports never compute compliance gaps | Fixed (2026-11-15, 25973da) |
 | P1-02 | P1 | Export pipeline produces an unreachable file and ignores format | Fixed (2026-11-16, fec1370) |
 | P1-03 | P1 | Reports endpoints have no RBAC or input validation | Fixed (2026-11-14, d589217) |
-| P1-04 | P1 | Audit log export exports events, not audit records | Fixed (commit pending) |
+| P1-04 | P1 | Audit log export exports events, not audit records | Fixed (2026-11-16, 14783e5) |
 | P1-05 | P1 | Compliance gaps page reads the wrong pagination field | Fixed (2026-11-14, 0324cae) |
 | P1-06 | P1 | Recall simulations page breaks pagination | Fixed (2026-11-14, 0324cae) |
 | P1-07 | P1 | Permission map hides pages from roles that can use them | Fixed (2026-11-14, 4faf8a9) |
@@ -358,7 +358,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-04 — Audit log export exports events, not audit records
 
-- **Severity:** P1 · **Area:** frontend / audit · **Status:** Fixed (commit pending)
+- **Severity:** P1 · **Area:** frontend / audit · **Status:** Fixed (2026-11-16, 14783e5)
 - **Evidence:** `frontend/src/pages/audit/AuditLogPage.jsx:27-38` (`useRequestExport` → `POST /reports/export`); `backend/src/jobs/workers/export-generator.js:12-30` (queries `events`).
 - **What happens:** The Audit Log page's Export button queues the generic events export. The downloaded file contains events, not the audit entries currently on screen (and it ignores the page's action/user/date filters). A user requesting audit evidence receives the wrong dataset with no warning.
 - **Real-world impact:** An auditor investigating who changed a record gets an event list. During an inspection this looks like obstruction or incompetence, and the real audit trail is not exported at all.
