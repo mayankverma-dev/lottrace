@@ -576,6 +576,8 @@ CREATE INDEX idx_report_exports_status_created ON report_exports(status, created
 
 Terminal exports are deleted after 30 days by the `export_cleanup` maintenance
 job. Stuck `queued`/`processing` rows older than one hour are marked `failed`.
+A row whose S3 object cannot be deleted is kept and retried on the next daily
+run, so the object never becomes orphaned.
 
 ---
 

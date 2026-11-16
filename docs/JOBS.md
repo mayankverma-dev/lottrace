@@ -183,6 +183,8 @@ different tenant or format.
 **Retention:** the `export_cleanup` maintenance job runs daily at `03:15 UTC`.
 It marks `queued`/`processing` rows older than one hour as failed, then deletes
 terminal rows older than 30 days and their S3 objects. Audit log rows remain.
+A row whose object cannot be deleted is kept and retried on the next daily run;
+the job reports `deleted`, `objectsDeleted`, and `objectsFailed`.
 
 ---
 

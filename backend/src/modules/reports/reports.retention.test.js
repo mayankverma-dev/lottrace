@@ -89,7 +89,8 @@ describeDb('P1-02 export retention', () => {
   });
 
   beforeEach(() => {
-    deleteObject.mockClear();
+    deleteObject.mockReset();
+    deleteObject.mockResolvedValue(undefined);
   });
 
   it('deletes terminal exports older than 30 days and keeps recent ones', async () => {
@@ -114,7 +115,7 @@ describeDb('P1-02 export retention', () => {
 
     const result = await purgeExpiredExports({ now });
 
-    expect(result).toEqual({ deleted: 2, objectsDeleted: 1 });
+    expect(result).toEqual({ deleted: 2, objectsDeleted: 1, objectsFailed: 0 });
     expect(deleteObject).toHaveBeenCalledWith(`exports/org_${org.orgId}/old.csv`);
 
     const remaining = await db('report_exports')
@@ -123,6 +124,53 @@ describeDb('P1-02 export retention', () => {
     expect(remaining.map((row) => row.id)).toEqual([recent.id]);
     expect(remaining.map((row) => row.id)).not.toContain(oldComplete.id);
     expect(remaining.map((row) => row.id)).not.toContain(oldFailed.id);
+  });
+
+  it('keeps the row when its object cannot be deleted, then deletes it on a later run', async () => {
+    const org = await seedOrganization('retry');
+    const oldExport = await insertExport(org, {
+      status: 'complete',
+      storage_key: `exports/org_${org.orgId}/retry.csv`,
+      created_at: daysAgo(31),
+      completed_at: daysAgo(31),
+    });
+
+    deleteObject.mockRejectedValueOnce(new Error('S3 unavailable'));
+
+    const first = await purgeExpiredExports({ now });
+
+    expect(first).toEqual({ deleted: 0, objectsDeleted: 0, objectsFailed: 1 });
+    expect(await db('report_exports').where({ id: oldExport.id }).first()).toBeDefined();
+
+    const second = await purgeExpiredExports({ now });
+
+    expect(second).toEqual({ deleted: 1, objectsDeleted: 1, objectsFailed: 0 });
+    expect(await db('report_exports').where({ id: oldExport.id }).first()).toBeUndefined();
+  });
+
+  it('deletes rows without a storage key even when other objects fail', async () => {
+    const org = await seedOrganization('mixed');
+    const orphaned = await insertExport(org, {
+      status: 'complete',
+      storage_key: `exports/org_${org.orgId}/orphaned.csv`,
+      created_at: daysAgo(31),
+    });
+    const noObject = await insertExport(org, {
+      status: 'failed',
+      error: 'failed',
+      created_at: daysAgo(31),
+    });
+
+    deleteObject.mockRejectedValueOnce(new Error('S3 unavailable'));
+
+    const result = await purgeExpiredExports({ now });
+
+    expect(result).toEqual({ deleted: 1, objectsDeleted: 0, objectsFailed: 1 });
+    const remaining = await db('report_exports')
+      .where({ organization_id: org.orgId })
+      .select('id');
+    expect(remaining.map((row) => row.id)).toEqual([orphaned.id]);
+    expect(remaining.map((row) => row.id)).not.toContain(noObject.id);
   });
 
   it('fails stuck queued and processing exports and notifies the requester', async () => {

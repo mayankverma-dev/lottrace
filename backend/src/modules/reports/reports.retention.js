@@ -55,40 +55,59 @@ const purgeExpiredExports = async ({
   const cutoff = new Date(now.getTime() - olderThanDays * 24 * 60 * 60 * 1000);
   let deleted = 0;
   let objectsDeleted = 0;
+  let objectsFailed = 0;
+  const failedIds = [];
 
   for (;;) {
-    const rows = await db('report_exports')
+    let query = db('report_exports')
       .whereIn('status', ['complete', 'failed'])
       .andWhere('created_at', '<', cutoff)
       .orderBy('created_at', 'asc')
       .limit(CLEANUP_BATCH_SIZE)
       .select('id', 'storage_key');
 
-    if (!rows.length) break;
-
-    for (const row of rows) {
-      if (!row.storage_key) continue;
-
-      try {
-        await deleteObject(row.storage_key);
-        objectsDeleted += 1;
-      } catch (err) {
-        logger.warn({ err, exportId: row.id }, 'Failed to delete expired export object');
-      }
+    if (failedIds.length) {
+      query = query.whereNotIn('id', failedIds);
     }
 
-    const ids = rows.map((row) => row.id);
-    deleted += await db('report_exports').whereIn('id', ids).del();
+    const rows = await query;
+
+    if (!rows.length) break;
+
+    const deletableIds = [];
+
+    for (const row of rows) {
+      if (row.storage_key) {
+        try {
+          await deleteObject(row.storage_key);
+          objectsDeleted += 1;
+        } catch (err) {
+          objectsFailed += 1;
+          failedIds.push(row.id);
+          logger.warn(
+            { err, exportId: row.id },
+            'Failed to delete expired export object; keeping row for the next run',
+          );
+          continue;
+        }
+      }
+
+      deletableIds.push(row.id);
+    }
+
+    if (!deletableIds.length) break;
+
+    deleted += await db('report_exports').whereIn('id', deletableIds).del();
   }
 
-  return { deleted, objectsDeleted };
+  return { deleted, objectsDeleted, objectsFailed };
 };
 
 const runExportCleanup = async () => {
   const stuck = await failStuckExports();
-  const { deleted, objectsDeleted } = await purgeExpiredExports();
+  const { deleted, objectsDeleted, objectsFailed } = await purgeExpiredExports();
 
-  return { stuck, deleted, objectsDeleted };
+  return { stuck, deleted, objectsDeleted, objectsFailed };
 };
 
 module.exports = {
