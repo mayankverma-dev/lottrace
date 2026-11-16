@@ -12,6 +12,7 @@ const {
   amendEventSchema,
   attachmentUploadSchema,
   addAttachmentSchema,
+  getEventsQuerySchema,
 } = require('./events.validation');
 
 const router = express.Router();
@@ -30,6 +31,7 @@ router.post(
 router.get(
   '/',
   rbac(['org_admin', 'compliance_manager', 'operator', 'auditor']),
+  validate({ query: getEventsQuerySchema }),
   eventsController.getEvents
 );
 

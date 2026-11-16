@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { paginationSchema } = require('../../utils/pagination');
 
 const LOCATION_TYPES = ['farm', 'plant', 'warehouse', 'distributor', 'retailer', 'other'];
 
@@ -31,8 +32,7 @@ const updateLocationSchema = z.object({
 });
 
 const listLocationsSchema = z.object({
-  page: z.coerce.number().int().positive().optional().default(1),
-  limit: z.coerce.number().int().positive().max(100).optional().default(20),
+  ...paginationSchema.shape,
   type: z.enum(LOCATION_TYPES).optional(),
   isExternal: z.enum(['true', 'false']).optional(),
   isActive: z.enum(['true', 'false']).optional(),

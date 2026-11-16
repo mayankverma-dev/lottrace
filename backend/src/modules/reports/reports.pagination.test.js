@@ -83,7 +83,7 @@ describe('P1-05 compliance-gap pagination contract', () => {
     expect(response.status).toBe(200);
     expect(reportsService.getComplianceGaps).toHaveBeenCalledWith(
       '00000000-0000-4000-8000-000000000002',
-      { page: 1, limit: 50 },
+      { page: 1, limit: 20 },
     );
   });
 

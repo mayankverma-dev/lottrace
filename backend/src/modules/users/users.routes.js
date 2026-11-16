@@ -13,7 +13,12 @@ const auditLogger = require('../../middleware/auditLogger');
 router.use(authenticate, tenantScope);
 
 // GET /api/v1/users — org_admin + compliance_manager can list
-router.get('/', rbac(['org_admin', 'compliance_manager']), usersController.listUsers);
+router.get(
+  '/',
+  rbac(['org_admin', 'compliance_manager']),
+  validate({ query: usersValidation.listUsersQuerySchema }),
+  usersController.listUsers,
+);
 
 // POST /api/v1/users/invite — org_admin only
 router.post(

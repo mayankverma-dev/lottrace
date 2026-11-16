@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { paginationSchema } = require('../../utils/pagination');
 
 const CTE_TYPES = ['creation', 'receiving', 'transformation', 'shipping'];
 
@@ -7,15 +8,13 @@ const createImportSchema = z.object({
 });
 
 const listImportsSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  ...paginationSchema.shape,
   status: z.enum(['pending', 'processing', 'complete', 'complete_with_errors', 'failed']).optional(),
   cteType: z.enum(CTE_TYPES).optional(),
 });
 
 const getImportErrorsSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  ...paginationSchema.shape,
 });
 
 const templateParamsSchema = z.object({

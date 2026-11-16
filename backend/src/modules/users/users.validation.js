@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { paginationSchema } = require('../../utils/pagination');
 
 const VALID_ROLES = ['org_admin', 'compliance_manager', 'operator', 'auditor'];
 
@@ -16,8 +17,7 @@ const updateUserSchema = z.object({
 }).strict();
 
 const listUsersQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  ...paginationSchema.shape,
   status: z.enum(['invited', 'active', 'deactivated']).optional(),
   role: z.enum([...VALID_ROLES, 'super_admin']).optional(),
   search: z.string().max(100).optional(),

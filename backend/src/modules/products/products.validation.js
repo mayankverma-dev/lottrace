@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { paginationSchema } = require('../../utils/pagination');
 
 const kdeSchemaItemSchema = z.object({
   name: z.string().min(1, 'Field name is required').max(100).regex(/^[a-z][a-z0-9_]*$/, 'Field name must be snake_case'),
@@ -30,8 +31,7 @@ const updateProductSchema = z.object({
 });
 
 const listProductsSchema = z.object({
-  page: z.coerce.number().int().positive().optional().default(1),
-  limit: z.coerce.number().int().positive().max(100).optional().default(20),
+  ...paginationSchema.shape,
   category: z.string().max(255).optional(),
   isFtl: z.enum(['true', 'false']).optional(),
   isActive: z.enum(['true', 'false']).optional(),

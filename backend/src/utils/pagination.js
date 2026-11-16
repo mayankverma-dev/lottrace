@@ -1,3 +1,10 @@
+const { z } = require('zod');
+
+const paginationSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
 /**
  * Builds the single pagination metadata shape used by every paginated endpoint.
  * See docs/API_STANDARDS.md.
@@ -50,4 +57,4 @@ const paginate = async (query, { page = 1, limit = 20 } = {}) => {
   };
 };
 
-module.exports = { buildPagination, paginate };
+module.exports = { buildPagination, paginate, paginationSchema };

@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { paginationSchema } = require('../../utils/pagination');
 
 const createLotSchema = z.object({
   productId: z.string().uuid('Invalid Product ID'),
@@ -18,8 +19,7 @@ const voidLotSchema = z.object({
 });
 
 const listLotsSchema = z.object({
-  page: z.coerce.number().int().positive().optional().default(1),
-  limit: z.coerce.number().int().positive().max(100).optional().default(20),
+  ...paginationSchema.shape,
   productId: z.string().uuid().optional(),
   traceabilityLotCode: z.string().min(1, 'Cannot be empty').max(255).optional(),
   status: z.enum(['active', 'recalled', 'void']).optional(),

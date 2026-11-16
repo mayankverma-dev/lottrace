@@ -5,7 +5,7 @@ const authenticate = require('../../middleware/authenticate');
 const rbac = require('../../middleware/rbac');
 const tenantScope = require('../../middleware/tenantScope');
 const validate = require('../../middleware/validate');
-const { runSimulationSchema } = require('./validation');
+const { runSimulationSchema, listSimulationsQuerySchema } = require('./validation');
 
 router.use(authenticate, tenantScope);
 
@@ -19,6 +19,7 @@ router.post(
 router.get(
   '/',
   rbac(['org_admin', 'compliance_manager', 'auditor']),
+  validate({ query: listSimulationsQuerySchema }),
   controller.listSimulations
 );
 

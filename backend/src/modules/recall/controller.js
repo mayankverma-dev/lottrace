@@ -7,10 +7,7 @@ const runSimulation = async (req, res) => {
 };
 
 const listSimulations = async (req, res) => {
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 10;
-
-  const { data, pagination } = await service.listSimulations(req.user.organizationId, { page, limit });
+  const { data, pagination } = await service.listSimulations(req.user.organizationId, req.validatedQuery);
   return apiResponse.paginated(res, data, pagination, 'Simulations retrieved');
 };
 

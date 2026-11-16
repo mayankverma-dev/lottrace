@@ -1,9 +1,9 @@
 const { z } = require('zod');
 const { auditLogFiltersSchema } = require('../audit/audit.validation');
+const { paginationSchema } = require('../../utils/pagination');
 
 const listComplianceGapsSchema = z.object({
-  page: z.coerce.number().int().positive().optional().default(1),
-  limit: z.coerce.number().int().positive().max(100).optional().default(50),
+  ...paginationSchema.shape,
 });
 
 const requestExportSchema = z.discriminatedUnion('type', [

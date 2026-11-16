@@ -1,6 +1,5 @@
 const apiResponse = require('../../utils/apiResponse');
 const eventsService = require('./events.service');
-const { getEventsQuerySchema } = require('./events.validation');
 
 const createEvent = async (req, res) => {
   const event = await eventsService.createEvent(req.validatedBody, req.organizationId, req.user.id);
@@ -8,9 +7,7 @@ const createEvent = async (req, res) => {
 };
 
 const getEvents = async (req, res) => {
-  // Validate query string
-  const query = getEventsQuerySchema.parse(req.query);
-  const { data, pagination } = await eventsService.getEvents(query, req.organizationId);
+  const { data, pagination } = await eventsService.getEvents(req.validatedQuery, req.organizationId);
   return apiResponse.paginated(res, data, pagination, 'Events fetched successfully');
 };
 

@@ -1,10 +1,8 @@
 const usersService = require('./users.service');
 const apiResponse = require('../../utils/apiResponse');
-const { listUsersQuerySchema } = require('./users.validation');
 
 const listUsers = async (req, res) => {
-  const params = listUsersQuerySchema.parse(req.query);
-  const result = await usersService.listUsers(req.organizationId, params);
+  const result = await usersService.listUsers(req.organizationId, req.validatedQuery);
   return apiResponse.paginated(res, result.data, result.pagination, 'Users fetched successfully');
 };
 
