@@ -81,7 +81,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-13 | P0 | Event creation accepts cross-tenant locationId | Fixed (2026-11-11, 104a774) |
 | P0-14 | P0 | Lot creation accepts cross-tenant productId | Fixed (2026-11-11, ef77049) |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Fixed (2026-11-13, a0d9a8f) |
-| P0-05 | P0 | Row Level Security is inert at runtime | Open |
+| P0-05 | P0 | Row Level Security is inert at runtime | Fixed (2026-11-16, 2e0d728) |
 | P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Fixed (2026-11-13, 2c31091) |
 | P0-07 | P0 | "Amend event" always fails in the web UI | Fixed (2026-11-13, 0a9f87d) |
 | P0-08 | P0 | Event detail page crashes when compliance gaps exist | Fixed (2026-11-14, cfc8a26) |
@@ -226,7 +226,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-05 — Row Level Security is inert at runtime
 
-- **Severity:** P0 · **Area:** backend / database security · **Status:** Open
+- **Severity:** P0 · **Area:** backend / database security · **Status:** Fixed (2026-11-16, 2e0d728)
 - **Evidence:** `backend/src/middleware/tenantScope.js` (only sets `req.organizationId`; never touches the DB session), migrations `20240101000018_add_rls_policies.js:23` and `20260629000000_add_phase2_rls_policies.js:17` (`current_setting('app.current_org_id', true)::uuid`), `backend/src/db/knex.js` (single pool using the migration/owner role).
 - **What happens:** RLS policies exist, but no code ever runs `SET LOCAL app.current_org_id`. Worse, PostgreSQL table **owners bypass RLS** unless `FORCE ROW LEVEL SECURITY` is set, and the app connects with the same role that runs migrations. So RLS is effectively decorative. Every tenant boundary depends entirely on developers remembering `.where({ organization_id })` — and P0-03 proves that is already failing.
 - **Real-world impact:** A single missing filter (or a future one) is a full cross-tenant breach. `docs/SECURITY.md` and `ARCHITECTURE.md` currently imply defense-in-depth that does not exist.
