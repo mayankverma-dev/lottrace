@@ -6,12 +6,13 @@ export const AUDIT_KEYS = {
   list: (params) => ['audit', 'list', params],
 };
 
-export const useGetAuditLogs = (params) => {
+export const useGetAuditLogs = (params, { enabled = true } = {}) => {
   return useQuery({
     queryKey: AUDIT_KEYS.list(params),
     queryFn: async () => {
       const { data } = await api.get('/audit', { params });
       return data;
     },
+    enabled,
   });
 };

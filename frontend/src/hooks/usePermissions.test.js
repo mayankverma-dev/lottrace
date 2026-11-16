@@ -65,6 +65,7 @@ test('operator cannot mutate master data or access settings', () => {
   assert.equal(hasPermission('operator', 'locations.create'), false);
   assert.equal(hasPermission('operator', 'products.update'), false);
   assert.equal(hasPermission('operator', 'settings.read'), false);
+  assert.equal(hasPermission('operator', 'audit.read'), false);
 });
 
 test('auditor remains read-only', () => {

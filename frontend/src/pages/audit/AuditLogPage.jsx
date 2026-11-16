@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Search, LayoutList } from 'lucide-react';
+import { Shield, ShieldOff, Search, LayoutList } from 'lucide-react';
 import { format } from 'date-fns';
 
 import { useGetAuditLogs } from '@/api/audit.api';
@@ -22,12 +22,15 @@ const AuditLogPage = () => {
   const [actionFilter, setActionFilter] = useState('');
   const navigate = useNavigate();
   const { can } = usePermissions();
-  
-  const queryParams = { 
-    ...params, 
-    ...(actionFilter && actionFilter !== 'all' ? { action: actionFilter } : {}) 
+  const canReadAudit = can('audit.read');
+
+  const queryParams = {
+    ...params,
+    ...(actionFilter && actionFilter !== 'all' ? { action: actionFilter } : {})
   };
-  const { data, isLoading, isError, refetch } = useGetAuditLogs(queryParams);
+  const { data, isLoading, isError, error, refetch } = useGetAuditLogs(queryParams, {
+    enabled: canReadAudit,
+  });
   const { mutate: requestExport, isPending: isExporting } = useRequestExport();
 
   const handleExport = () => {
@@ -98,6 +101,16 @@ const AuditLogPage = () => {
       ),
     }
   ];
+
+  if (!canReadAudit || error?.response?.status === 403) {
+    return (
+      <EmptyState
+        icon={ShieldOff}
+        title="Access denied"
+        description="You do not have permission to view the audit log."
+      />
+    );
+  }
 
   if (isLoading) {
     return (
