@@ -122,7 +122,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-31 | P1 | Organization settings exposes write controls to read-only roles | Fixed (2026-11-14, 12a5cf4) |
 | P1-32 | P1 | Location deactivate control uses update permission | Fixed (2026-11-14, 12a5cf4) |
 | P1-33 | P1 | Manual receiving accepts output lots | Fixed (2026-11-15, 10cca16) |
-| P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Open |
+| P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Fixed (2026-11-16, a2ac086) |
 | P2-02 | P2 | API response pagination shape is inconsistent | Fixed (2026-11-14, fdb11d7) |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Fixed (2026-11-15, 3915392) |
 | P2-04 | P2 | Trace product lookup is not organization-scoped | Open |
