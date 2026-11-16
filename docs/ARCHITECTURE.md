@@ -263,11 +263,12 @@ records a `hash.verify_completed` metric row plus a structured pino metric log.
 ### Queues
 | Queue | Worker File | Trigger |
 |-------|------------|---------|
-| `import` | `jobs/import-processor.js` | CSV upload → POST /imports |
-| `export` | `jobs/export-generator.js` | GET /reports/export (large) |
+| `import` | `jobs/workers/import-processor.js` | CSV upload → POST /imports |
+| `export` | `jobs/workers/export-generator.js` | POST /reports/export |
 | `hash-verify` | `jobs/workers/hash-verifier.js` | Nightly cron |
-| `email` | `jobs/email-sender.js` | Compliance gaps, invites, export ready |
-| `webhook` | `jobs/webhook-dispatcher.js` | Any event.created, gap.detected |
+| `email` | `jobs/workers/email-sender.js` | Compliance gaps, invites |
+| `webhook` | `jobs/workers/webhook-dispatcher.js` | Any event.created, gap.detected |
+| `maintenance` | `jobs/workers/maintenance.js` | Hourly idempotency cleanup, daily export cleanup |
 
 ### Import Job Flow
 ```
@@ -284,6 +285,25 @@ bulk of large CSVs cannot saturate the database. Uploads beyond that stay
 `pending` for up to a minute and start automatically; the Imports page tells the
 user this while any import is queued or running. This is deliberate throttling,
 not a lost job.
+
+### Export Job Flow
+```
+POST /reports/export (format: csv | json)
+→ insert report_exports row (status: queued)
+→ enqueue export job { exportId }
+→ return 202 with the queued record
+→ Worker: status = processing; read events in chain_seq batches
+→ append batches to a temp CSV/JSON file
+→ upload file to S3 and store the key
+→ status = complete, row_count, completed_at
+→ insert export_ready notification
+```
+
+The client polls `GET /reports/exports/:exportId`; when complete,
+`GET /reports/exports/:exportId/download` verifies the organization and returns a
+5-minute presigned URL. Cross-tenant access returns 404. Failed exports store a
+sanitized failure state and create an `export_failed` notification. Terminal rows
+and their objects are deleted after 30 days by the maintenance queue.
 
 ---
 

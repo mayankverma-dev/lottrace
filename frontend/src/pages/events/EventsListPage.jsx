@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { DataTable } from '@/components/common/DataTable';
 import { EmptyState } from '@/components/common/EmptyState';
 import { formatEventDate } from '@/utils/formatDate';
-import { Activity, Plus, Search } from 'lucide-react';
+import { Activity, ChevronDown, Plus, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -39,14 +39,15 @@ const EventsListPage = () => {
   const { data, isLoading, isError, refetch } = useGetEvents(params);
   const { mutate: requestExport, isPending: isExporting } = useRequestExport();
 
-  const handleExport = () => {
-    requestExport({ format: 'csv' }, {
-      onSuccess: () => {
-        toast.success('Export started! You will be notified when it is ready.');
+  const handleExport = (format) => {
+    requestExport({ format }, {
+      onSuccess: (response) => {
+        toast.success('Export queued. You will be notified when it is ready.');
+        navigate(`/reports/exports/${response.data.id}`);
       },
-      onError: () => {
-        toast.error('Failed to start export');
-      }
+      onError: (err) => {
+        toast.error(err.response?.data?.message || 'Failed to start export');
+      },
     });
   };
 
@@ -148,9 +149,22 @@ const EventsListPage = () => {
         action={
           <div className="flex gap-2">
             {can('reports.export') && (
-              <Button variant="outline" onClick={handleExport} disabled={isExporting}>
-                {isExporting ? 'Starting...' : 'Export CSV'}
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" disabled={isExporting}>
+                    {isExporting ? 'Starting...' : 'Export'}
+                    <ChevronDown className="h-4 w-4 ml-2" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleExport('csv')}>
+                    Export CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleExport('json')}>
+                    Export JSON
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             {can('events.create') && (
               <Button onClick={() => navigate('/events/record')}>

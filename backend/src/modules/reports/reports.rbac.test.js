@@ -46,8 +46,18 @@ jest.mock('./reports.controller', () => ({
   }),
   requestExport: (req, res) => res.status(202).json({
     success: true,
-    message: 'Export job started',
-    data: { jobId: 'job-1' },
+    message: 'Export queued',
+    data: { id: '11111111-1111-4111-8111-111111111111', status: 'queued' },
+  }),
+  getExport: (req, res) => res.status(200).json({
+    success: true,
+    message: 'Export retrieved',
+    data: { id: req.params.exportId, status: 'complete' },
+  }),
+  downloadExport: (req, res) => res.status(200).json({
+    success: true,
+    message: 'Download URL generated',
+    data: { downloadUrl: 'http://localhost:9000/signed' },
   }),
 }));
 
@@ -57,6 +67,7 @@ const { writeAuditLog } = require('../../utils/auditTrail');
 
 const REPORTS_BASE = '/api/v1/reports';
 const ROLES = ['org_admin', 'compliance_manager', 'operator', 'auditor', 'api_key', 'unknown'];
+const EXPORT_ID = '11111111-1111-4111-8111-111111111111';
 
 const ROUTES = [
   {
@@ -73,6 +84,20 @@ const ROUTES = [
     allowed: ['org_admin', 'compliance_manager'],
     successStatus: 202,
     body: { format: 'csv' },
+  },
+  {
+    name: 'GET /exports/:exportId',
+    method: 'get',
+    path: `/exports/${EXPORT_ID}`,
+    allowed: ['org_admin', 'compliance_manager'],
+    successStatus: 200,
+  },
+  {
+    name: 'GET /exports/:exportId/download',
+    method: 'get',
+    path: `/exports/${EXPORT_ID}/download`,
+    allowed: ['org_admin', 'compliance_manager'],
+    successStatus: 200,
   },
 ];
 
@@ -158,7 +183,7 @@ describe('P1-03 report route RBAC, validation, and audit', () => {
   describe('export body validation', () => {
     it.each([
       ['unsupported format', { format: 'exe' }],
-      ['unknown format', { format: 'json' }],
+      ['unknown format', { format: 'pdf' }],
       ['unknown field', { format: 'csv', scope: 'org' }],
     ])('rejects %s', async (_name, body) => {
       const res = await request(app)
@@ -175,6 +200,15 @@ describe('P1-03 report route RBAC, validation, and audit', () => {
         .post(`${REPORTS_BASE}/export`)
         .set('x-test-role', 'compliance_manager')
         .send({});
+
+      expect(res.status).toBe(202);
+    });
+
+    it('accepts json export format', async () => {
+      const res = await request(app)
+        .post(`${REPORTS_BASE}/export`)
+        .set('x-test-role', 'compliance_manager')
+        .send({ format: 'json' });
 
       expect(res.status).toBe(202);
     });
@@ -206,9 +240,27 @@ describe('P1-03 report route RBAC, validation, and audit', () => {
         actorId: '00000000-0000-4000-8000-000000000001',
         action: 'report.export',
         entityType: 'report',
+        entityId: EXPORT_ID,
         metadata: expect.objectContaining({
           body: { format: 'csv' },
         }),
+      }));
+    });
+
+    it('records report.download with the export ID', async () => {
+      const res = await request(app)
+        .get(`${REPORTS_BASE}/exports/${EXPORT_ID}/download`)
+        .set('x-test-role', 'compliance_manager');
+
+      expect(res.status).toBe(200);
+      await flushAudit();
+
+      expect(writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+        organizationId: '00000000-0000-4000-8000-000000000002',
+        actorId: '00000000-0000-4000-8000-000000000001',
+        action: 'report.download',
+        entityType: 'report',
+        entityId: EXPORT_ID,
       }));
     });
 

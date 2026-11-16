@@ -30,4 +30,19 @@ router.post(
   reportsController.requestExport
 );
 
+router.get(
+  '/exports/:exportId',
+  rbac(['org_admin', 'compliance_manager']),
+  validate({ params: reportsValidation.exportIdParamsSchema }),
+  reportsController.getExport
+);
+
+router.get(
+  '/exports/:exportId/download',
+  rbac(['org_admin', 'compliance_manager']),
+  validate({ params: reportsValidation.exportIdParamsSchema }),
+  auditLogger('report'),
+  reportsController.downloadExport
+);
+
 module.exports = router;

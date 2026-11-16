@@ -139,70 +139,47 @@ if (isDuplicate) {
 
 ---
 
-## Queue 2: `export` — CSV/PDF Report Generation
+## Queue 2: `export` — Event Exports
 
-**File:** `src/jobs/export-generator.js`
+**Files:** `src/jobs/workers/export-generator.js` (BullMQ worker) and
+`src/jobs/workers/export-processor.js` (job logic).
 
-**Triggered by:** `POST /api/v1/reports/export` for large exports
+**Triggered by:** `POST /api/v1/reports/export`
 
 **Job Payload:**
 ```json
-{
-  "exportId": "uuid",
-  "organizationId": "uuid",
-  "userId": "uuid",
-  "type": "csv",
-  "params": {
-    "resource": "events",
-    "dateFrom": "2024-01-01T00:00:00.000Z",
-    "dateTo": "2024-01-31T23:59:59.999Z",
-    "productId": "optional-uuid"
-  }
-}
+{ "exportId": "uuid" }
 ```
 
-**Worker Logic (CSV):**
+The worker reads `report_exports` by ID. The database row is the source of truth
+for `organization_id`, `format`, and `requested_by`; job data cannot choose a
+different tenant or format.
+
+**Status lifecycle:** `queued → processing → complete | failed`.
+
+**Worker logic:**
 ```javascript
-const worker = new Worker('export', async (job) => {
-  const { exportId, organizationId, type, params } = job.data;
-
-  // 1. Stream query results in batches (never load all into memory)
-  const BATCH_SIZE = 500;
-  let offset = 0;
-  const csvStream = createCsvStringifier({ header: EXPORT_HEADERS[params.resource] });
-  const chunks = [];
-
-  while (true) {
-    const rows = await db('events')
-      .where({ organization_id: organizationId })
-      .whereBetween('event_datetime', [params.dateFrom, params.dateTo])
-      .limit(BATCH_SIZE).offset(offset);
-
-    if (!rows.length) break;
-    chunks.push(csvStream.stringifyRecords(rows.map(formatRowForExport)));
-    offset += BATCH_SIZE;
-    await job.updateProgress(Math.min(offset / estimatedTotal * 90, 90));
-  }
-
-  // 2. Upload to S3
-  const csvContent = csvStream.getHeaderString() + chunks.join('');
-  const storageKey = `exports/${organizationId}/${exportId}.csv`;
-  await s3.putObject(storageKey, Buffer.from(csvContent), 'text/csv');
-
-  // 3. Update export record
-  await db('report_exports').where({ id: exportId }).update({
-    status: 'complete', storage_key: storageKey, completed_at: new Date(),
-  });
-
-  // 4. Notify user
-  await Queues.EMAIL.add('export-ready', {
-    type: 'export_ready',
-    userId: job.data.userId,
-    organizationId,
-    data: { exportId },
-  });
-}, { connection, concurrency: 3 });
+// 1. Read the report_exports row and set status = processing, started_at = now.
+// 2. Read events in batches of 500 ordered by chain_seq (stable, append-only).
+// 3. Append each batch to a temporary CSV or JSON file.
+// 4. Upload the temp file with a streamed PutObject (ContentLength from fs.stat).
+// 5. Set status = complete, storage_key, row_count, completed_at.
+// 6. Insert an export_ready notification with link /reports/exports/:id.
+// 7. On failure: set status = failed, error, completed_at; insert export_failed.
 ```
+
+- CSV and JSON contain the same 22 event columns. JSON fields remain structured
+  in JSON and are JSON-stringified in CSV.
+- Empty exports complete with `row_count = 0`; CSV is header-only and JSON is
+  `[]`.
+- Storage key format: `exports/org_<organizationId>/<exportId>.<ext>`.
+- The download endpoint checks `organization_id`, then signs a 5-minute URL with
+  `Content-Disposition: attachment`. Raw storage keys are never returned.
+- No automatic retries: a failed export is surfaced and can be requested again.
+
+**Retention:** the `export_cleanup` maintenance job runs daily at `03:15 UTC`.
+It marks `queued`/`processing` rows older than one hour as failed, then deletes
+terminal rows older than 30 days and their S3 objects. Audit log rows remain.
 
 ---
 
@@ -345,6 +322,22 @@ const worker = new Worker('webhook', async (job) => {
   }
 }, { connection });
 ```
+
+---
+
+## Queue 6: `maintenance` — Bounded Housekeeping
+
+**File:** `src/jobs/workers/maintenance.js`
+
+The worker dispatches by `job.name`:
+
+| Job | Schedule | Work |
+|---|---|---|
+| `idempotency_cleanup` | Hourly at `:15` | Delete expired HTTP idempotency rows. |
+| `export_cleanup` | Daily at `03:15 UTC` | Fail stuck exports, delete terminal exports older than 30 days and their S3 objects. |
+
+Unknown job names throw, so a new maintenance task cannot silently run the wrong
+cleanup.
 
 ---
 

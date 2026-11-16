@@ -315,6 +315,27 @@ const createImportSchema = z.object({
 
 ---
 
+## Report Schemas
+
+### Request Export
+```javascript
+const requestExportSchema = z.object({
+  format: z.enum(['csv', 'json']).optional().default('csv'),
+}).strict();
+```
+
+### Export ID Param
+```javascript
+const exportIdParamsSchema = z.object({
+  exportId: z.string().uuid('Must be a valid export ID'),
+});
+```
+
+Export status and download routes validate the UUID before the controller and
+return `422 VALIDATION_ERROR` for malformed IDs.
+
+---
+
 ## Recall Simulation Schemas
 
 ```javascript

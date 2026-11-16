@@ -2,7 +2,7 @@ const exportWorker = require('./workers/export-generator');
 const importWorker = require('./workers/import-processor');
 const emailWorker = require('./workers/email-sender');
 const hashVerifyWorker = require('./workers/hash-verifier');
-const idempotencyCleanupWorker = require('./workers/idempotency-cleanup');
+const maintenanceWorker = require('./workers/maintenance');
 const logger = require('../utils/logger');
 const { emailQueue, hashVerifyQueue, maintenanceQueue } = require('./queues');
 
@@ -26,6 +26,12 @@ const startWorkers = async () => {
   await maintenanceQueue.add('idempotency_cleanup', {}, {
     repeat: { pattern: '15 * * * *' },
     jobId: 'idempotency_cleanup_hourly'
+  });
+
+  // Delete terminal exports older than 30 days and fail stuck jobs.
+  await maintenanceQueue.add('export_cleanup', {}, {
+    repeat: { pattern: '15 3 * * *' },
+    jobId: 'export_cleanup_daily'
   });
 };
 

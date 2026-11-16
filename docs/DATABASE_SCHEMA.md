@@ -548,6 +548,37 @@ CREATE INDEX idx_notifications_org ON notifications(organization_id, created_at 
 
 ---
 
+### `report_exports`
+Persistent event export jobs and their downloadable S3 objects.
+```sql
+CREATE TABLE report_exports (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  requested_by    uuid NOT NULL REFERENCES users(id),
+  type            text NOT NULL DEFAULT 'events',        -- events
+  format          text NOT NULL,                         -- csv | json
+  status          text NOT NULL DEFAULT 'queued',        -- queued | processing | complete | failed
+  storage_key     text,                                  -- never returned to clients
+  row_count       integer,
+  error           text,
+  created_at      timestamptz NOT NULL DEFAULT NOW(),
+  started_at      timestamptz,
+  completed_at    timestamptz,
+  CHECK (type IN ('events')),
+  CHECK (format IN ('csv', 'json')),
+  CHECK (status IN ('queued', 'processing', 'complete', 'failed')),
+  CHECK (row_count IS NULL OR row_count >= 0)
+);
+
+CREATE INDEX idx_report_exports_org_created ON report_exports(organization_id, created_at DESC);
+CREATE INDEX idx_report_exports_status_created ON report_exports(status, created_at);
+```
+
+Terminal exports are deleted after 30 days by the `export_cleanup` maintenance
+job. Stuck `queued`/`processing` rows older than one hour are marked `failed`.
+
+---
+
 ### `subscriptions`
 Billing and plan information.
 ```sql
@@ -612,6 +643,7 @@ ALTER TABLE recall_simulations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE webhooks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE report_exports ENABLE ROW LEVEL SECURITY;
 
 -- Policy template (repeat for each table)
 CREATE POLICY tenant_isolation ON lots

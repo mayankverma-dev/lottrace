@@ -168,7 +168,9 @@ Four event types are fully implemented:
 
 #### ✅ Reports & Compliance
 - `GET /reports/compliance-gaps` — list all events with missing required KDE fields
-- `POST /reports/export` — queue a CSV/PDF export job; result stored in S3
+- `POST /reports/export` — queue a CSV/JSON event export; status tracked in `report_exports`
+- `GET /reports/exports/:exportId` — poll export status
+- `GET /reports/exports/:exportId/download` — org-scoped, short-lived presigned download URL
 
 #### ✅ Audit Log
 - Every mutating action (user invites, lot void, event amend, etc.) is written to the `audit_log` table
@@ -354,7 +356,7 @@ The `createEvent` service function is the most complex in the codebase. It:
 #### Module: `reports`
 **Responsibility:** Two report types:
 1. `GET /reports/compliance-gaps` — queries the `events` table for all rows where `has_compliance_gaps = true` (a PostgreSQL generated column), with filtering and pagination.
-2. `POST /reports/export` — enqueues an `export-generator` BullMQ job that runs the query in the background and streams results to a CSV/PDF file in S3. The client polls `GET /reports/exports/:exportId` for completion.
+2. `POST /reports/export` — inserts a `report_exports` row and enqueues an `export` BullMQ job. The worker reads events in `chain_seq` batches, writes a CSV or JSON file, uploads it to S3, and updates the row through `queued → processing → complete | failed`. The client polls `GET /reports/exports/:exportId`; `GET /reports/exports/:exportId/download` verifies the organization before signing a 5-minute URL. The maintenance queue deletes terminal exports after 30 days.
 
 ---
 

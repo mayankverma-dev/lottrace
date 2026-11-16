@@ -1,6 +1,5 @@
 const reportsService = require('./reports.service');
 const apiResponse = require('../../utils/apiResponse');
-const { exportQueue } = require('../../jobs/queues');
 
 const getComplianceGaps = async (req, res) => {
   const { page, limit } = req.validatedQuery;
@@ -10,18 +9,36 @@ const getComplianceGaps = async (req, res) => {
 };
 
 const requestExport = async (req, res) => {
-  const { format } = req.validatedBody;
+  const record = await reportsService.requestExport(
+    req.validatedBody,
+    req.organizationId,
+    req.user.id,
+  );
 
-  const job = await exportQueue.add('export-events', {
-    organizationId: req.user.organizationId,
-    userId: req.user.id,
-    format,
-  });
+  return apiResponse.success(res, record, 'Export queued', 202);
+};
 
-  return apiResponse.success(res, { jobId: job.id }, 'Export job started', 202);
+const getExport = async (req, res) => {
+  const record = await reportsService.getExport(
+    req.validatedParams.exportId,
+    req.organizationId,
+  );
+
+  return apiResponse.success(res, record, 'Export retrieved');
+};
+
+const downloadExport = async (req, res) => {
+  const download = await reportsService.getExportDownload(
+    req.validatedParams.exportId,
+    req.organizationId,
+  );
+
+  return apiResponse.success(res, download, 'Download URL generated');
 };
 
 module.exports = {
   getComplianceGaps,
   requestExport,
+  getExport,
+  downloadExport,
 };

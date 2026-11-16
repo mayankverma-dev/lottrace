@@ -18,10 +18,13 @@ const auditLogger = (actionPrefix) => {
             if (req.path.includes('/deactivate')) specificAction = `${actionPrefix}.deactivate`;
             if (req.path.includes('/reactivate')) specificAction = `${actionPrefix}.reactivate`;
             if (req.path.includes('/resend-invite')) specificAction = `${actionPrefix}.resend_invite`;
-            if (req.path.includes('/export')) specificAction = `${actionPrefix}.export`;
+            if (/(^|\/)download$/.test(req.path)) specificAction = `${actionPrefix}.download`;
+            if (/(^|\/)export$/.test(req.path)) specificAction = `${actionPrefix}.export`;
             if (req.path === '/invite' || req.path.endsWith('/invite')) specificAction = `${actionPrefix}.invite`;
 
-            const targetId = req.params.id || req.params[`${actionPrefix}Id`];
+            const targetId = req.params.id
+              || req.params[`${actionPrefix}Id`]
+              || req.params.exportId;
             let entityId = targetId || body?.data?.id;
             const metadata = { url: req.originalUrl, query: req.query, body: req.body };
 

@@ -6,10 +6,15 @@ const listComplianceGapsSchema = z.object({
 });
 
 const requestExportSchema = z.object({
-  format: z.enum(['csv']).optional().default('csv'),
+  format: z.enum(['csv', 'json']).optional().default('csv'),
 }).strict();
+
+const exportIdParamsSchema = z.object({
+  exportId: z.string().uuid('Must be a valid export ID'),
+});
 
 module.exports = {
   listComplianceGapsSchema,
   requestExportSchema,
+  exportIdParamsSchema,
 };

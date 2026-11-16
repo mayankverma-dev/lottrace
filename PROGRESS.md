@@ -2,8 +2,8 @@
 
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
-**Last Updated:** 2026-11-15
-**Last Session:** 2026-11-15 — P1-33 and P2-21 fixed. Receiving events now accept input lots only, in both API and web form. The 5-per-minute import worker limiter is documented and surfaced on the Imports page. Full backend suite passes (42 suites, 338 tests); frontend and scan-PWA builds pass.
+**Last Updated:** 2026-11-16
+**Last Session:** 2026-11-16 — P1-02 fixed. Exports are persisted in `report_exports`, honor CSV and JSON, report `queued → processing → complete | failed`, notify the requester, and download through an org-scoped presigned URL. Retention cleanup and a frontend export-detail page are in place. Targeted backend report tests, frontend helper tests, and both builds pass.
 
 ---
 
@@ -55,6 +55,18 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P1-02 — persistent export pipeline:
+- `backend/src/db/migrations/20240101000020_create_report_exports.js`
+- `backend/src/modules/reports/reports.service.js`, `reports.controller.js`, `reports.routes.js`, `reports.validation.js`
+- `backend/src/jobs/workers/export-generator.js`, `export-processor.js`, `export-format.js`
+- `backend/src/jobs/workers/maintenance.js` (replaces `idempotency-cleanup.js`), `backend/src/jobs/index.js`
+- `backend/src/modules/reports/reports.retention.js`
+- `backend/src/lib/storage.js` (`uploadFile`, `deleteObject`, download response headers)
+- `backend/src/middleware/auditLogger.js` (`report.download`, exact export-path matching)
+- `frontend/src/api/reports.api.js`, `frontend/src/lib/exportStatus.js`, `frontend/src/pages/reports/ExportDetailPage.jsx`, `frontend/src/App.jsx`, `frontend/src/pages/events/EventsListPage.jsx`, `frontend/src/components/notifications/NotificationBell.jsx`
+- Tests: `backend/src/modules/reports/reports.export-format.test.js` (6), `reports.export-pipeline.test.js` (7 DB), `reports.retention.test.js` (3 DB), `reports.rbac.test.js` (updated), `frontend/src/lib/exportStatus.test.js` (4)
+- Docs: `docs/API_STANDARDS.md`, `docs/DATABASE_SCHEMA.md`, `docs/JOBS.md`, `docs/VALIDATION_RULES.md`, `docs/ARCHITECTURE.md`, `docs/BACKEND_ARCHITECTURE.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P1-33 — receiving events take input lots only:
 - `backend/src/modules/events/events.validation.js` (receiving requires at least one input, rejects any output lot)

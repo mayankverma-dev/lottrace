@@ -37,6 +37,7 @@ const EventDetailPage = lazy(() => import('./pages/events/EventDetailPage'));
 const TracePage = lazy(() => import('./pages/trace/TracePage'));
 const AuditLogPage = lazy(() => import('./pages/audit/AuditLogPage'));
 const ComplianceGapsPage = lazy(() => import('./pages/reports/ComplianceGapsPage'));
+const ExportDetailPage = lazy(() => import('./pages/reports/ExportDetailPage'));
 const ImportPage = lazy(() => import('./pages/imports/ImportPage'));
 const RecallSimulationsPage = lazy(() => import('./pages/recall/RecallSimulationsPage'));
 const RecallSimulationDetailPage = lazy(() => import('./pages/recall/RecallSimulationDetailPage'));
@@ -108,6 +109,7 @@ function App() {
               <Route path="/trace" element={<TracePage />} />
               <Route path="/imports" element={<ImportPage />} />
               <Route path="/reports/compliance-gaps" element={<ComplianceGapsPage />} />
+              <Route path="/reports/exports/:exportId" element={<ExportDetailPage />} />
               <Route path="/recall" element={<RecallSimulationsPage />} />
               <Route path="/recall/:id" element={<RecallSimulationDetailPage />} />
               <Route path="/audit" element={<AuditLogPage />} />

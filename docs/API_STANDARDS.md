@@ -457,6 +457,13 @@ Reports:
 GET    /api/v1/reports/compliance-gaps
 POST   /api/v1/reports/export
 GET    /api/v1/reports/exports/:exportId
+GET    /api/v1/reports/exports/:exportId/download
+
+Export requests return `202` with the queued record. Status is one of
+`queued`, `processing`, `complete`, or `failed`. The download endpoint returns
+`200` with a short-lived presigned URL only when the export is complete; it
+returns `409 EXPORT_NOT_READY` or `409 EXPORT_FAILED` otherwise, and `404` for
+another organization's export. Raw storage keys are never returned.
 
 Recall:
 GET    /api/v1/recall/simulations

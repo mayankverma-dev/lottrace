@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bell, Check, Info, AlertTriangle, CheckCircle, Package } from 'lucide-react';
+import { Bell, Check, Info, AlertTriangle, CheckCircle, Package, XCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   Popover,
@@ -24,6 +24,8 @@ const getIconForType = (type) => {
       return <CheckCircle className="h-5 w-5 text-green-500" />;
     case 'export_ready':
       return <Package className="h-5 w-5 text-brand-500" />;
+    case 'export_failed':
+      return <XCircle className="h-5 w-5 text-red-500" />;
     case 'recall_simulation':
       return <AlertTriangle className="h-5 w-5 text-red-500" />;
     default:
