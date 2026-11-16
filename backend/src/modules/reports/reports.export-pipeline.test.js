@@ -78,7 +78,7 @@ const { exportQueue } = require('../../jobs/queues');
 const storage = require('../../lib/storage');
 const { writeAuditLog } = require('../../utils/auditTrail');
 const { processExport } = require('../../jobs/workers/export-processor');
-const { csvHeader } = require('../../jobs/workers/export-format');
+const { csvHeader, EXPORT_LIMITS } = require('../../jobs/workers/export-format');
 
 const describeDb = RUN_DB_TESTS ? describe : describe.skip;
 const MIGRATIONS_DIR = path.join(__dirname, '../../db/migrations');
@@ -436,6 +436,51 @@ describeDb('P1-02 persistent export pipeline', () => {
       .first();
     expect(notification).toBeDefined();
     expect(notification.user_id).toBe(org.userId);
+
+    const download = await as(
+      request(app).get(`${REPORTS_BASE}/exports/${exportId}/download`),
+      org.actor,
+    );
+    expect(download.status).toBe(409);
+    expect(download.body.error.code).toBe('EXPORT_FAILED');
+  });
+
+  it('fails an export that exceeds the row cap and reports a safe limit error', async () => {
+    const org = await seedOrganization('limit');
+    for (let chainSeq = 1; chainSeq <= 3; chainSeq += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await insertEvent({ orgId: org.orgId, userId: org.userId, chainSeq });
+    }
+
+    const created = await postExport(org.actor, { format: 'csv' });
+    const exportId = created.body.data.id;
+
+    await expect(processExport(exportId, {
+      limits: { maxRows: 2, maxBytes: EXPORT_LIMITS.maxBytes },
+    })).rejects.toMatchObject({ code: 'EXPORT_LIMIT_EXCEEDED' });
+
+    const record = await db('report_exports').where({ id: exportId }).first();
+    expect(record.status).toBe('failed');
+    expect(record.error_code).toBe('EXPORT_LIMIT_EXCEEDED');
+    expect(record.error).toBe('Export limit exceeded');
+    expect(storage.uploadFile).not.toHaveBeenCalled();
+
+    const notification = await db('notifications')
+      .where({ entity_id: exportId, type: 'export_failed' })
+      .first();
+    expect(notification).toBeDefined();
+    expect(notification.user_id).toBe(org.userId);
+
+    const status = await as(
+      request(app).get(`${REPORTS_BASE}/exports/${exportId}`),
+      org.actor,
+    );
+    expect(status.status).toBe(200);
+    expect(status.body.data.status).toBe('failed');
+    expect(status.body.data.errorCode).toBe('EXPORT_LIMIT_EXCEEDED');
+    expect(status.body.data.error).toBe(
+      'This export is too large. Narrow the filters and request a smaller export.',
+    );
 
     const download = await as(
       request(app).get(`${REPORTS_BASE}/exports/${exportId}/download`),

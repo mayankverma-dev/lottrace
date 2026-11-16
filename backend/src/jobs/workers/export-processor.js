@@ -7,6 +7,9 @@ const { uploadFile } = require('../../lib/storage');
 const logger = require('../../utils/logger');
 const {
   EXPORT_BATCH_SIZE,
+  EXPORT_LIMITS,
+  EXPORT_LIMIT_ERROR_CODE,
+  assertExportWithinLimits,
   contentTypeFor,
   extensionFor,
   csvHeader,
@@ -66,7 +69,7 @@ const createNotification = async (record, type, title, message) => {
   }
 };
 
-const processExport = async (exportId) => {
+const processExport = async (exportId, { limits = EXPORT_LIMITS } = {}) => {
   const record = await db('report_exports').where({ id: exportId }).first();
 
   if (!record) {
@@ -84,6 +87,7 @@ const processExport = async (exportId) => {
       started_at: db.fn.now(),
       completed_at: null,
       error: null,
+      error_code: null,
     })
     .returning('*');
 
@@ -98,15 +102,14 @@ const processExport = async (exportId) => {
   try {
     await fs.mkdir(EXPORT_TEMP_DIR, { recursive: true });
 
-    if (claimed.format === 'csv') {
-      await fs.writeFile(filePath, csvHeader());
-    } else {
-      await fs.writeFile(filePath, '[');
-    }
+    const header = claimed.format === 'csv' ? csvHeader() : '[';
+    await fs.writeFile(filePath, header);
 
     let afterChainSeq = null;
     let rowCount = 0;
+    let bytesWritten = Buffer.byteLength(header);
     let isFirstJsonBatch = true;
+    const closingBytes = claimed.format === 'json' ? 1 : 0;
 
     for (;;) {
       const events = await getEventBatch(claimed.organization_id, afterChainSeq);
@@ -115,11 +118,16 @@ const processExport = async (exportId) => {
       const chunk = claimed.format === 'csv'
         ? serializeCsvBatch(events)
         : serializeJsonBatch(events, isFirstJsonBatch);
+      const nextRowCount = rowCount + events.length;
+      const nextBytes = bytesWritten + Buffer.byteLength(chunk) + closingBytes;
+
+      assertExportWithinLimits({ rowCount: nextRowCount, bytes: nextBytes, limits });
 
       await fs.appendFile(filePath, chunk);
 
       isFirstJsonBatch = false;
-      rowCount += events.length;
+      rowCount = nextRowCount;
+      bytesWritten += Buffer.byteLength(chunk);
       afterChainSeq = events[events.length - 1].chain_seq;
     }
 
@@ -137,6 +145,7 @@ const processExport = async (exportId) => {
         row_count: rowCount,
         completed_at: db.fn.now(),
         error: null,
+        error_code: null,
       });
 
     await createNotification(
@@ -157,6 +166,7 @@ const processExport = async (exportId) => {
       .update({
         status: 'failed',
         error: message.slice(0, 2000),
+        error_code: err.code === EXPORT_LIMIT_ERROR_CODE ? EXPORT_LIMIT_ERROR_CODE : null,
         completed_at: db.fn.now(),
       });
 

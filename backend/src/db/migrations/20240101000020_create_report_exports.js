@@ -15,8 +15,9 @@ exports.up = async function (knex) {
     table.text('format').notNullable();
     table.text('status').notNullable().defaultTo('queued');
     table.text('storage_key');
-    table.integer('row_count');
+    row_count: table.integer('row_count');
     table.text('error');
+    table.text('error_code');
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
     table.timestamp('started_at', { useTz: true });
     table.timestamp('completed_at', { useTz: true });

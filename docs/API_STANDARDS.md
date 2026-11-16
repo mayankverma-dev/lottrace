@@ -465,6 +465,11 @@ Export requests return `202` with the queued record. Status is one of
 returns `409 EXPORT_NOT_READY` or `409 EXPORT_FAILED` otherwise, and `404` for
 another organization's export. Raw storage keys are never returned.
 
+Exports are capped at 1,000,000 rows and 512 MiB. An export that exceeds either
+limit fails with `errorCode: "EXPORT_LIMIT_EXCEEDED"` and a safe message asking
+the caller to narrow the export. Failed records expose `error` and `errorCode`;
+raw internal errors and storage keys are never returned.
+
 Recall:
 GET    /api/v1/recall/simulations
 POST   /api/v1/recall/simulations

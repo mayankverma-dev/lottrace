@@ -561,6 +561,7 @@ CREATE TABLE report_exports (
   storage_key     text,                                  -- never returned to clients
   row_count       integer,
   error           text,
+  error_code      text,                                  -- e.g. EXPORT_LIMIT_EXCEEDED
   created_at      timestamptz NOT NULL DEFAULT NOW(),
   started_at      timestamptz,
   completed_at    timestamptz,

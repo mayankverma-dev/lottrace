@@ -2,6 +2,21 @@ const { stringify } = require('csv-stringify/sync');
 
 const EXPORT_BATCH_SIZE = 500;
 
+const EXPORT_LIMITS = Object.freeze({
+  maxRows: 1000000,
+  maxBytes: 512 * 1024 * 1024,
+});
+
+const EXPORT_LIMIT_ERROR_CODE = 'EXPORT_LIMIT_EXCEEDED';
+
+const assertExportWithinLimits = ({ rowCount, bytes, limits = EXPORT_LIMITS }) => {
+  if (rowCount > limits.maxRows || bytes > limits.maxBytes) {
+    const err = new Error('Export limit exceeded');
+    err.code = EXPORT_LIMIT_ERROR_CODE;
+    throw err;
+  }
+};
+
 const EXPORT_COLUMNS = [
   'id',
   'event_type',
@@ -111,6 +126,9 @@ const extensionFor = (format) => format;
 module.exports = {
   EXPORT_BATCH_SIZE,
   EXPORT_COLUMNS,
+  EXPORT_LIMITS,
+  EXPORT_LIMIT_ERROR_CODE,
+  assertExportWithinLimits,
   formatEventRow,
   sanitizeCsvCell,
   csvHeader,

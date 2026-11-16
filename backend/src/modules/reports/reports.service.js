@@ -7,6 +7,11 @@ const { generatePresignedDownloadUrl } = require('../../lib/storage');
 
 const DOWNLOAD_URL_TTL_SECONDS = 300;
 
+const GENERIC_EXPORT_FAILURE = 'Export failed. Please request a new export.';
+const EXPORT_FAILURE_MESSAGES = Object.freeze({
+  EXPORT_LIMIT_EXCEEDED: 'This export is too large. Narrow the filters and request a smaller export.',
+});
+
 const toIsoString = (value) => (value ? new Date(value).toISOString() : null);
 
 const toPublicExport = (record) => ({
@@ -15,7 +20,10 @@ const toPublicExport = (record) => ({
   format: record.format,
   status: record.status,
   rowCount: record.row_count,
-  error: record.status === 'failed' ? 'Export failed. Please request a new export.' : null,
+  error: record.status === 'failed'
+    ? EXPORT_FAILURE_MESSAGES[record.error_code] || GENERIC_EXPORT_FAILURE
+    : null,
+  errorCode: record.status === 'failed' ? record.error_code : null,
   createdAt: toIsoString(record.created_at),
   startedAt: toIsoString(record.started_at),
   completedAt: toIsoString(record.completed_at),

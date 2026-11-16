@@ -1,5 +1,8 @@
 const {
   EXPORT_COLUMNS,
+  EXPORT_LIMITS,
+  EXPORT_LIMIT_ERROR_CODE,
+  assertExportWithinLimits,
   contentTypeFor,
   extensionFor,
   formatEventRow,
@@ -103,6 +106,31 @@ describe('P1-02 export formatting', () => {
     expect(parsed).toHaveLength(2);
     expect(parsed[0].lot_links).toEqual(event.lot_links);
     expect(parsed[1].event_datetime).toBe('2026-11-16T10:00:00.000Z');
+  });
+
+  it('enforces the row and byte export limits', () => {
+    expect(() => assertExportWithinLimits({
+      rowCount: EXPORT_LIMITS.maxRows,
+      bytes: EXPORT_LIMITS.maxBytes,
+    })).not.toThrow();
+
+    const expectLimitError = (input) => {
+      let error;
+      try {
+        assertExportWithinLimits(input);
+      } catch (err) {
+        error = err;
+      }
+      expect(error).toMatchObject({ code: EXPORT_LIMIT_ERROR_CODE });
+    };
+
+    expectLimitError({ rowCount: EXPORT_LIMITS.maxRows + 1, bytes: 0 });
+    expectLimitError({ rowCount: 0, bytes: EXPORT_LIMITS.maxBytes + 1 });
+    expectLimitError({
+      rowCount: 3,
+      bytes: 0,
+      limits: { maxRows: 2, maxBytes: 1024 },
+    });
   });
 
   it('maps formats to content types and extensions', () => {

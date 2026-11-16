@@ -179,6 +179,9 @@ different tenant or format.
 - The download endpoint checks `organization_id`, then signs a 5-minute URL with
   `Content-Disposition: attachment`. Raw storage keys are never returned.
 - No automatic retries: a failed export is surfaced and can be requested again.
+- Exports are capped at 1,000,000 rows or 512 MiB. Exceeding either limit fails
+  the export with `error_code = 'EXPORT_LIMIT_EXCEEDED'` and an `export_failed`
+  notification; the API returns a safe message and code.
 
 **Retention:** the `export_cleanup` maintenance job runs daily at `03:15 UTC`.
 It marks `queued`/`processing` rows older than one hour as failed, then deletes
