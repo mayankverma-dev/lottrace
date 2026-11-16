@@ -46,7 +46,7 @@
 │  │              BullMQ Workers (same Node process or separate)  │ │
 │  │                                                               │ │
 │  │   • import-processor  — parse CSV, validate rows, insert     │ │
-│  │   • export-generator  — build CSV/PDF, upload to S3, notify  │ │
+│  │   • export-generator  — build CSV/JSON, upload to S3, notify │ │
 │  │   • hash-verifier     — walk event chain, verify integrity   │ │
 │  │   • email-sender      — compliance gap digests, invites      │ │
 │  │   • webhook-dispatcher— fan-out outbound webhook calls       │ │
