@@ -102,7 +102,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-11 | P1 | Refresh-token rotation races log users out | Open |
 | P1-12 | P1 | User lifecycle breaks on global email uniqueness | Open |
 | P1-13 | P1 | Notification 404 builds an invalid AppError | Fixed (2026-11-09, 18744eb) |
-| P1-14 | P1 | Rate limiting collapses all users behind a proxy | Fixed (commit pending) |
+| P1-14 | P1 | Rate limiting collapses all users behind a proxy | Fixed (2026-11-17, 6a1703d) |
 | P1-15 | P1 | `EMAIL_DRY_RUN=false` enables dry-run | Fixed (2026-11-09, a964d91) |
 | P1-16 | P1 | Seed script truncates any database it is pointed at | Fixed (2026-11-09, 93bfed5) |
 | P1-17 | P1 | Database TLS disables certificate verification | Open |
@@ -462,7 +462,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-14 — Rate limiting collapses all users behind a proxy
 
-- **Severity:** P1 · **Area:** backend / deployment · **Status:** Fixed (commit pending)
+- **Severity:** P1 · **Area:** backend / deployment · **Status:** Fixed (2026-11-17, 6a1703d)
 - **Evidence:** `backend/src/app.js` (no `app.set('trust proxy', ...)`), `backend/src/middleware/rateLimiter.js:6-40` (default IP key; auth limit 50/15 min).
 - **Fix:** Added `backend/src/config/trustProxy.js` to parse an exact hop count or trusted CIDR list from `TRUST_PROXY`, rejecting `true` and invalid entries at startup. `backend/src/app.js` now sets `trust proxy` before middleware, and `backend/src/server.js` logs the resolved value and warns in production when it is disabled. `backend/src/middleware/rateLimiter.js` keys the edge limiter by normalized client IP, keys auth attempts by hashed normalized email/token plus IP, adds a per-user limiter invoked by `authenticate` after JWT verification, and sets `passOnStoreError` on every limiter. `backend/src/config/rateLimitRedis.js` is a separate fail-fast Redis client so limiter store failures cannot hang or 500 requests.
 - **What happens:** In production the API sits behind Vercel/Cloudflare/nginx/ngrok, so `req.ip` is the proxy's IP for every user. All users share one 1000-request bucket and one 50-request auth bucket. One busy user (or a scanner loop) locks out every tenant; 50 login attempts across the whole platform trigger a global 429. If `trust proxy` is later enabled blindly, clients can spoof `X-Forwarded-For` and bypass limits entirely.
