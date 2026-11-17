@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-17
-**Last Session:** 2026-11-17 — P0-15 and P1-12 fixed. Email verification now returns its tokens instead of a 500 after creating the account. User lifecycle now follows the global email identity model: invites resolve any existing user through the RLS email policy, deactivated accounts return `409 EMAIL_DEACTIVATED`, and reactivating a never-accepted invite re-sends a fresh invitation instead of activating a passwordless account. Live smoke rows 1, 2, 3, 13, 19 and 20 pass; Playwright checks pass.
+**Last Session:** 2026-11-17 — P1-36, P1-37, P1-38, P2-31, P2-32, and P2-33 fixed. Pending invitations now return `409 EMAIL_INVITED`; deactivation immediately denies existing access tokens; invitation resend writes are organization-scoped; database email uniqueness uses `lower(email)`; invite emails run after tenant commit; and local refresh-token encryption is configured. Focused DB, middleware, migration, and refresh tests pass.
 
 ---
 
@@ -81,6 +81,38 @@ P1-34, P1-35, P2-30 — audit ordering, fail-closed authentication, and Redis st
 - `backend/src/config/rateLimitRedis.js` (startup-only offline queue)
 - Tests: `backend/src/middleware/auditLogger.test.js`, `backend/src/middleware/authenticate.rate-limit.test.js`, `backend/src/config/rateLimitRedis.test.js`
 - Docs: `docs/AUDIT_REPORT.md`, `docs/SECURITY.md`, `PROGRESS.md`
+
+P1-36 — pending invitation blocks independent signup:
+- `backend/src/modules/auth/auth.service.js` returns `EMAIL_INVITED`
+- Tests: `backend/src/modules/auth/auth.verify-email.test.js`
+- Docs: `docs/API_STANDARDS.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
+
+P1-37 — deactivated access tokens remain valid:
+- `backend/src/modules/users/users.service.js` manages `du_<userId>` deny keys
+- `backend/src/middleware/authenticate.js` rejects deactivated sessions
+- Tests: `backend/src/modules/users/users.lifecycle.test.js`, `backend/src/middleware/authenticate.rate-limit.test.js`
+- Docs: `docs/API_STANDARDS.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
+
+P1-38 — invitation resend lacked organization scope:
+- `backend/src/modules/users/users.service.js` scopes resend update by organization and status
+- Tests: `backend/src/modules/users/users.lifecycle.test.js`
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
+
+P2-31 — database email uniqueness was case-sensitive:
+- `backend/src/db/migrations/20260702172631_enforce_global_unique_email.js` uses `lower(email)` expression index
+- Tests: `backend/src/modules/users/users.lifecycle.test.js`
+- Docs: `docs/DATABASE_SCHEMA.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
+
+P2-32 — invite emails sent before tenant commit:
+- `backend/src/db/tenantContext.js`, `backend/src/db/tenantTransaction.js`, `backend/src/middleware/tenantScope.js`
+- `backend/src/modules/users/users.service.js` queues invite emails post-commit
+- Tests: `backend/src/middleware/tenantScope.test.js`
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
+
+P2-33 — local refresh-token encryption key missing:
+- Added ignored local key to `backend/.env`; no repository commit
+- Verified `backend/src/modules/auth/auth.refresh.test.js` without inline key
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P1-04 — audit log export:
 - `backend/src/db/migrations/20240101000020_create_report_exports.js` (`type = events | audit`, `filters jsonb`)

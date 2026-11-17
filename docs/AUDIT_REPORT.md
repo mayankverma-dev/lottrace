@@ -125,6 +125,9 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-33 | P1 | Manual receiving accepts output lots | Fixed (2026-11-15, 10cca16) |
 | P1-34 | P1 | Middleware audit rows race request transaction commit | Fixed (2026-11-17, 3d9509b) |
 | P1-35 | P1 | Redis outage can hang token blacklist authentication | Fixed (2026-11-17, 3d9509b) |
+| P1-36 | P1 | Pending invitation blocks independent signup | Fixed (2026-11-17, 17f0e25) |
+| P1-37 | P1 | Deactivated user's access token remains valid | Fixed (2026-11-17, 6592ce4) |
+| P1-38 | P1 | Invitation resend write lacks organization scope | Fixed (2026-11-17, e56f79b) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Fixed (2026-11-16, a2ac086) |
 | P2-02 | P2 | API response pagination shape is inconsistent | Fixed (2026-11-14, fdb11d7) |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Fixed (2026-11-15, 3915392) |
@@ -154,6 +157,9 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-27 | P2 | Audit export timestamps lose microsecond precision | Fixed (2026-11-16, 35ea91c) |
 | P2-28 | P2 | Audit page shows generic error when role lacks audit access | Fixed (2026-11-16, 3824bdd) |
 | P2-30 | P2 | RedisStore script initialization fails during API boot | Fixed (2026-11-17, 3d9509b) |
+| P2-31 | P2 | Database email uniqueness is case-sensitive | Fixed (2026-11-17, c80b282) |
+| P2-32 | P2 | Invite email sends before tenant transaction commits | Fixed (2026-11-17, e5f4435) |
+| P2-33 | P2 | Local environment lacks refresh-token encryption key | Fixed locally (2026-11-17, no commit) |
 
 ---
 
@@ -687,6 +693,29 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Fix:** Blacklist reads now use the dedicated fail-fast rate-limit Redis client. Lookup errors fail closed with `503 AUTH_UNAVAILABLE` and `Retry-After: 5`; revoked tokens remain `401 AUTH_SESSION_REVOKED`. The shared BullMQ client remains unchanged for worker workloads.
 - **Verified:** Authentication tests cover successful, revoked, invalid, and Redis-error paths. The Redis-error regression asserts no JWT verification or downstream limiter call occurs and the response contract is `503` with `Retry-After: 5`.
 
+## P1-36 — Pending invitation blocks independent signup
+
+- **Severity:** P1 · **Area:** backend / auth · **Status:** Fixed (2026-11-17, 17f0e25)
+- **Evidence:** `register()` treated every existing user as `EMAIL_IN_USE`, including unaccepted `invited` users.
+- **Impact:** A recipient with a pending invitation had no clear recovery path and could not create an independent account.
+- **Fix:** Pending invitations reserve the email and return `409 EMAIL_INVITED` with invitation-acceptance guidance. No row reassignment or cross-tenant mutation occurs.
+- **Verified:** `auth.verify-email.test.js` asserts the error, unchanged invited row, no verification email, and no pending signup state.
+
+## P1-37 — Deactivated user's access token remains valid
+
+- **Severity:** P1 · **Area:** backend / auth · **Status:** Fixed (2026-11-17, 6592ce4)
+- **Evidence:** Deactivation revoked refresh tokens but authentication checked only JWT validity and token blacklist state.
+- **Impact:** Existing access tokens remained usable until expiration.
+- **Fix:** Deactivation writes `du_<userId>` with a 31-minute TTL. Authentication rejects that key with `401 AUTH_SESSION_REVOKED`; reactivation deletes it. Redis lookup failures fail closed with 503.
+- **Verified:** Lifecycle and authentication middleware tests cover deny-key creation, removal, rejection, and Redis failure.
+
+## P1-38 — Invitation resend write lacks organization scope
+
+- **Severity:** P1 · **Area:** backend / tenant isolation · **Status:** Fixed (2026-11-17, e56f79b)
+- **Evidence:** Resend lookup was organization-scoped, but the update predicate used only the user ID and status.
+- **Fix:** The update now requires `id`, `organization_id`, and `status = 'invited'`.
+- **Verified:** Lifecycle test confirms a cross-organization resend returns 404 and preserves the original token hash.
+
 ---
 
 # P2 — Robustness, performance, and delivery
@@ -945,6 +974,28 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Verified:** Focused client test asserts the `true → false` transition. API boot against local Redis completed without store-initialization errors and logged `Rate-limit Redis ready; offline queue disabled`.
 
 ---
+
+## P2-31 — Database email uniqueness is case-sensitive
+
+- **Severity:** P2 · **Area:** backend / database integrity · **Status:** Fixed (2026-11-17, c80b282)
+- **Evidence:** The global `UNIQUE(email)` constraint allowed direct writers to insert case variants of one email identity.
+- **Fix:** Replace the constraint with `users_email_normalized_unique ON users (lower(email))`. The greenfield development database was reset and migrated from scratch.
+- **Verified:** Lifecycle DB test rejects exact and case-variant duplicates. Fresh migration shows the normalized unique expression index.
+
+## P2-32 — Invite email sends before tenant transaction commits
+
+- **Severity:** P2 · **Area:** backend / transactions / notifications · **Status:** Fixed (2026-11-17, e5f4435)
+- **Evidence:** Invite, reactivation, and resend flows sent email while the tenant request transaction remained open.
+- **Impact:** A later rollback could leave a recipient with an unusable invitation.
+- **Fix:** Tenant context queues post-commit callbacks. Successful commits run callbacks best-effort; rollbacks discard them. Direct service calls execute callbacks immediately.
+- **Verified:** `tenantScope.test.js` confirms callbacks run after commit and never run after rollback. Callback failures are logged without changing the committed response.
+
+## P2-33 — Local environment lacks refresh-token encryption key
+
+- **Severity:** P2 · **Area:** backend / local development · **Status:** Fixed locally (2026-11-17, no commit)
+- **Evidence:** `backend/.env` lacked required `REFRESH_TOKEN_ENCRYPTION_KEY`, so local startup and refresh tests required an inline override.
+- **Fix:** Added a local random key to ignored `backend/.env`. `.env.example` already documents the variable; no secret entered Git.
+- **Verified:** `auth.refresh.test.js` passes against disposable `localhost/lottrace_fixes_test` without an inline encryption key.
 
 # Recommended fix order
 
