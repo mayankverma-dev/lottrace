@@ -225,6 +225,8 @@ const verifyEmail = async ({ email, otp }) => {
       refreshToken: tokens.rawRefreshToken,
     };
   });
+
+  return result;
 };
 
 /**
