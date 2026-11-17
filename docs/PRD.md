@@ -278,6 +278,11 @@ Local → Staging (mirrors prod, used for UAT/demos) → Production. Separate da
 **Business Rules**
 - The last remaining Org Admin cannot self-deactivate/self-demote (prevents account lockout)
 - Role changes apply immediately, not at next login (must invalidate cached permission checks)
+- Email is globally unique. One user belongs to one organization; there is no
+  cross-org transfer in v1. A deactivated account keeps its email reserved and
+  must be reactivated by the owning organization. Reactivating a user who never
+  accepted the invitation re-sends a fresh invitation instead of activating an
+  account that cannot log in.
 
 **Edge Cases**
 - Deactivated user has historical events attributed to them → those events keep showing the user's identity in the audit trail; never cascade-delete or anonymize a deactivated user's historical attribution

@@ -45,6 +45,10 @@ CREATE INDEX idx_organizations_status ON organizations(status);
 
 ### `users`
 One row per person. Scoped to one org (v1 — multi-org membership is v2+).
+Email is globally unique across every organization: one account belongs to
+exactly one organization, and there is no cross-org transfer in v1. A
+deactivated account keeps its email reserved until the owning organization
+reactivates it.
 ```sql
 CREATE TABLE users (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -62,13 +66,17 @@ CREATE TABLE users (
   updated_at        timestamptz NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_users_email_org ON users(email, organization_id);
+-- One account per email across all tenants. This is the identity key, not a
+-- per-organization handle.
+ALTER TABLE users ADD CONSTRAINT users_email_unique UNIQUE (email);
 CREATE INDEX idx_users_org_status ON users(organization_id, status);
-CREATE INDEX idx_users_email ON users(email);                  -- for login lookup
 ```
 
 **Valid roles:** `org_admin` · `compliance_manager` · `operator` · `auditor` · `super_admin`
-**Status flow:** `invited` → `active` → `deactivated`
+**Status flow:** `invited` → `active` → `deactivated`. Reactivating a
+deactivated user who never set a password returns the account to `invited`
+with a fresh token; reactivating a user who has a password returns it to
+`active`.
 
 ---
 

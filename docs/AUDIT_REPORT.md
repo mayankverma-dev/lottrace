@@ -80,6 +80,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-03 | P0 | Event creation accepts lots from other organizations | Fixed (2026-11-11, 63ce814) |
 | P0-13 | P0 | Event creation accepts cross-tenant locationId | Fixed (2026-11-11, 104a774) |
 | P0-14 | P0 | Lot creation accepts cross-tenant productId | Fixed (2026-11-11, ef77049) |
+| P0-15 | P0 | Email verification returns 500 after creating the account | Fixed (commit pending) |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Fixed (2026-11-13, a0d9a8f) |
 | P0-05 | P0 | Row Level Security is inert at runtime | Fixed (2026-11-16, 2e0d728) |
 | P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Fixed (2026-11-13, 2c31091) |
@@ -100,7 +101,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-09 | P1 | PWA caches authenticated lot responses across users | Open |
 | P1-10 | P1 | Attachment keys are client-trusted; no download or list | Open |
 | P1-11 | P1 | Refresh-token rotation races log users out | Fixed (2026-11-17, bf7f1cb) |
-| P1-12 | P1 | User lifecycle breaks on global email uniqueness | Open |
+| P1-12 | P1 | User lifecycle breaks on global email uniqueness | Fixed (commit pending) |
 | P1-13 | P1 | Notification 404 builds an invalid AppError | Fixed (2026-11-09, 18744eb) |
 | P1-14 | P1 | Rate limiting collapses all users behind a proxy | Fixed (2026-11-17, 6a1703d) |
 | P1-15 | P1 | `EMAIL_DRY_RUN=false` enables dry-run | Fixed (2026-11-09, a964d91) |
@@ -214,6 +215,16 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Real-world impact:** Cross-tenant product metadata can enter org A lot history and contaminate traceability records.
 - **Fix direction:** Validate the product inside the lot creation transaction with `id` and `organization_id`; return `404 NOT_FOUND` for unknown or foreign products. Add composite `(id, organization_id)` and `(product_id, organization_id)` database keys. Edit original migrations and reset the disposable development database; no backfill or compatibility path. Keep P2-04 separate.
 - **Verification:** As org A, create a lot with org B's product; expect 404 and no lot or audit row. Submit an unknown product; expect the same 404. Submit an org-A product; expect successful lot creation and audit logging.
+
+## P0-15 — Email verification returns 500 after creating the account
+
+- **Severity:** P0 · **Area:** backend / auth · **Status:** Fixed (commit pending)
+- **Evidence:** `backend/src/modules/auth/auth.service.js:174` assigns `const result = await knex.transaction(...)` and never returns it; `backend/src/modules/auth/auth.controller.js:33` reads `result.refreshToken`.
+- **What happens:** `POST /auth/verify-email` commits the organization and user, deletes the Redis OTP, then throws `TypeError: Cannot read properties of undefined (reading 'refreshToken')` and returns 500. The client never receives tokens, and a retry fails because the OTP is gone. The account exists with a valid password, so login works only if the user guesses that verification actually succeeded.
+- **Real-world impact:** Every self-serve registration ends in a 500. Smoke matrix row 1 fails.
+- **Fix direction:** Return the transaction result from `verifyEmail` and add a regression test covering register → verify → login.
+- **Fix:** `verifyEmail` now returns the transaction result. Regression test: `backend/src/modules/auth/auth.verify-email.test.js` (register, verify OTP, assert tokens and active user, then login).
+- **Verification:** DB test passes. Live smoke row 1 returns 201 register, 200 verify, 200 login, refresh/logout behavior intact.
 
 ## P0-04 — Amendment is not atomic and can leave inconsistent history
 
@@ -443,7 +454,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-12 — User lifecycle breaks on global email uniqueness
 
-- **Severity:** P1 · **Area:** backend / users + auth · **Status:** Open
+- **Severity:** P1 · **Area:** backend / users + auth · **Status:** Fixed (commit pending)
 - **Evidence:** `backend/src/modules/users/users.service.js:78-91` (duplicate lookup **excludes** `deactivated`), `:99-108` (insert), `:238-248` (reactivate sets `active` unconditionally), `:282-295` (resend only accepts `status='invited'`), `backend/src/db/migrations/20260702172631_enforce_global_unique_email.js` (`UNIQUE(email)` exists).
 - **What happens:** Three related defects:
   1. **Deactivated email invite → 500:** the duplicate check deliberately ignores deactivated rows, but the database now enforces global `UNIQUE(email)`. Inviting a previously deactivated user (same org or another org) passes the check and then throws a unique violation, which the error handler maps to a generic 409/500. There is no path to rehire or move a user.
@@ -452,6 +463,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Real-world impact:** Contractors and employees who change organizations get stuck in a 500/409 loop or a permanent login failure. Admins work around it with direct DB edits, which breaks the audit trail.
 - **Fix direction:** Handle the deactivated case explicitly: look up **any** existing user by email; if deactivated, return `409 EMAIL_DEACTIVATED` with a supported recovery action (reactivate, or an admin-approved transfer). On reactivate, if `password_hash IS NULL`, set status to `invited`, generate a fresh token, and send the invite. Document that email is globally unique and one user belongs to one org; if cross-org membership is a product requirement, add a `memberships` table instead of duplicating users. Add tests for deactivate → invite elsewhere, deactivate → re-invite same org, and invited → deactivate → reactivate.
 - **Greenfield note:** Design the final identity model now. Do not preserve old user rows or historical attribution across organization moves; reset the development data. If cross-org membership is a product requirement, add a `memberships` table from the start instead of mutating `users.organization_id`.
+- **Fix:** `users.service.js` now looks up any user by email through the existing `user_auth_lookup` RLS policy (`app.auth_email`), returns `409 EMAIL_DEACTIVATED` for deactivated accounts and `409 DUPLICATE_ENTRY` for active/invited accounts, and maps insert races to `DUPLICATE_ENTRY`. Reactivation claims the row with `status='deactivated'`; a NULL `password_hash` returns the user to `invited` with a fresh 72-hour token and invite email, while a user with a password returns to `active`. The controller reports invite-vs-reactivate. Email identity, one-user-one-org, and no cross-org transfer are documented in `docs/API_STANDARDS.md`, `docs/DATABASE_SCHEMA.md`, `docs/PRD.md`, and `docs/VALIDATION_RULES.md`. Tests: `backend/src/modules/users/users.lifecycle.test.js` (9 DB tests). No schema change, no backfill, no compatibility path.
 - **Verification:** Invite `a@x.com`, deactivate, invite again → clear 409 with a recovery option, not a 500. Reactivate a never-accepted invite → the user receives a working invite and can set a password. Login resolves exactly one user.
 
 ## P1-13 — Notification 404 builds an invalid AppError

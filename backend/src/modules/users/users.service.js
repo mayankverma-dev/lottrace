@@ -69,25 +69,65 @@ const getUserById = async (organizationId, userId) => {
 };
 
 /**
+ * Finds a user by email across organizations.
+ *
+ * Request queries run inside the tenant transaction, whose RLS policy exposes
+ * only the current organization. `app.auth_email` opens the existing
+ * `user_auth_lookup` SELECT policy for exactly one email. The setting is
+ * transaction-local and reset immediately after the lookup.
+ *
+ * @param {string} email
+ * @returns {Promise<{ id: string, organization_id: string, status: string } | undefined>}
+ */
+const findAnyUserByEmail = async (email) => {
+  await db.raw('SELECT set_config(?, ?, true)', ['app.auth_email', email]);
+  try {
+    return await db('users')
+      .select('id', 'organization_id', 'status')
+      .where({ email })
+      .first();
+  } finally {
+    // A failed lookup has already aborted the request transaction, so the
+    // setting dies with it. Only the successful path needs the reset.
+    await db.raw('SELECT set_config(?, ?, true)', ['app.auth_email', '']).catch(() => {});
+  }
+};
+
+/**
  * Invite a new user to the organization.
  * Creates user with status 'invited' and generates invite token.
+ * Email identity is global: one user belongs to one organization.
  * @param {string} organizationId
  * @param {{ email: string, firstName: string, lastName: string, role: string }} data
- * @param {string} invitedBy - ID of user sending invite
  */
-const inviteUser = async (organizationId, data, invitedBy) => {
-  // Check duplicate email globally
-  const existing = await db('users')
-    .where({ email: data.email })
-    .whereNot({ status: 'deactivated' })
-    .first();
+const inviteUser = async (organizationId, data) => {
+  const existing = await findAnyUserByEmail(data.email);
 
   if (existing) {
-    if (existing.organization_id === organizationId) {
-      throw new AppError('User is already in this organization', 'DUPLICATE_ENTRY', 409);
-    } else {
-      throw new AppError('This email is already registered to another organization', 'DUPLICATE_ENTRY', 409);
+    if (existing.status === 'deactivated') {
+      const sameOrganization = existing.organization_id === organizationId;
+      throw new AppError(
+        sameOrganization
+          ? 'This user is deactivated. Reactivate the existing user instead of sending a new invite.'
+          : 'This email belongs to a deactivated account. The owning organization must reactivate it before it can be invited again.',
+        'EMAIL_DEACTIVATED',
+        409,
+        [{
+          field: 'email',
+          message: sameOrganization
+            ? 'Reactivate the existing user in this organization.'
+            : 'The account must be reactivated by its organization before it can be invited.',
+        }],
+      );
     }
+
+    throw new AppError(
+      existing.organization_id === organizationId
+        ? 'User is already in this organization'
+        : 'This email is already registered to an existing LotTrace account',
+      'DUPLICATE_ENTRY',
+      409,
+    );
   }
 
   // Generate invite token
@@ -95,18 +135,31 @@ const inviteUser = async (organizationId, data, invitedBy) => {
   const inviteTokenHash = crypto.createHash('sha256').update(inviteToken).digest('hex');
   const inviteExpiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000); // 72 hours
 
-  const [user] = await db('users')
-    .insert({
-      organization_id: organizationId,
-      first_name: data.firstName,
-      last_name: data.lastName,
-      email: data.email,
-      role: data.role,
-      status: 'invited',
-      invite_token_hash: inviteTokenHash,
-      invite_expires_at: inviteExpiresAt,
-    })
-    .returning('*');
+  let user;
+  try {
+    [user] = await db('users')
+      .insert({
+        organization_id: organizationId,
+        first_name: data.firstName,
+        last_name: data.lastName,
+        email: data.email,
+        role: data.role,
+        status: 'invited',
+        invite_token_hash: inviteTokenHash,
+        invite_expires_at: inviteExpiresAt,
+      })
+      .returning('*');
+  } catch (err) {
+    // Concurrent invite or signup claimed the email between lookup and insert.
+    if (err.code === '23505') {
+      throw new AppError(
+        'This email is already registered to an existing LotTrace account',
+        'DUPLICATE_ENTRY',
+        409,
+      );
+    }
+    throw err;
+  }
 
   const org = await db('organizations').where({ id: organizationId }).select('name').first();
   const organizationName = org ? org.name : 'LotTrace';
@@ -224,6 +277,8 @@ const deactivateUser = async (organizationId, userId, actorId) => {
 
 /**
  * Reactivate a deactivated user.
+ * A user who never set a password returns to 'invited' with a fresh token;
+ * the invite is the only way to establish credentials.
  * @param {string} organizationId
  * @param {string} userId
  */
@@ -240,10 +295,31 @@ const reactivateUser = async (organizationId, userId) => {
     throw new AppError('Only deactivated users can be reactivated', 'CONFLICT', 409);
   }
 
+  const updatePayload = {
+    status: user.password_hash ? 'active' : 'invited',
+    updated_at: db.fn.now(),
+  };
+
+  let inviteToken = null;
+  if (!user.password_hash) {
+    inviteToken = crypto.randomBytes(32).toString('hex');
+    updatePayload.invite_token_hash = crypto.createHash('sha256').update(inviteToken).digest('hex');
+    updatePayload.invite_expires_at = new Date(Date.now() + 72 * 60 * 60 * 1000);
+  }
+
   const [updated] = await db('users')
-    .where({ id: userId, organization_id: organizationId })
-    .update({ status: 'active', updated_at: db.fn.now() })
+    .where({ id: userId, organization_id: organizationId, status: 'deactivated' })
+    .update(updatePayload)
     .returning('*');
+
+  if (!updated) {
+    throw new AppError('Only deactivated users can be reactivated', 'CONFLICT', 409);
+  }
+
+  if (inviteToken) {
+    const org = await db('organizations').where({ id: organizationId }).select('name').first();
+    await emailService.sendInviteEmail(user.email, inviteToken, org ? org.name : 'LotTrace');
+  }
 
   return formatUser(updated);
 };

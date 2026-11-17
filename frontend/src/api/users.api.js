@@ -72,9 +72,9 @@ export const useReactivateUser = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (userId) => api.post(`/users/${userId}/reactivate`),
-    onSuccess: () => {
+    onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: USERS_KEYS.all });
-      toast.success('User reactivated');
+      toast.success(response.data?.message ?? 'User reactivated');
     },
     onError: (err) => {
       toast.error(err.response?.data?.message ?? 'Failed to reactivate user');

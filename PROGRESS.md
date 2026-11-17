@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-17
-**Last Session:** 2026-11-17 — P1-34, P1-35, and P2-30 fixed. Audit middleware now writes before the tenant transaction commits; token blacklist checks use a fail-fast Redis client and return `503 AUTH_UNAVAILABLE` on lookup failure; RedisStore startup script loading queues only until the first `ready` event. Targeted backend tests and disposable-local live export verification pass.
+**Last Session:** 2026-11-17 — P0-15 and P1-12 fixed. Email verification now returns its tokens instead of a 500 after creating the account. User lifecycle now follows the global email identity model: invites resolve any existing user through the RLS email policy, deactivated accounts return `409 EMAIL_DEACTIVATED`, and reactivating a never-accepted invite re-sends a fresh invitation instead of activating a passwordless account. Live smoke rows 1, 2, 3, 13, 19 and 20 pass; Playwright checks pass.
 
 ---
 
@@ -55,6 +55,18 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P0-15 — email verification returned 500 after account creation:
+- `backend/src/modules/auth/auth.service.js` (return verification result)
+- Tests: `backend/src/modules/auth/auth.verify-email.test.js`
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
+
+P1-12 — user lifecycle with global email uniqueness:
+- `backend/src/modules/users/users.service.js` (RLS email lookup, `EMAIL_DEACTIVATED`, invite-vs-reactivate)
+- `backend/src/modules/users/users.controller.js` (reactivate message reflects invite)
+- `frontend/src/api/users.api.js` (toast uses API message)
+- Tests: `backend/src/modules/users/users.lifecycle.test.js`
+- Docs: `docs/AUDIT_REPORT.md`, `docs/API_STANDARDS.md`, `docs/DATABASE_SCHEMA.md`, `docs/PRD.md`, `docs/VALIDATION_RULES.md`, `PROGRESS.md`
 
 P1-14 — proxy-aware rate limiting:
 - `backend/src/config/trustProxy.js`, `backend/src/config/rateLimitRedis.js`

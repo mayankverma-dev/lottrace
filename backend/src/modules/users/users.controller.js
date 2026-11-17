@@ -12,7 +12,7 @@ const getUser = async (req, res) => {
 };
 
 const inviteUser = async (req, res) => {
-  const user = await usersService.inviteUser(req.organizationId, req.validatedBody, req.user.id);
+  const user = await usersService.inviteUser(req.organizationId, req.validatedBody);
   return apiResponse.created(res, user, 'User invited successfully');
 };
 
@@ -33,7 +33,10 @@ const deactivateUser = async (req, res) => {
 
 const reactivateUser = async (req, res) => {
   const user = await usersService.reactivateUser(req.organizationId, req.params.userId);
-  return apiResponse.success(res, user, 'User reactivated successfully');
+  const message = user.status === 'invited'
+    ? 'Invitation sent successfully'
+    : 'User reactivated successfully';
+  return apiResponse.success(res, user, message);
 };
 
 const resendInvite = async (req, res) => {

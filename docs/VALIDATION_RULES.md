@@ -93,6 +93,10 @@ const updateUserSchema = z.object({
 }).strict();
 ```
 
+Email is globally unique. `POST /users/invite` returns `409 DUPLICATE_ENTRY`
+for an active or invited user and `409 EMAIL_DEACTIVATED` for a deactivated
+user. Validation itself is unchanged.
+
 ---
 
 ## Location Schemas
