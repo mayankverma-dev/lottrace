@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-17
-**Last Session:** 2026-11-17 — P1-14 fixed. Rate limiting now trusts the exact configured proxy chain, keys auth attempts by normalized email/token hash plus IP, adds a per-user limiter after JWT verification, normalizes IPv6 keys, and fails open when the rate-limit Redis client is unavailable. Targeted backend tests pass.
+**Last Session:** 2026-11-17 — P1-34, P1-35, and P2-30 fixed. Audit middleware now writes before the tenant transaction commits; token blacklist checks use a fail-fast Redis client and return `503 AUTH_UNAVAILABLE` on lookup failure; RedisStore startup script loading queues only until the first `ready` event. Targeted backend tests and disposable-local live export verification pass.
 
 ---
 
@@ -62,6 +62,13 @@ P1-14 — proxy-aware rate limiting:
 - `backend/src/middleware/rateLimiter.js`, `backend/src/middleware/authenticate.js`
 - Tests: `backend/src/config/trustProxy.test.js`, `backend/src/config/env.test.js`, `backend/src/middleware/rateLimiter.test.js`, `backend/src/middleware/rateLimiter.proxy.test.js`, `backend/src/middleware/rateLimiter.fail-open.test.js`, `backend/src/middleware/authenticate.rate-limit.test.js`
 - Docs: `backend/.env.example`, `docs/ENVIRONMENT_SETUP.md`, `docs/SECURITY.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
+
+P1-34, P1-35, P2-30 — audit ordering, fail-closed authentication, and Redis startup:
+- `backend/src/middleware/auditLogger.js` (await audit insert before response)
+- `backend/src/middleware/authenticate.js` (fail-fast blacklist lookup and `503 AUTH_UNAVAILABLE`)
+- `backend/src/config/rateLimitRedis.js` (startup-only offline queue)
+- Tests: `backend/src/middleware/auditLogger.test.js`, `backend/src/middleware/authenticate.rate-limit.test.js`, `backend/src/config/rateLimitRedis.test.js`
+- Docs: `docs/AUDIT_REPORT.md`, `docs/SECURITY.md`, `PROGRESS.md`
 
 P1-04 — audit log export:
 - `backend/src/db/migrations/20240101000020_create_report_exports.js` (`type = events | audit`, `filters jsonb`)

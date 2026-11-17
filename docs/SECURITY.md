@@ -99,6 +99,10 @@ if (!lot) throw new AppError('Lot not found', 'NOT_FOUND', 404);
   endpoints
 - Redis limiter failures fail open with a logged error; availability is
   preferred over strict limiting during a Redis outage
+- Token blacklist lookup failures fail closed: authentication returns `503 AUTH_UNAVAILABLE`
+  with `Retry-After: 5` rather than accepting a token without revocation verification.
+- The rate-limit Redis client permits only startup script loading to use its offline queue;
+  it disables that queue after the first `ready` event so request-path failures remain bounded.
 
 ---
 

@@ -122,6 +122,8 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-31 | P1 | Organization settings exposes write controls to read-only roles | Fixed (2026-11-14, 12a5cf4) |
 | P1-32 | P1 | Location deactivate control uses update permission | Fixed (2026-11-14, 12a5cf4) |
 | P1-33 | P1 | Manual receiving accepts output lots | Fixed (2026-11-15, 10cca16) |
+| P1-34 | P1 | Middleware audit rows race request transaction commit | Fixed (2026-11-17, 3d9509b) |
+| P1-35 | P1 | Redis outage can hang token blacklist authentication | Fixed (2026-11-17, 3d9509b) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Fixed (2026-11-16, a2ac086) |
 | P2-02 | P2 | API response pagination shape is inconsistent | Fixed (2026-11-14, fdb11d7) |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Fixed (2026-11-15, 3915392) |
@@ -150,6 +152,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-26 | P2 | Export detail status badge is misaligned | Fixed (2026-11-16, 058f63c) |
 | P2-27 | P2 | Audit export timestamps lose microsecond precision | Fixed (2026-11-16, 35ea91c) |
 | P2-28 | P2 | Audit page shows generic error when role lacks audit access | Fixed (2026-11-16, 3824bdd) |
+| P2-30 | P2 | RedisStore script initialization fails during API boot | Fixed (2026-11-17, 3d9509b) |
 
 ---
 
@@ -654,6 +657,24 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Fix:** Receiving now requires at least one `inputs` entry and rejects any `outputs` entry with `422 VALIDATION_ERROR` (`details[].field = "outputs"`, message `Receiving events have no output lots`). The web app stops offering Output Lots for receiving (`SHOWS_OUTPUTS` in `recordEventPayload.js` and `RecordEventPage.jsx`).
 - **Verified:** `backend/src/modules/events/events.receiving-links.test.js` (5 schema tests) and the receiving case in `frontend/src/pages/events/recordEventPayload.test.js` pass, the full backend suite passes, and Playwright confirms the receiving form has no Output Lots section and saves an input-only receiving event.
 
+## P1-34 — Middleware audit rows race request transaction commit
+
+- **Severity:** P1 · **Area:** backend / audit trail · **Status:** Fixed (2026-11-17, 3d9509b)
+- **Evidence:** `backend/src/middleware/auditLogger.js` used `setImmediate` after calling the response method. `tenantScope` commits the request transaction on the response `finish` event, while `writeAuditLog` reuses that transaction through `AsyncLocalStorage`.
+- **What happens:** A successful audited request could return `202`, then attempt its audit insert after the tenant transaction had already committed. Knex logged `Transaction query already complete`, leaving actions such as `report.export` absent from the append-only audit trail.
+- **Real-world impact:** Compliance investigators could see the business operation but not the corresponding audit record, weakening the required evidence trail.
+- **Fix:** `auditLogger` now awaits the audit insert before calling the original response method. Audit failures are logged and do not suppress the successful business response.
+- **Verified:** Middleware ordering regression tests pass. A live `POST /api/v1/reports/export` returned `202` and produced a `report.export` row with microsecond timestamp in disposable local database `lottrace_p114_verify`. No post-response transaction error appeared in the boot/live log.
+
+## P1-35 — Redis outage can hang token blacklist authentication
+
+- **Severity:** P1 · **Area:** backend / authentication / availability · **Status:** Fixed (2026-11-17, 3d9509b)
+- **Evidence:** `authenticate` used the shared BullMQ Redis client, configured with `maxRetriesPerRequest: null`, for the access-token blacklist lookup.
+- **What happens:** When Redis was unavailable, authentication could wait through indefinite command retries instead of returning a bounded response.
+- **Real-world impact:** Redis failure could exhaust API request capacity and make every authenticated endpoint appear hung. Failing open would also accept tokens without checking revocation.
+- **Fix:** Blacklist reads now use the dedicated fail-fast rate-limit Redis client. Lookup errors fail closed with `503 AUTH_UNAVAILABLE` and `Retry-After: 5`; revoked tokens remain `401 AUTH_SESSION_REVOKED`. The shared BullMQ client remains unchanged for worker workloads.
+- **Verified:** Authentication tests cover successful, revoked, invalid, and Redis-error paths. The Redis-error regression asserts no JWT verification or downstream limiter call occurs and the response contract is `503` with `Retry-After: 5`.
+
 ---
 
 # P2 — Robustness, performance, and delivery
@@ -901,6 +922,15 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **What happens:** Operators navigating directly to `/audit` saw a generic failure instead of a clear access decision.
 - **Fix:** The audit query is disabled when the current user lacks `audit.read`. The page renders `Access denied` with a permission explanation for unauthorized users and for API `403` responses.
 - **Verified:** Playwright login as `operator@a.test` showed `Access denied`, no audit request, and no export button. Permission regression test confirms operators lack `audit.read`.
+
+## P2-30 — RedisStore script initialization fails during API boot
+
+- **Severity:** P2 · **Area:** backend / rate limiting / startup · **Status:** Fixed (2026-11-17, 3d9509b)
+- **Evidence:** The rate-limit Redis client had `enableOfflineQueue: false` from construction. `express-rate-limit` initializes `RedisStore` scripts during app startup, before the Redis stream is writable, producing `Stream isn't writeable and enableOfflineQueue options is false`.
+- **What happens:** The API booted with store-initialization errors. Later requests could recover, but startup health and rate-limit initialization were noisy and unreliable.
+- **Real-world impact:** Deployments could appear started while rate limiting was not initialized cleanly, obscuring real Redis failures and creating an avoidable cold-start race.
+- **Fix:** The client permits its initial offline queue so RedisStore can load scripts during startup, then disables the queue on the first `ready` event. Request-path commands are fail-fast afterward; limiter errors continue to fail open through `passOnStoreError`.
+- **Verified:** Focused client test asserts the `true → false` transition. API boot against local Redis completed without store-initialization errors and logged `Rate-limit Redis ready; offline queue disabled`.
 
 ---
 
