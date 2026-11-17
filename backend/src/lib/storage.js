@@ -4,6 +4,7 @@ const {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   DeleteObjectCommand,
 } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
@@ -43,6 +44,14 @@ const generatePresignedDownloadUrl = async (
   return await getSignedUrl(s3, command, { expiresIn });
 };
 
+const headObject = async (key) => {
+  const result = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
+  return {
+    contentLength: result.ContentLength,
+    contentType: result.ContentType,
+  };
+};
+
 const uploadBuffer = async (key, buffer, contentType) => {
   const command = new PutObjectCommand({
     Bucket: BUCKET,
@@ -76,6 +85,7 @@ module.exports = {
   s3,
   generatePresignedUploadUrl,
   generatePresignedDownloadUrl,
+  headObject,
   uploadBuffer,
   uploadFile,
   deleteObject,

@@ -136,6 +136,8 @@ IDEMPOTENCY_KEY_IN_PROGRESS — Matching request is still processing
 LOT_VOIDED              — Operation not allowed on voided lot
 LOT_RECALLED            — Operation not allowed on recalled lot
 EVENT_IMMUTABLE         — Cannot edit a committed event (must supersede)
+ATTACHMENT_NOT_UPLOADED — Attachment object is not present in storage yet
+STORAGE_UNAVAILABLE     — Object storage could not verify an attachment
 
 IMPORT_IN_PROGRESS      — Import job already running for this file
 IMPORT_INVALID_FORMAT   — CSV format/encoding error
@@ -455,6 +457,9 @@ GET    /api/v1/events/:eventId
 POST   /api/v1/events/:eventId/amend
 POST   /api/v1/events/:eventId/void
 POST   /api/v1/events/:eventId/attachments
+GET    /api/v1/events/:eventId/attachments
+GET    /api/v1/attachments/:attachmentId/download
+DELETE /api/v1/attachments/:attachmentId
 
 Trace:
 GET    /api/v1/trace/:lotId/forward

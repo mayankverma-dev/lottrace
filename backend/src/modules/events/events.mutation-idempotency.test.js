@@ -22,6 +22,7 @@ jest.mock('../../jobs/queues', () => ({
 }));
 jest.mock('../../lib/storage', () => ({
   generatePresignedUploadUrl: jest.fn().mockResolvedValue('https://storage.test/upload'),
+  headObject: jest.fn().mockResolvedValue({ contentLength: 123, contentType: 'image/jpeg' }),
 }));
 jest.mock('../../utils/auditTrail', () => ({
   writeAuditLog: jest.fn().mockResolvedValue(undefined),
@@ -136,6 +137,7 @@ describeDb('P1-28 mutation idempotency', () => {
       const data = await eventsService.generateAttachmentUploadUrl(
         req.params.eventId,
         req.organizationId,
+        req.user.id,
         req.validatedBody.filename,
         req.validatedBody.contentType,
       );
@@ -324,12 +326,8 @@ describeDb('P1-28 mutation idempotency', () => {
     const event = await createEvent(org);
     const app = buildApp(org);
     const key = uuidv4();
-    const body = {
-      key: `attachments/${org.orgId}/${event.id}/photo.jpg`,
-      filename: 'photo.jpg',
-      contentType: 'image/jpeg',
-      sizeBytes: 123,
-    };
+    const upload = await eventsService.generateAttachmentUploadUrl(event.id, org.orgId, org.userId, 'photo.jpg', 'image/jpeg');
+    const body = { attachmentId: upload.attachmentId };
 
     const first = await request(app).post(`/${event.id}/attachments`).set('Idempotency-Key', key).send(body);
     const second = await request(app).post(`/${event.id}/attachments`).set('Idempotency-Key', key).send(body);
@@ -340,27 +338,24 @@ describeDb('P1-28 mutation idempotency', () => {
     expect(await db('event_evidence').where({ event_id: event.id })).toHaveLength(1);
   });
 
-  it('rejects attachment key reuse with changed metadata', async () => {
+  it('rejects attachment confirmation key reuse with a different attachment', async () => {
     const org = await seedOrganization('attachment-mismatch');
     const event = await createEvent(org);
     const app = buildApp(org);
     const key = uuidv4();
-    const body = {
-      key: `attachments/${org.orgId}/${event.id}/photo.jpg`,
-      filename: 'photo.jpg',
-      contentType: 'image/jpeg',
-    };
+    const upload = await eventsService.generateAttachmentUploadUrl(event.id, org.orgId, org.userId, 'photo.jpg', 'image/jpeg');
+    const secondUpload = await eventsService.generateAttachmentUploadUrl(event.id, org.orgId, org.userId, 'second.jpg', 'image/jpeg');
+    const body = { attachmentId: upload.attachmentId };
 
     const first = await request(app).post(`/${event.id}/attachments`).set('Idempotency-Key', key).send(body);
     const second = await request(app).post(`/${event.id}/attachments`).set('Idempotency-Key', key).send({
-      ...body,
-      filename: 'different.jpg',
+      attachmentId: secondUpload.attachmentId,
     });
 
     expect(first.status).toBe(201);
     expect(second.status).toBe(409);
     expect(second.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
-    expect(await db('attachments').where({ parent_type: 'event', parent_id: event.id })).toHaveLength(1);
+    expect(await db('attachments').where({ parent_type: 'event', parent_id: event.id })).toHaveLength(2);
   });
 
   it('creates one attachment under concurrent registration', async () => {
@@ -368,11 +363,8 @@ describeDb('P1-28 mutation idempotency', () => {
     const event = await createEvent(org);
     const app = buildApp(org);
     const key = uuidv4();
-    const body = {
-      key: `attachments/${org.orgId}/${event.id}/photo.jpg`,
-      filename: 'photo.jpg',
-      contentType: 'image/jpeg',
-    };
+    const upload = await eventsService.generateAttachmentUploadUrl(event.id, org.orgId, org.userId, 'photo.jpg', 'image/jpeg');
+    const body = { attachmentId: upload.attachmentId };
 
     const [first, second] = await Promise.all([
       request(app).post(`/${event.id}/attachments`).set('Idempotency-Key', key).send(body),
@@ -391,11 +383,8 @@ describeDb('P1-28 mutation idempotency', () => {
     const key = uuidv4();
 
     const invalid = await request(app).post(`/${event.id}/attachments`).set('Idempotency-Key', key).send({ filename: '' });
-    const valid = await request(app).post(`/${event.id}/attachments`).set('Idempotency-Key', key).send({
-      key: `attachments/${org.orgId}/${event.id}/photo.jpg`,
-      filename: 'photo.jpg',
-      contentType: 'image/jpeg',
-    });
+    const upload = await eventsService.generateAttachmentUploadUrl(event.id, org.orgId, org.userId, 'photo.jpg', 'image/jpeg');
+    const valid = await request(app).post(`/${event.id}/attachments`).set('Idempotency-Key', key).send({ attachmentId: upload.attachmentId });
 
     expect(invalid.status).toBe(422);
     expect(valid.status).toBe(201);

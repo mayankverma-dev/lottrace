@@ -46,6 +46,9 @@ jest.mock('./events.controller', () => {
     amendEvent: respond(201),
     generateAttachmentUploadUrl: respond(200),
     addAttachment: respond(201),
+    listAttachments: respond(200),
+    downloadAttachment: respond(200),
+    deleteAttachment: respond(200),
   };
 });
 
@@ -70,6 +73,13 @@ const ROUTES = [
     name: 'GET /:eventId',
     method: 'get',
     path: `/${EVENT_ID}`,
+    allowed: ['org_admin', 'compliance_manager', 'operator', 'auditor'],
+    successStatus: 200,
+  },
+  {
+    name: 'GET /:eventId/attachments',
+    method: 'get',
+    path: `/${EVENT_ID}/attachments`,
     allowed: ['org_admin', 'compliance_manager', 'operator', 'auditor'],
     successStatus: 200,
   },

@@ -98,6 +98,9 @@ const verifyEventEvidence = async (event, keyRing) => {
     } else if (evidence.kind === 'attachment_added') {
       const payloadValue = asJson(evidence.payload) || {};
       attachmentFacts.set(payloadValue.attachmentId, payloadValue);
+    } else if (evidence.kind === 'attachment_deleted') {
+      const payloadValue = asJson(evidence.payload) || {};
+      attachmentFacts.delete(payloadValue.attachmentId);
     } else {
       return {
         reason: 'evidence_payload_mismatch',
@@ -143,6 +146,7 @@ const verifyEventEvidence = async (event, keyRing) => {
       organization_id: event.organization_id,
       parent_type: 'event',
       parent_id: event.id,
+      status: 'uploaded',
     });
 
   const actualAttachments = new Map(attachmentRows.map((row) => [row.id, {

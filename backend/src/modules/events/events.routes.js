@@ -12,6 +12,7 @@ const {
   amendEventSchema,
   attachmentUploadSchema,
   addAttachmentSchema,
+  listAttachmentsQuerySchema,
   getEventsQuerySchema,
 } = require('./events.validation');
 
@@ -26,6 +27,13 @@ router.post(
   validate(createEventSchema),
   idempotency,
   eventsController.createEvent
+);
+
+router.get(
+  '/:eventId/attachments',
+  rbac(['org_admin', 'compliance_manager', 'operator', 'auditor']),
+  validate({ query: listAttachmentsQuerySchema }),
+  eventsController.listAttachments,
 );
 
 router.get(

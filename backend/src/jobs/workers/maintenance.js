@@ -2,6 +2,7 @@ const { Worker } = require('bullmq');
 const { connection } = require('../queues');
 const { purgeExpiredIdempotencyKeys } = require('../../utils/idempotency');
 const { runExportCleanup } = require('../../modules/reports/reports.retention');
+const { purgePendingAttachments } = require('../../modules/events/events.service');
 const logger = require('../../utils/logger');
 
 /**
@@ -20,6 +21,12 @@ const maintenanceWorker = new Worker(
     if (job.name === 'export_cleanup') {
       const result = await runExportCleanup();
       logger.info(result, 'Purged expired report exports');
+      return result;
+    }
+
+    if (job.name === 'attachment_cleanup') {
+      const result = await purgePendingAttachments();
+      logger.info(result, 'Purged expired pending attachments');
       return result;
     }
 

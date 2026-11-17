@@ -305,6 +305,23 @@ const voidEventSchema = z.object({
 });
 ```
 
+### Attachments
+```javascript
+const attachmentUploadSchema = z.object({
+  filename: z.string().min(1).max(255),
+  contentType: z.string().min(1).max(255),
+}).strict();
+
+const addAttachmentSchema = z.object({
+  attachmentId: z.string().uuid(),
+}).strict();
+
+```
+
+The server owns storage keys. Confirmation verifies the object with `HeadObject`,
+uses storage-reported size and content type, and enforces the approved MIME allowlist
+and 50 MiB maximum. Clients never submit storage keys or authoritative file size.
+
 ---
 
 ## Import Schemas

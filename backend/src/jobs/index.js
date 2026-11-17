@@ -33,6 +33,11 @@ const startWorkers = async () => {
     repeat: { pattern: '15 3 * * *' },
     jobId: 'export_cleanup_daily'
   });
+
+  await maintenanceQueue.add('attachment_cleanup', {}, {
+    repeat: { pattern: '30 * * * *' },
+    jobId: 'attachment_cleanup_hourly'
+  });
 };
 
 module.exports = {

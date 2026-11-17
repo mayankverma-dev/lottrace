@@ -3,9 +3,9 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Activity, ArrowLeft, MoreVertical, Ban, Edit2, Package, MapPin, Calendar, FileText, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Activity, ArrowLeft, MoreVertical, Ban, Edit2, Package, MapPin, Calendar, FileText, AlertTriangle, ShieldCheck, Paperclip, Download } from 'lucide-react';
 
-import { useGetEvent, useVoidEvent } from '@/api/events.api';
+import { useGetEvent, useVoidEvent, useGetEventAttachments, useGetAttachmentDownloadUrl } from '@/api/events.api';
 import { newIdempotencyKey } from '@/lib/idempotency';
 import { parseJsonArray, parseJsonObject } from '@/lib/json';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -61,7 +61,9 @@ const EventDetailPage = () => {
   const { can } = usePermissions();
 
   const { data: eventResult, isLoading, isError } = useGetEvent(id);
+  const { data: attachmentsResult, isLoading: attachmentsLoading } = useGetEventAttachments(id);
   const voidMutation = useVoidEvent();
+  const downloadMutation = useGetAttachmentDownloadUrl();
 
   const [voidOpen, setVoidOpen] = useState(false);
   const voidIdempotencyRef = useRef({ signature: null, key: null });
@@ -89,6 +91,11 @@ const EventDetailPage = () => {
 
   const onAmend = () => {
     navigate(`/events/record?amendEventId=${id}`);
+  };
+
+  const downloadAttachment = async (attachmentId) => {
+    const result = await downloadMutation.mutateAsync(attachmentId);
+    window.open(result.data.data.downloadUrl, '_blank', 'noopener,noreferrer');
   };
 
   if (isLoading) {
@@ -308,6 +315,35 @@ const EventDetailPage = () => {
           </Card>
         </div>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3 border-b">
+          <CardTitle className="text-base flex items-center gap-2"><Paperclip className="h-4 w-4" /> Attachments</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4">
+          {attachmentsLoading ? (
+            <Skeleton className="h-8 w-full" />
+          ) : !attachmentsResult?.data?.length ? (
+            <span className="text-sm text-muted-foreground">No attachments.</span>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {attachmentsResult.data.map((attachment) => (
+                <div key={attachment.id} className="flex items-center justify-between gap-4 text-sm border-b pb-2 last:border-0 last:pb-0">
+                  <span className="truncate">{attachment.filename}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={downloadMutation.isPending}
+                    onClick={() => downloadAttachment(attachment.id)}
+                  >
+                    <Download className="h-4 w-4 mr-1" /> Download
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Dialog open={voidOpen} onOpenChange={setVoidOpen}>
         <DialogContent>

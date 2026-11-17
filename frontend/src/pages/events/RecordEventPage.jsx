@@ -4,6 +4,7 @@ import { Plus, Trash2, ClipboardList, AlertCircle } from 'lucide-react';
 
 import { useCreateEvent, useGetAttachmentUploadUrl, useAddAttachment, useGetEvent, useAmendEvent } from '@/api/events.api';
 import { newIdempotencyKey } from '@/lib/idempotency';
+import { api } from '@/lib/api';
 import { useGetLocations } from '@/api/locations.api';
 import { useGetLots } from '@/api/lots.api';
 import { useGetProducts } from '@/api/products.api';
@@ -199,17 +200,15 @@ export default function RecordEventPage() {
             payload: { filename: file.name, contentType: file.type },
             idempotencyKey: attachmentKeys.upload,
           });
-          const { uploadUrl, key } = urlRes.data.data;
-          
-          await fetch(uploadUrl, {
-            method: 'PUT',
-            body: file,
-            headers: { 'Content-Type': file.type },
-          });
+           const { uploadUrl, attachmentId } = urlRes.data.data;
 
-          await addAttachment({
-            eventId,
-            payload: { key, filename: file.name, contentType: file.type, sizeBytes: file.size },
+           await api.put(uploadUrl, file, {
+             headers: { 'Content-Type': file.type },
+           });
+
+           await addAttachment({
+             eventId,
+             payload: { attachmentId },
             idempotencyKey: attachmentKeys.add,
           });
           attachmentKeysRef.current.delete(fileSignature);

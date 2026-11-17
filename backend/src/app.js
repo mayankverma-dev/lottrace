@@ -12,6 +12,12 @@ const apiResponse = require('./utils/apiResponse');
 const requestId = require('./middleware/requestId');
 const errorHandler = require('./middleware/errorHandler');
 const { apiLimiter } = require('./middleware/rateLimiter');
+const authenticate = require('./middleware/authenticate');
+const tenantScope = require('./middleware/tenantScope');
+const rbac = require('./middleware/rbac');
+const validate = require('./middleware/validate');
+const { attachmentIdParamsSchema } = require('./modules/events/events.validation');
+const eventsController = require('./modules/events/events.controller');
 
 const app = express();
 
@@ -83,6 +89,22 @@ app.use('/api/v1/locations', require('./modules/locations/locations.routes'));
 app.use('/api/v1/products', require('./modules/products/products.routes'));
 app.use('/api/v1/lots', require('./modules/lots/lots.routes'));
 app.use('/api/v1/events', require('./modules/events/events.routes'));
+app.get(
+  '/api/v1/attachments/:attachmentId/download',
+  authenticate,
+  tenantScope,
+  rbac(['org_admin', 'compliance_manager', 'operator', 'auditor']),
+  validate({ params: attachmentIdParamsSchema }),
+  eventsController.downloadAttachment,
+);
+app.delete(
+  '/api/v1/attachments/:attachmentId',
+  authenticate,
+  tenantScope,
+  rbac(['org_admin', 'compliance_manager']),
+  validate({ params: attachmentIdParamsSchema }),
+  eventsController.deleteAttachment,
+);
 app.use('/api/v1/trace', require('./modules/trace/trace.routes'));
 app.use('/api/v1/audit', require('./modules/audit/audit.routes'));
 app.use('/api/v1/reports', require('./modules/reports/reports.routes'));

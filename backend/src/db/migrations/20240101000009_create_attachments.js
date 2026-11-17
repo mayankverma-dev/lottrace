@@ -12,10 +12,18 @@ exports.up = async (knex) => {
     table.text('content_type').notNullable(); // MIME type
     table.bigInteger('size_bytes');
     table.uuid('uploaded_by').notNullable().references('id').inTable('users');
+    table.text('status').notNullable().defaultTo('pending');
+    table.timestamp('uploaded_at', { useTz: true });
+    table.timestamp('deleted_at', { useTz: true });
+    table.uuid('deleted_by').references('id').inTable('users');
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
+
+    table.check("status IN ('pending', 'uploaded', 'deleting', 'deleted')", [], 'attachments_status_check');
 
     table.index(['parent_type', 'parent_id'], 'idx_attachments_parent');
     table.index('organization_id', 'idx_attachments_org');
+    table.index(['organization_id', 'parent_type', 'parent_id', 'status'], 'idx_attachments_parent_status');
+    table.index(['status', 'created_at'], 'idx_attachments_status_created');
   });
 };
 

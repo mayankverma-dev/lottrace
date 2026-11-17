@@ -4,7 +4,7 @@
  */
 
 jest.mock('../../db/knex', () => {
-  const state = { event: undefined, lastInsert: undefined };
+  const state = { firstResults: [], lastInsert: undefined, currentRow: undefined, updated: undefined };
   const builder = {
     where: jest.fn(function where() {
       return builder;
@@ -12,14 +12,21 @@ jest.mock('../../db/knex', () => {
     forUpdate: jest.fn(function forUpdate() {
       return builder;
     }),
-    first: jest.fn(async () => state.event),
+    first: jest.fn(async () => {
+      state.currentRow = state.firstResults.shift();
+      return state.currentRow;
+    }),
     insert: jest.fn(function insert(payload) {
       state.lastInsert = payload;
       return builder;
     }),
+    update: jest.fn(function update(payload) {
+      state.updated = payload;
+      return builder;
+    }),
     returning: jest.fn(async () => (state.lastInsert
       ? [{ created_at: new Date('2026-01-01T00:00:00.000Z'), ...state.lastInsert }]
-      : [])),
+      : [{ ...state.currentRow, ...state.updated }])),
   };
   const db = jest.fn(() => builder);
   db.transaction = jest.fn(async (callback) => callback(db));
@@ -41,6 +48,7 @@ jest.mock('../../utils/hashChain', () => ({
 
 jest.mock('../../lib/storage', () => ({
   generatePresignedUploadUrl: jest.fn(),
+  headObject: jest.fn().mockResolvedValue({ contentLength: 1024, contentType: 'image/jpeg' }),
 }));
 
 jest.mock('../trace/trace.service', () => ({
@@ -48,19 +56,21 @@ jest.mock('../trace/trace.service', () => ({
 }));
 
 const db = require('../../db/knex');
-const { generatePresignedUploadUrl } = require('../../lib/storage');
+const { generatePresignedUploadUrl, headObject } = require('../../lib/storage');
 const { generateAttachmentUploadUrl, addAttachment } = require('./events.service');
 
 describe('events.service attachment organization checks', () => {
   beforeEach(() => {
-    db.__state.event = undefined;
+    db.__state.firstResults = [];
     db.__state.lastInsert = undefined;
+    db.__state.currentRow = undefined;
+    db.__state.updated = undefined;
     jest.clearAllMocks();
   });
 
   it('throws NOT_FOUND with status 404 when generating a URL for an unknown event', async () => {
     await expect(
-      generateAttachmentUploadUrl('event-1', 'org-1', 'photo.jpg', 'image/jpeg')
+      generateAttachmentUploadUrl('event-1', 'org-1', 'user-1', 'photo.jpg', 'image/jpeg')
     ).rejects.toMatchObject({
       message: 'Event not found',
       code: 'NOT_FOUND',
@@ -90,22 +100,31 @@ describe('events.service attachment organization checks', () => {
   });
 
   it('inserts with the organization id supplied by the caller', async () => {
-    db.__state.event = { id: 'event-1' };
+    db.__state.firstResults = [
+      { id: 'event-1', record_hash: 'hash-1' },
+      {
+        id: 'attachment-1',
+        storage_key: 'attachments/org-1/events/event-1/object-1',
+        filename: 'photo.jpg',
+        content_type: 'image/jpeg',
+        created_at: new Date('2026-01-01T00:00:00.000Z'),
+        uploaded_by: 'user-1',
+        status: 'pending',
+      },
+    ];
 
     await addAttachment(
       'event-1',
-      { key: 'attachments/photo.jpg', filename: 'photo.jpg', contentType: 'image/jpeg' },
+      { attachmentId: 'attachment-1' },
       'org-1',
       'user-1'
     );
 
-    expect(db.__builder.insert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        organization_id: 'org-1',
-        parent_type: 'event',
-        parent_id: 'event-1',
-        uploaded_by: 'user-1',
-      })
-    );
+    expect(db.__builder.update).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'uploaded',
+      size_bytes: 1024,
+      content_type: 'image/jpeg',
+    }));
+    expect(headObject).toHaveBeenCalledWith('attachments/org-1/events/event-1/object-1');
   });
 });

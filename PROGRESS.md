@@ -2,8 +2,8 @@
 
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
-**Last Updated:** 2026-11-17
-**Last Session:** 2026-11-17 — P1-36, P1-37, P1-38, P2-31, P2-32, and P2-33 fixed. Pending invitations now return `409 EMAIL_INVITED`; deactivation immediately denies existing access tokens; invitation resend writes are organization-scoped; database email uniqueness uses `lower(email)`; invite emails run after tenant commit; and local refresh-token encryption is configured. Focused DB, middleware, migration, and refresh tests pass.
+**Last Updated:** 2026-11-18
+**Last Session:** 2026-11-18 — P1-10 and P2-09 fixed pending commit. Attachment storage keys are server-owned; uploads create pending rows, confirm through storage metadata, expose list/download APIs without raw keys, support audited soft deletion, and clean expired/interrupted pending objects. Focused attachment, event RBAC/idempotency, hash-evidence, frontend, and PWA checks pass.
 
 ---
 

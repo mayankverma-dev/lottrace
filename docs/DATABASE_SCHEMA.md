@@ -403,12 +403,24 @@ CREATE TABLE attachments (
   content_type    text NOT NULL,   -- MIME type
   size_bytes      bigint,
   uploaded_by     uuid NOT NULL REFERENCES users(id),
+  status          text NOT NULL DEFAULT 'pending', -- pending | uploaded | deleting | deleted
+  uploaded_at     timestamptz,
+  deleted_at      timestamptz,
+  deleted_by      uuid REFERENCES users(id),
   created_at      timestamptz NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_attachments_parent ON attachments(parent_type, parent_id);
 CREATE INDEX idx_attachments_org ON attachments(organization_id);
+CREATE INDEX idx_attachments_parent_status ON attachments(organization_id, parent_type, parent_id, status);
+CREATE INDEX idx_attachments_status_created ON attachments(status, created_at);
 ```
+
+Attachment rows begin as `pending` when the server issues a presigned upload URL.
+Confirmation calls `HeadObject`, takes size/content type from storage, and changes
+the row to `uploaded` before writing signed attachment evidence. Pending rows older
+than 24 hours are deleted with their storage objects by maintenance cleanup. Storage
+keys are internal and never returned through the API.
 
 ---
 

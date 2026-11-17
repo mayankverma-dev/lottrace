@@ -36,6 +36,9 @@ jest.mock('../../lib/sentry', () => ({
   initSentry: jest.fn(),
   captureHashVerificationFailure: jest.fn().mockReturnValue(false),
 }));
+jest.mock('../../lib/storage', () => ({
+  headObject: jest.fn().mockResolvedValue({ contentLength: 1024, contentType: 'image/jpeg' }),
+}));
 
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
@@ -307,11 +310,18 @@ describeDb('P1-18 signed event evidence', () => {
     const org = await seedOrganization('attachment');
     const event = await createLinkedEvent(org);
 
-    const attachment = await eventsService.addAttachment(event.id, {
-      key: 'attachments/photo.jpg',
+    const [pending] = await db('attachments').insert({
+      organization_id: org.orgId,
+      parent_type: 'event',
+      parent_id: event.id,
+      storage_key: 'attachments/photo.jpg',
       filename: 'photo.jpg',
-      contentType: 'image/jpeg',
-      sizeBytes: 1024,
+      content_type: 'image/jpeg',
+      uploaded_by: org.userId,
+      status: 'pending',
+    }).returning('*');
+    const attachment = await eventsService.addAttachment(event.id, {
+      attachmentId: pending.id,
     }, org.orgId, org.userId);
 
     const rows = await evidenceRows(event.id);
@@ -338,11 +348,18 @@ describeDb('P1-18 signed event evidence', () => {
     const org = await seedOrganization('tamper-attachment');
     const event = await createLinkedEvent(org);
 
-    const attachment = await eventsService.addAttachment(event.id, {
-      key: 'attachments/photo.jpg',
+    const [pending] = await db('attachments').insert({
+      organization_id: org.orgId,
+      parent_type: 'event',
+      parent_id: event.id,
+      storage_key: 'attachments/photo.jpg',
       filename: 'photo.jpg',
-      contentType: 'image/jpeg',
-      sizeBytes: 1024,
+      content_type: 'image/jpeg',
+      uploaded_by: org.userId,
+      status: 'pending',
+    }).returning('*');
+    const attachment = await eventsService.addAttachment(event.id, {
+      attachmentId: pending.id,
     }, org.orgId, org.userId);
 
     await db('attachments').where({ id: attachment.id }).update({ filename: 'replaced.jpg' });

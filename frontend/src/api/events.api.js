@@ -28,6 +28,17 @@ export const useGetEvent = (id) => {
   });
 };
 
+export const useGetEventAttachments = (eventId, params = { page: 1, limit: 100 }) => {
+  return useQuery({
+    queryKey: [...EVENTS_KEYS.detail(eventId), 'attachments', params],
+    queryFn: async () => {
+      const { data } = await api.get(`/events/${eventId}/attachments`, { params });
+      return data;
+    },
+    enabled: !!eventId,
+  });
+};
+
 export const useCreateEvent = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -77,5 +88,11 @@ export const useAddAttachment = () => {
     mutationFn: ({ eventId, payload, idempotencyKey }) => api.post(`/events/${eventId}/attachments`, payload, {
       headers: { 'Idempotency-Key': idempotencyKey },
     }),
+  });
+};
+
+export const useGetAttachmentDownloadUrl = () => {
+  return useMutation({
+    mutationFn: (attachmentId) => api.get(`/attachments/${attachmentId}/download`),
   });
 };

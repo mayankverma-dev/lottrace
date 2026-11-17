@@ -18,6 +18,28 @@ const crc32 = require('crc-32');
 const { bumpTraceCacheVersion } = require('../trace/trace.service');
 const { checkComplianceGaps } = require('./compliance');
 
+const MAX_ATTACHMENT_SIZE_BYTES = 50 * 1024 * 1024;
+const ALLOWED_ATTACHMENT_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'text/plain',
+]);
+
+const attachmentResponse = (attachment) => ({
+  id: attachment.id,
+  parentType: attachment.parent_type,
+  parentId: attachment.parent_id,
+  filename: attachment.filename,
+  contentType: attachment.content_type,
+  sizeBytes: attachment.size_bytes,
+  uploadedBy: attachment.uploaded_by,
+  status: attachment.status,
+  createdAt: attachment.created_at,
+  uploadedAt: attachment.uploaded_at,
+});
+
 const getAdvisoryLockId = (orgId) => Math.abs(crc32.str(orgId));
 
 /**
@@ -374,7 +396,7 @@ const amendEvent = async (eventId, data, organizationId, userId) => {
   return replacement;
 };
 
-const generateAttachmentUploadUrl = async (eventId, organizationId, filename, contentType) => {
+const generateAttachmentUploadUrl = async (eventId, organizationId, userId, filename, contentType) => {
   // We can inject storage require here or at the top. Let's do it here to avoid circular dep if any, though it's clean at top.
   const { generatePresignedUploadUrl } = require('../../lib/storage');
   
@@ -382,13 +404,30 @@ const generateAttachmentUploadUrl = async (eventId, organizationId, filename, co
   const event = await db('events').where({ id: eventId, organization_id: organizationId }).first();
   if (!event) throw new AppError('Event not found', 'NOT_FOUND', 404);
 
-  const key = `attachments/org_${organizationId}/events/${eventId}/${Date.now()}_${filename.replace(/\s+/g, '_')}`;
-  
-  const uploadUrl = await generatePresignedUploadUrl(key, contentType);
-  return { uploadUrl, key };
+  if (!ALLOWED_ATTACHMENT_TYPES.has(contentType)) {
+    throw new AppError('Attachment type is not allowed', 'VALIDATION_ERROR', 422);
+  }
+
+  const attachment = await db.transaction(async (trx) => {
+    const [row] = await trx('attachments').insert({
+      organization_id: organizationId,
+      parent_type: 'event',
+      parent_id: eventId,
+      storage_key: `attachments/org_${organizationId}/events/${eventId}/${uuidv4()}`,
+      filename,
+      content_type: contentType,
+      uploaded_by: userId,
+      status: 'pending',
+    }).returning('*');
+    return row;
+  });
+
+  const uploadUrl = await generatePresignedUploadUrl(attachment.storage_key, contentType);
+  return { uploadUrl, attachmentId: attachment.id };
 };
 
 const addAttachment = async (eventId, data, organizationId, userId) => {
+  const { headObject } = require('../../lib/storage');
   return db.transaction(async (trx) => {
     const event = await trx('events')
       .where({ id: eventId, organization_id: organizationId })
@@ -396,16 +435,45 @@ const addAttachment = async (eventId, data, organizationId, userId) => {
       .first();
     if (!event) throw new AppError('Event not found', 'NOT_FOUND', 404);
 
-    const [attachment] = await trx('attachments').insert({
-      organization_id: organizationId,
-      parent_type: 'event',
-      parent_id: eventId,
-      storage_key: data.key,
-      filename: data.filename,
-      content_type: data.contentType,
-      size_bytes: data.sizeBytes,
-      uploaded_by: userId,
-    }).returning('*');
+    const attachment = await trx('attachments')
+      .where({
+        id: data.attachmentId,
+        organization_id: organizationId,
+        parent_type: 'event',
+        parent_id: eventId,
+        status: 'pending',
+      })
+      .forUpdate()
+      .first();
+    if (!attachment) throw new AppError('Attachment not found', 'NOT_FOUND', 404);
+
+    let object;
+    try {
+      object = await headObject(attachment.storage_key);
+    } catch (err) {
+      if (err?.name === 'NotFound' || err?.name === 'NoSuchKey' || err?.$metadata?.httpStatusCode === 404) {
+        throw new AppError('Attachment has not been uploaded', 'ATTACHMENT_NOT_UPLOADED', 409);
+      }
+      logger.error({ err, attachmentId: attachment.id }, 'Attachment storage verification failed');
+      throw new AppError('Attachment storage is unavailable', 'STORAGE_UNAVAILABLE', 503);
+    }
+
+    if (!Number.isInteger(object.contentLength) || object.contentLength < 0 || object.contentLength > MAX_ATTACHMENT_SIZE_BYTES) {
+      throw new AppError('Attachment exceeds the 50 MiB size limit', 'VALIDATION_ERROR', 422);
+    }
+    if (object.contentType !== attachment.content_type) {
+      throw new AppError('Attachment content type does not match the upload request', 'VALIDATION_ERROR', 422);
+    }
+
+    const [uploadedAttachment] = await trx('attachments')
+      .where({ id: attachment.id, status: 'pending' })
+      .update({
+        size_bytes: object.contentLength,
+        content_type: object.contentType,
+        status: 'uploaded',
+        uploaded_at: new Date(),
+      })
+      .returning('*');
 
     // Attachment metadata is added after the event is sealed. Bind it to the
     // event hash with signed evidence so a later edit or deletion is detectable.
@@ -414,18 +482,155 @@ const addAttachment = async (eventId, data, organizationId, userId) => {
       eventId,
       kind: 'attachment_added',
       payload: {
-        attachmentId: attachment.id,
-        storageKey: attachment.storage_key,
-        filename: attachment.filename,
-        contentType: attachment.content_type,
-        sizeBytes: attachment.size_bytes,
-        uploadedBy: attachment.uploaded_by,
-        attachmentCreatedAt: new Date(attachment.created_at).toISOString(),
+        attachmentId: uploadedAttachment.id,
+        storageKey: uploadedAttachment.storage_key,
+        filename: uploadedAttachment.filename,
+        contentType: uploadedAttachment.content_type,
+        sizeBytes: uploadedAttachment.size_bytes,
+        uploadedBy: uploadedAttachment.uploaded_by,
+        attachmentCreatedAt: new Date(uploadedAttachment.created_at).toISOString(),
       },
     }, event.record_hash);
 
-    return attachment;
+    return attachmentResponse(uploadedAttachment);
   });
+};
+
+const listAttachments = async (eventId, query, organizationId) => {
+  const event = await db('events').where({ id: eventId, organization_id: organizationId }).first('id');
+  if (!event) throw new AppError('Event not found', 'NOT_FOUND', 404);
+
+  const { page, limit } = query;
+  const offset = (page - 1) * limit;
+  const baseQuery = db('attachments').where({
+    organization_id: organizationId,
+    parent_type: 'event',
+    parent_id: eventId,
+    status: 'uploaded',
+  });
+  const [{ count }] = await baseQuery.clone().count('id as count');
+  const rows = await baseQuery.clone()
+    .select('id', 'parent_type', 'parent_id', 'filename', 'content_type', 'size_bytes', 'uploaded_by', 'status', 'created_at', 'uploaded_at')
+    .orderBy('created_at', 'desc')
+    .limit(limit)
+    .offset(offset);
+
+  return {
+    data: rows.map(attachmentResponse),
+    pagination: buildPagination(Number(count), page, limit),
+  };
+};
+
+const getAttachmentDownloadUrl = async (attachmentId, organizationId) => {
+  const { generatePresignedDownloadUrl } = require('../../lib/storage');
+  const attachment = await db('attachments').where({
+    id: attachmentId,
+    organization_id: organizationId,
+    parent_type: 'event',
+    status: 'uploaded',
+  }).first();
+  if (!attachment) throw new AppError('Attachment not found', 'NOT_FOUND', 404);
+
+  const downloadUrl = await generatePresignedDownloadUrl(attachment.storage_key, {
+    filename: attachment.filename,
+    contentType: attachment.content_type,
+  });
+  return { downloadUrl };
+};
+
+const finalizeDeletedAttachment = async (trx, attachment, actorId, actorType = 'user', ipAddress = null) => {
+  const [deleted] = await trx('attachments')
+    .where({ id: attachment.id, organization_id: attachment.organization_id, status: 'deleting' })
+    .update({ status: 'deleted', deleted_at: new Date(), deleted_by: actorId })
+    .returning('*');
+  if (!deleted) throw new AppError('Attachment not found', 'NOT_FOUND', 404);
+
+  const event = await trx('events')
+    .where({ id: deleted.parent_id, organization_id: deleted.organization_id })
+    .forUpdate()
+    .first('id', 'record_hash');
+  if (!event) throw new AppError('Event not found', 'NOT_FOUND', 404);
+
+  await appendEventEvidence(trx, {
+    organizationId: deleted.organization_id,
+    eventId: event.id,
+    kind: 'attachment_deleted',
+    payload: {
+      attachmentId: deleted.id,
+      actorId,
+      deletedAt: new Date(deleted.deleted_at).toISOString(),
+    },
+  }, event.record_hash);
+
+  const { writeAuditLog } = require('../../utils/auditTrail');
+  await writeAuditLog({
+    organizationId: deleted.organization_id,
+    actorId,
+    actorType,
+    action: 'attachment.delete',
+    entityType: 'attachment',
+    entityId: deleted.id,
+    beforeState: attachmentResponse(attachment),
+    afterState: attachmentResponse(deleted),
+    ipAddress,
+  }, trx);
+
+  return attachmentResponse(deleted);
+};
+
+const purgePendingAttachments = async () => {
+  const { deleteObject } = require('../../lib/storage');
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const pending = await db('attachments')
+    .whereIn('status', ['pending', 'deleting'])
+    .where('created_at', '<', cutoff)
+    .orderBy('created_at', 'asc')
+    .select('id', 'storage_key');
+  let deleted = 0;
+  for (const attachment of pending) {
+    try {
+      await deleteObject(attachment.storage_key);
+      const current = await db('attachments').where({ id: attachment.id }).first();
+      if (current?.status === 'pending') {
+        await db('attachments').where({ id: attachment.id, status: 'pending' }).del();
+      } else if (current?.status === 'deleting') {
+        await db.transaction(async (trx) => finalizeDeletedAttachment(trx, current, null, 'system'));
+      }
+      deleted += 1;
+    } catch (err) {
+      logger.warn({ err, attachmentId: attachment.id }, 'Pending attachment cleanup failed');
+    }
+  }
+  return { scanned: pending.length, deleted };
+};
+
+const deleteAttachment = async (attachmentId, organizationId, userId, ipAddress) => {
+  const { deleteObject } = require('../../lib/storage');
+  const attachment = await db.transaction(async (trx) => {
+    const row = await trx('attachments')
+      .where({ id: attachmentId, organization_id: organizationId, parent_type: 'event', status: 'uploaded' })
+      .forUpdate()
+      .first();
+    if (!row) throw new AppError('Attachment not found', 'NOT_FOUND', 404);
+
+    const [deleting] = await trx('attachments')
+      .where({ id: attachmentId, status: 'uploaded' })
+      .update({ status: 'deleting' })
+      .returning('*');
+    return deleting;
+  });
+
+  try {
+    await deleteObject(attachment.storage_key);
+  } catch (err) {
+    await db('attachments')
+      .where({ id: attachmentId, organization_id: organizationId, status: 'deleting' })
+      .update({ status: 'uploaded' });
+    logger.error({ err, attachmentId }, 'Attachment object deletion failed');
+    throw new AppError('Attachment storage is unavailable', 'STORAGE_UNAVAILABLE', 503);
+  }
+
+  return db.transaction(async (trx) => finalizeDeletedAttachment(trx, attachment, userId, 'user', ipAddress));
 };
 
 module.exports = {
@@ -436,4 +641,10 @@ module.exports = {
   amendEvent,
   generateAttachmentUploadUrl,
   addAttachment,
+  listAttachments,
+  getAttachmentDownloadUrl,
+  purgePendingAttachments,
+  deleteAttachment,
+  MAX_ATTACHMENT_SIZE_BYTES,
+  ALLOWED_ATTACHMENT_TYPES,
 };

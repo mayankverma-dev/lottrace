@@ -55,10 +55,16 @@ const attachmentUploadSchema = z.object({
 }).strict();
 
 const addAttachmentSchema = z.object({
-  key: z.string().min(1).max(2000),
-  filename: z.string().min(1).max(255),
-  contentType: z.string().min(1).max(255),
-  sizeBytes: z.number().int().nonnegative().optional(),
+  attachmentId: z.string().uuid(),
+}).strict();
+
+const attachmentIdParamsSchema = z.object({
+  attachmentId: z.string().uuid(),
+}).strict();
+
+const listAttachmentsQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
 }).strict();
 
 const getEventsQuerySchema = z.object({
@@ -77,5 +83,7 @@ module.exports = {
   voidEventSchema,
   attachmentUploadSchema,
   addAttachmentSchema,
+  attachmentIdParamsSchema,
+  listAttachmentsQuerySchema,
   getEventsQuerySchema,
 };
