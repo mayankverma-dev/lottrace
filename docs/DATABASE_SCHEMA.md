@@ -67,8 +67,9 @@ CREATE TABLE users (
 );
 
 -- One account per email across all tenants. This is the identity key, not a
--- per-organization handle.
-ALTER TABLE users ADD CONSTRAINT users_email_unique UNIQUE (email);
+-- per-organization handle. Uniqueness uses lower(email) so case variants
+-- cannot create a second account.
+CREATE UNIQUE INDEX users_email_normalized_unique ON users (lower(email));
 CREATE INDEX idx_users_org_status ON users(organization_id, status);
 ```
 

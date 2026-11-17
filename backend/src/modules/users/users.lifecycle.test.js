@@ -343,10 +343,18 @@ describeDb('P1-12 user lifecycle with global email uniqueness', () => {
     await expect(createUser({ organizationId: secondOrganizationId, email }))
       .rejects.toMatchObject({ code: '23505' });
 
+    await expect(createUser({ organizationId: secondOrganizationId, email: email.toUpperCase() }))
+      .rejects.toMatchObject({ code: '23505' });
+
     const index = await db('pg_indexes')
-      .where({ schemaname: 'public', tablename: 'users', indexname: 'users_email_unique' })
+      .where({
+        schemaname: 'public',
+        tablename: 'users',
+        indexname: 'users_email_normalized_unique',
+      })
       .first();
     expect(index).toBeDefined();
     expect(index.indexdef).toContain('UNIQUE');
+    expect(index.indexdef).toContain('lower(email)');
   });
 });
