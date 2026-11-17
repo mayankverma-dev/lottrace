@@ -1,11 +1,16 @@
 jest.mock('jsonwebtoken', () => ({ verify: jest.fn() }));
 jest.mock('../config/env', () => ({ ACCESS_JWT_SECRET: 'test-access-secret' }));
-jest.mock('../config/redis', () => ({ get: jest.fn() }));
+jest.mock('../config/rateLimitRedis', () => ({ get: jest.fn() }));
 jest.mock('./rateLimiter', () => ({ userLimiter: jest.fn() }));
-jest.mock('../utils/apiResponse', () => ({ unauthorized: jest.fn() }));
+jest.mock('../utils/apiResponse', () => ({
+  unauthorized: jest.fn(),
+  error: jest.fn(),
+}));
+jest.mock('../utils/logger', () => ({ error: jest.fn() }));
 
 const jwt = require('jsonwebtoken');
-const redis = require('../config/redis');
+const redis = require('../config/rateLimitRedis');
+const logger = require('../utils/logger');
 const apiResponse = require('../utils/apiResponse');
 const { userLimiter } = require('./rateLimiter');
 const authenticate = require('./authenticate');
@@ -73,6 +78,31 @@ describe('authenticate per-user rate limiting', () => {
       res,
       'AUTH_SESSION_REVOKED',
       'Token has been revoked'
+    );
+    expect(jwt.verify).not.toHaveBeenCalled();
+    expect(userLimiter).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('fails closed with 503 when the blacklist cannot be checked', async () => {
+    redis.get.mockRejectedValue(new Error('redis unavailable'));
+
+    const req = { headers: VALID_HEADERS };
+    const res = { set: jest.fn() };
+    const next = jest.fn();
+
+    await authenticate(req, res, next);
+
+    expect(res.set).toHaveBeenCalledWith('Retry-After', '5');
+    expect(apiResponse.error).toHaveBeenCalledWith(
+      res,
+      'Authentication temporarily unavailable',
+      'AUTH_UNAVAILABLE',
+      503
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      { err: expect.any(Error) },
+      'Token blacklist lookup failed; denying request'
     );
     expect(jwt.verify).not.toHaveBeenCalled();
     expect(userLimiter).not.toHaveBeenCalled();
