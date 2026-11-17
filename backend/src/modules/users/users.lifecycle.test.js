@@ -281,6 +281,28 @@ describeDb('P1-12 user lifecycle with global email uniqueness', () => {
       .rejects.toMatchObject({ code: 'CONFLICT', statusCode: 409 });
   });
 
+  it('does not resend an invitation owned by another organization', async () => {
+    const ownerOrganizationId = await createOrganization('resend-owner');
+    const otherOrganizationId = await createOrganization('resend-other');
+    const email = uniqueEmail('resend-other');
+    const originalTokenHash = hashToken(`original-${uuid()}`);
+
+    const user = await createUser({
+      organizationId: ownerOrganizationId,
+      email,
+      status: 'invited',
+      inviteTokenHash: originalTokenHash,
+      inviteExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+
+    await expect(usersService.resendInvite(otherOrganizationId, user.id))
+      .rejects.toMatchObject({ code: 'NOT_FOUND', statusCode: 404 });
+
+    const row = await db('users').where({ id: user.id }).first();
+    expect(row.invite_token_hash).toBe(originalTokenHash);
+    expect(emailService.sendInviteEmail).not.toHaveBeenCalled();
+  });
+
   it('enforces global unique email at the database layer', async () => {
     const firstOrganizationId = await createOrganization('unique-first');
     const secondOrganizationId = await createOrganization('unique-second');

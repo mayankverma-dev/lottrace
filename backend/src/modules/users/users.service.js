@@ -364,7 +364,7 @@ const resendInvite = async (organizationId, userId) => {
   const inviteExpiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
 
   await db('users')
-    .where({ id: userId })
+    .where({ id: userId, organization_id: organizationId, status: 'invited' })
     .update({ invite_token_hash: inviteTokenHash, invite_expires_at: inviteExpiresAt, updated_at: db.fn.now() });
 
   const org = await db('organizations').where({ id: organizationId }).select('name').first();
