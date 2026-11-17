@@ -17,9 +17,18 @@ const HOST = '0.0.0.0'
 
 const server = app.listen(PORT, HOST, () => {
   logger.info(
-    { emailDryRun: env.EMAIL_DRY_RUN, emailOverride: Boolean(env.DEV_EMAIL_OVERRIDE) },
+    {
+      emailDryRun: env.EMAIL_DRY_RUN,
+      emailOverride: Boolean(env.DEV_EMAIL_OVERRIDE),
+      trustProxy: env.TRUST_PROXY,
+    },
     `Server running on port ${PORT} in ${env.NODE_ENV} mode`
   );
+  if (env.NODE_ENV === 'production' && env.TRUST_PROXY === false) {
+    logger.warn(
+      'TRUST_PROXY is disabled in production — if the API is behind a proxy, all clients share one rate-limit bucket'
+    );
+  }
   if (env.NODE_ENV === 'production' && env.EMAIL_DRY_RUN) {
     logger.warn('EMAIL_DRY_RUN is enabled in production — outbound email is suppressed');
   }

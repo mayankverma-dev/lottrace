@@ -92,7 +92,13 @@ if (!lot) throw new AppError('Lot not found', 'NOT_FOUND', 404);
 - Every auth endpoint rate-limited (see `docs/ARCHITECTURE.md` for limits)
 - Rate limits stored in Redis (distributed, works across multiple API instances)
 - Rate limit response: 429 with `Retry-After` header
-- Rate limit by IP for unauthenticated routes, by `user_id` for authenticated
+- Set `TRUST_PROXY` to the exact proxy hop count or trusted CIDR ranges; never
+  use `true`. Restrict direct access to the API when proxy headers are trusted.
+- Rate limit by client IP for the unauthenticated edge, by `user_id` for
+  authenticated requests, and by normalized email/token hash plus IP for auth
+  endpoints
+- Redis limiter failures fail open with a logged error; availability is
+  preferred over strict limiting during a Redis outage
 
 ---
 

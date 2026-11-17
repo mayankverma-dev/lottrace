@@ -2,8 +2,8 @@
 
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
-**Last Updated:** 2026-11-16
-**Last Session:** 2026-11-16 — P1-04 fixed. Audit log export now exports immutable audit records instead of events, with the list filters, type-aware notifications/filenames/detail page, and a microsecond-safe keyset. Targeted backend DB and format/RBAC tests, frontend helper tests, and the frontend build pass. P1-02 exports remain events-only and both callers send an explicit `type`.
+**Last Updated:** 2026-11-17
+**Last Session:** 2026-11-17 — P1-14 fixed. Rate limiting now trusts the exact configured proxy chain, keys auth attempts by normalized email/token hash plus IP, adds a per-user limiter after JWT verification, normalizes IPv6 keys, and fails open when the rate-limit Redis client is unavailable. Targeted backend tests pass.
 
 ---
 
@@ -55,6 +55,13 @@ _Scale & Integrate (3.1 - 3.18)_
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P1-14 — proxy-aware rate limiting:
+- `backend/src/config/trustProxy.js`, `backend/src/config/rateLimitRedis.js`
+- `backend/src/config/env.js`, `backend/src/app.js`, `backend/src/server.js`
+- `backend/src/middleware/rateLimiter.js`, `backend/src/middleware/authenticate.js`
+- Tests: `backend/src/config/trustProxy.test.js`, `backend/src/config/env.test.js`, `backend/src/middleware/rateLimiter.test.js`, `backend/src/middleware/rateLimiter.proxy.test.js`, `backend/src/middleware/rateLimiter.fail-open.test.js`, `backend/src/middleware/authenticate.rate-limit.test.js`
+- Docs: `backend/.env.example`, `docs/ENVIRONMENT_SETUP.md`, `docs/SECURITY.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P1-04 — audit log export:
 - `backend/src/db/migrations/20240101000020_create_report_exports.js` (`type = events | audit`, `filters jsonb`)

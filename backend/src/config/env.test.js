@@ -25,6 +25,7 @@ const MANAGED_KEYS = [
   'EMAIL_DRY_RUN',
   'HASH_CHAIN_OLD_KEYS',
   'PORT',
+  'TRUST_PROXY',
 ];
 const ORIGINAL = {};
 
@@ -53,6 +54,7 @@ beforeEach(() => {
   delete process.env.EMAIL_DRY_RUN;
   delete process.env.HASH_CHAIN_OLD_KEYS;
   delete process.env.PORT;
+  delete process.env.TRUST_PROXY;
 });
 
 afterAll(() => {
@@ -113,6 +115,36 @@ describe('EMAIL_DRY_RUN parsing', () => {
 
   it('accepts NODE_ENV=test for the Jest environment', () => {
     expect(loadEnv().NODE_ENV).toBe('test');
+  });
+});
+
+describe('TRUST_PROXY parsing', () => {
+  it('defaults to false when unset', () => {
+    expect(loadEnv().TRUST_PROXY).toBe(false);
+  });
+
+  it('parses an exact hop count', () => {
+    process.env.TRUST_PROXY = '2';
+
+    expect(loadEnv().TRUST_PROXY).toBe(2);
+  });
+
+  it('parses a trusted CIDR list', () => {
+    process.env.TRUST_PROXY = 'loopback,10.0.0.0/8';
+
+    expect(loadEnv().TRUST_PROXY).toEqual(['loopback', '10.0.0.0/8']);
+  });
+
+  it('rejects TRUST_PROXY=true', () => {
+    process.env.TRUST_PROXY = 'true';
+
+    expect(loadEnv).toThrow(/TRUST_PROXY=true is not allowed/);
+  });
+
+  it('rejects invalid entries', () => {
+    process.env.TRUST_PROXY = '10.0.0.0/33';
+
+    expect(loadEnv).toThrow(/Invalid TRUST_PROXY entry/);
   });
 });
 

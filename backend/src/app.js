@@ -7,12 +7,17 @@ const pinoHttp = require('pino-http');
 const cookieParser = require('cookie-parser');
 
 const logger = require('./utils/logger');
+const env = require('./config/env');
 const apiResponse = require('./utils/apiResponse');
 const requestId = require('./middleware/requestId');
 const errorHandler = require('./middleware/errorHandler');
 const { apiLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
+
+// Resolve the real client IP through the exact configured proxy chain.
+// Never trust every hop: that permits X-Forwarded-For spoofing.
+app.set('trust proxy', env.TRUST_PROXY);
 
 // ─── Global Middleware ─────────────────────────────────────
 // Order matters: requestId → cors → helmet → compression → logging → body parsing → rate limiting

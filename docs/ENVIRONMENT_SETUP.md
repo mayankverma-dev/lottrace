@@ -108,6 +108,13 @@ NODE_ENV=development
 PORT=3000
 FRONTEND_URL=http://localhost:3001
 SCAN_PWA_URL=http://localhost:3002
+# Express `trust proxy` setting. Leave empty when the API is directly exposed.
+# Behind a proxy, set the exact hop count or a comma-separated trusted CIDR
+# list. Never set this to true; invalid values fail startup.
+TRUST_PROXY=
+# TRUST_PROXY=1
+# TRUST_PROXY=loopback
+# TRUST_PROXY=10.0.0.0/8,192.168.0.0/16
 
 # Stripe (use test keys)
 STRIPE_SECRET_KEY=sk_test_...

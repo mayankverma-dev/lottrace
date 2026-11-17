@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { parseTrustProxy } = require('./trustProxy');
 
 const TRUE_VALUES = ['true', '1'];
 const FALSE_VALUES = ['false', '0'];
@@ -70,6 +71,10 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().default('http://localhost:3001'),
   SCAN_PWA_URL: z.string().default('http://localhost:3002'),
 
+  // Express `trust proxy` setting. Set the exact hop count or a trusted
+  // CIDR list when the API is behind a proxy; never trust every hop.
+  TRUST_PROXY: z.string().optional(),
+
   // Stripe
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
@@ -115,4 +120,5 @@ const parsedEnv = envSchema.parse(process.env);
 module.exports = {
   ...parsedEnv,
   HASH_CHAIN_OLD_KEYS: parseOldKeys(parsedEnv.HASH_CHAIN_OLD_KEYS),
+  TRUST_PROXY: parseTrustProxy(parsedEnv.TRUST_PROXY),
 };
