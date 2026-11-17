@@ -160,6 +160,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-31 | P2 | Database email uniqueness is case-sensitive | Fixed (2026-11-17, c80b282) |
 | P2-32 | P2 | Invite email sends before tenant transaction commits | Fixed (2026-11-17, e5f4435) |
 | P2-33 | P2 | Local environment lacks refresh-token encryption key | Fixed locally (2026-11-17, no commit) |
+| P2-34 | P2 | AppError scanner rejects valid dynamic messages | Fixed (2026-11-18, b7bae13) |
 
 ---
 
@@ -1000,6 +1001,15 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Evidence:** `backend/.env` lacked required `REFRESH_TOKEN_ENCRYPTION_KEY`, so local startup and refresh tests required an inline override.
 - **Fix:** Added a local random key to ignored `backend/.env`. `.env.example` already documents the variable; no secret entered Git.
 - **Verified:** `auth.refresh.test.js` passes against disposable `localhost/lottrace_fixes_test` without an inline encryption key.
+
+## P2-34 — AppError scanner rejects valid dynamic messages
+
+- **Severity:** P2 · **Area:** backend / test tooling · **Status:** Fixed (2026-11-18, b7bae13)
+- **Evidence:** `backend/src/utils/appError.usage.test.js:207-235` required every `AppError` message to be a string literal. `backend/src/modules/users/users.service.js:116-137` uses valid conditional messages while preserving literal error codes and numeric statuses.
+- **Impact:** The full backend suite failed even though runtime AppError signatures were correct. Context-specific user lifecycle errors could not remain descriptive without weakening or bypassing the guard.
+- **Fix direction:** Permit message expressions in the static guard while retaining literal code and numeric status enforcement. Add a regression test for conditional messages. No production behavior change.
+- **Fix:** Removed the message-literal requirement from the scanner. Error codes and HTTP statuses remain statically constrained.
+- **Verified:** Focused scanner test passes 8/8. Full backend suite passes: 60 suites, 517 passed, 4 skipped, 521 total. Lint reports 0 errors.
 
 # Recommended fix order
 
