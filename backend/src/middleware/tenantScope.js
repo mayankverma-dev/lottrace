@@ -1,6 +1,10 @@
 const apiResponse = require('../utils/apiResponse');
 const db = require('../db/knex');
-const { runWithTenantTransaction } = require('../db/tenantContext');
+const {
+  runTenantPostCommit,
+  runWithTenantTransaction,
+} = require('../db/tenantContext');
+const logger = require('../utils/logger');
 
 /**
  * Tenant scope middleware.
@@ -17,6 +21,7 @@ const tenantScope = async (req, res, next) => {
 
   const transaction = await db.transaction();
   let completed = false;
+  const postCommit = [];
 
   try {
     await transaction.raw('SELECT set_config(?, ?, true)', ['app.current_org_id', organizationId]);
@@ -30,7 +35,15 @@ const tenantScope = async (req, res, next) => {
     completed = true;
     if (commit) {
       await transaction.commit();
+      await runTenantPostCommit(postCommit, (error) => {
+        if (req.log?.error) {
+          req.log.error({ error }, 'Tenant post-commit callback failed');
+        } else {
+          logger.error({ error }, 'Tenant post-commit callback failed');
+        }
+      });
     } else {
+      postCommit.length = 0;
       await transaction.rollback();
     }
   };
@@ -44,7 +57,7 @@ const tenantScope = async (req, res, next) => {
   });
   res.once('close', () => complete(false).catch(error => req.log?.error({ error }, 'Tenant transaction rollback failed')));
 
-  return runWithTenantTransaction(transaction, () => next());
+  return runWithTenantTransaction(transaction, () => next(), postCommit);
 };
 
 module.exports = tenantScope;

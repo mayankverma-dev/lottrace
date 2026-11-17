@@ -5,6 +5,7 @@ const logger = require('../../utils/logger');
 const redis = require('../../config/rateLimitRedis');
 const { paginate } = require('../../utils/pagination');
 const emailService = require('../../utils/email');
+const { addTenantPostCommit } = require('../../db/tenantContext');
 
 // Access tokens live for 30 minutes. Deny deactivated users for one minute
 // longer so no token minted before deactivation can outlive the deny key.
@@ -170,7 +171,9 @@ const inviteUser = async (organizationId, data) => {
   const org = await db('organizations').where({ id: organizationId }).select('name').first();
   const organizationName = org ? org.name : 'LotTrace';
 
-  await emailService.sendInviteEmail(data.email, inviteToken, organizationName);
+  await addTenantPostCommit(() =>
+    emailService.sendInviteEmail(data.email, inviteToken, organizationName)
+  );
 
   return formatUser(user);
 };
@@ -341,7 +344,9 @@ const reactivateUser = async (organizationId, userId) => {
 
   if (inviteToken) {
     const org = await db('organizations').where({ id: organizationId }).select('name').first();
-    await emailService.sendInviteEmail(user.email, inviteToken, org ? org.name : 'LotTrace');
+    await addTenantPostCommit(() =>
+      emailService.sendInviteEmail(user.email, inviteToken, org ? org.name : 'LotTrace')
+    );
   }
 
   return formatUser(updated);
@@ -391,7 +396,9 @@ const resendInvite = async (organizationId, userId) => {
     .update({ invite_token_hash: inviteTokenHash, invite_expires_at: inviteExpiresAt, updated_at: db.fn.now() });
 
   const org = await db('organizations').where({ id: organizationId }).select('name').first();
-  await emailService.sendInviteEmail(user.email, inviteToken, org ? org.name : 'LotTrace');
+  await addTenantPostCommit(() =>
+    emailService.sendInviteEmail(user.email, inviteToken, org ? org.name : 'LotTrace')
+  );
 
   return formatUser(user);
 };

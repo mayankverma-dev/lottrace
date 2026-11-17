@@ -12,6 +12,7 @@ jest.mock('../db/knex', () => ({
 
 const tenantScope = require('./tenantScope');
 const db = require('../db/knex');
+const { addTenantPostCommit } = require('../db/tenantContext');
 
 const buildResponse = (statusCode) => {
   const response = new EventEmitter();
@@ -43,6 +44,25 @@ describe('tenantScope', () => {
     expect(mockTransaction.rollback).not.toHaveBeenCalled();
   });
 
+  it('runs post-commit callbacks after commit', async () => {
+    const calls = [];
+    mockTransaction.commit.mockImplementationOnce(async () => {
+      calls.push('commit');
+    });
+    const req = { user: { organizationId: 'org-a' } };
+    const res = buildResponse(200);
+    const next = jest.fn(() => {
+      addTenantPostCommit(() => calls.push('callback'));
+    });
+
+    await tenantScope(req, res, next);
+    expect(calls).toEqual([]);
+    res.emit('finish');
+    await new Promise(setImmediate);
+
+    expect(calls).toEqual(['commit', 'callback']);
+  });
+
   it('rolls back error responses', async () => {
     const req = { user: { organizationId: 'org-a' } };
     const res = buildResponse(500);
@@ -54,6 +74,19 @@ describe('tenantScope', () => {
 
     expect(mockTransaction.rollback).toHaveBeenCalledTimes(1);
     expect(mockTransaction.commit).not.toHaveBeenCalled();
+  });
+
+  it('discards post-commit callbacks on rollback', async () => {
+    const callback = jest.fn();
+    const req = { user: { organizationId: 'org-a' } };
+    const res = buildResponse(500);
+    const next = jest.fn(() => addTenantPostCommit(callback));
+
+    await tenantScope(req, res, next);
+    res.emit('finish');
+    await new Promise(setImmediate);
+
+    expect(callback).not.toHaveBeenCalled();
   });
 
   it('does not open a transaction without JWT organization scope', async () => {
