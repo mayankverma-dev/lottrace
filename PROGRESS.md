@@ -39,6 +39,10 @@ _Scale & Integrate (3.1 - 3.18)_
 - Pricing model not finalized (per-location vs per-event-volume vs flat tiers)
 - Offline scanning scope (Phase 2 vs Phase 3 decision pending)
 
+P2-34 — AppError usage scanner now permits dynamic messages while retaining
+literal error-code and numeric-status checks. Focused scanner test and full
+backend suite pass.
+
 ---
 
 ## 💡 Architecture Decisions Log

@@ -204,7 +204,7 @@ describe('AppError call sites', () => {
     expect(sourceFiles.length).toBeGreaterThan(50);
   });
 
-  it('uses (message, string code, numeric status) everywhere', () => {
+  it('uses (message expression, string code, numeric status) everywhere', () => {
     const failures = [];
     let callCount = 0;
 
@@ -219,10 +219,6 @@ describe('AppError call sites', () => {
         if (args.length < 3) {
           failures.push(`${label} — missing status code argument`);
           continue;
-        }
-
-        if (!isStringLiteral(args[0])) {
-          failures.push(`${label} — message is not a string literal`);
         }
 
         if (!isStringLiteral(args[1])) {
@@ -255,6 +251,29 @@ describe('AppError call scanner', () => {
     expect(calls).toEqual([["'Notification not found'", '404']]);
     expect(calls[0].length).toBeLessThan(3);
     expect(isStringLiteral(calls[0][1])).toBe(false);
+  });
+
+  it('accepts a dynamic message expression', () => {
+    const calls = findAppErrorCalls([
+      'const message = sameOrganization ? \'Same org\' : \'Other org\';',
+      "throw new AppError(message, 'DUPLICATE_ENTRY', 409);",
+    ].join('\n'));
+
+    expect(calls).toEqual([['message', "'DUPLICATE_ENTRY'", '409']]);
+  });
+
+  it('flags a dynamic error code', () => {
+    const calls = findAppErrorCalls("throw new AppError('Not found', code, 404);");
+
+    expect(calls).toEqual([["'Not found'", 'code', '404']]);
+    expect(isStringLiteral(calls[0][1])).toBe(false);
+  });
+
+  it('flags a non-numeric status', () => {
+    const calls = findAppErrorCalls("throw new AppError('Not found', 'NOT_FOUND', status);");
+
+    expect(calls).toEqual([["'Not found'", "'NOT_FOUND'", 'status']]);
+    expect(isNumericLiteral(calls[0][2])).toBe(false);
   });
 
   it('parses multi-line calls and ignores comments', () => {
