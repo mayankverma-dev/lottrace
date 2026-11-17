@@ -99,7 +99,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-08 | P1 | Scan PWA cannot create lots or record manual events | Open |
 | P1-09 | P1 | PWA caches authenticated lot responses across users | Open |
 | P1-10 | P1 | Attachment keys are client-trusted; no download or list | Open |
-| P1-11 | P1 | Refresh-token rotation races log users out | Open |
+| P1-11 | P1 | Refresh-token rotation races log users out | Fixed (2026-11-17, bf7f1cb) |
 | P1-12 | P1 | User lifecycle breaks on global email uniqueness | Open |
 | P1-13 | P1 | Notification 404 builds an invalid AppError | Fixed (2026-11-09, 18744eb) |
 | P1-14 | P1 | Rate limiting collapses all users behind a proxy | Fixed (2026-11-17, 6a1703d) |
