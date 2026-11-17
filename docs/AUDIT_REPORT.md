@@ -80,7 +80,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P0-03 | P0 | Event creation accepts lots from other organizations | Fixed (2026-11-11, 63ce814) |
 | P0-13 | P0 | Event creation accepts cross-tenant locationId | Fixed (2026-11-11, 104a774) |
 | P0-14 | P0 | Lot creation accepts cross-tenant productId | Fixed (2026-11-11, ef77049) |
-| P0-15 | P0 | Email verification returns 500 after creating the account | Fixed (commit pending) |
+| P0-15 | P0 | Email verification returns 500 after creating the account | Fixed (2026-11-17, 2c858d3) |
 | P0-04 | P0 | Amendment is not atomic and can leave inconsistent history | Fixed (2026-11-13, a0d9a8f) |
 | P0-05 | P0 | Row Level Security is inert at runtime | Fixed (2026-11-16, 2e0d728) |
 | P0-06 | P0 | Event creation lacks effective idempotency; replay keys never expire | Fixed (2026-11-13, 2c31091) |
@@ -101,7 +101,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-09 | P1 | PWA caches authenticated lot responses across users | Open |
 | P1-10 | P1 | Attachment keys are client-trusted; no download or list | Open |
 | P1-11 | P1 | Refresh-token rotation races log users out | Fixed (2026-11-17, bf7f1cb) |
-| P1-12 | P1 | User lifecycle breaks on global email uniqueness | Fixed (commit pending) |
+| P1-12 | P1 | User lifecycle breaks on global email uniqueness | Fixed (2026-11-17, 4c11f91) |
 | P1-13 | P1 | Notification 404 builds an invalid AppError | Fixed (2026-11-09, 18744eb) |
 | P1-14 | P1 | Rate limiting collapses all users behind a proxy | Fixed (2026-11-17, 6a1703d) |
 | P1-15 | P1 | `EMAIL_DRY_RUN=false` enables dry-run | Fixed (2026-11-09, a964d91) |
@@ -218,7 +218,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P0-15 — Email verification returns 500 after creating the account
 
-- **Severity:** P0 · **Area:** backend / auth · **Status:** Fixed (commit pending)
+- **Severity:** P0 · **Area:** backend / auth · **Status:** Fixed (2026-11-17, 2c858d3)
 - **Evidence:** `backend/src/modules/auth/auth.service.js:174` assigns `const result = await knex.transaction(...)` and never returns it; `backend/src/modules/auth/auth.controller.js:33` reads `result.refreshToken`.
 - **What happens:** `POST /auth/verify-email` commits the organization and user, deletes the Redis OTP, then throws `TypeError: Cannot read properties of undefined (reading 'refreshToken')` and returns 500. The client never receives tokens, and a retry fails because the OTP is gone. The account exists with a valid password, so login works only if the user guesses that verification actually succeeded.
 - **Real-world impact:** Every self-serve registration ends in a 500. Smoke matrix row 1 fails.
@@ -454,7 +454,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-12 — User lifecycle breaks on global email uniqueness
 
-- **Severity:** P1 · **Area:** backend / users + auth · **Status:** Fixed (commit pending)
+- **Severity:** P1 · **Area:** backend / users + auth · **Status:** Fixed (2026-11-17, 4c11f91)
 - **Evidence:** `backend/src/modules/users/users.service.js:78-91` (duplicate lookup **excludes** `deactivated`), `:99-108` (insert), `:238-248` (reactivate sets `active` unconditionally), `:282-295` (resend only accepts `status='invited'`), `backend/src/db/migrations/20260702172631_enforce_global_unique_email.js` (`UNIQUE(email)` exists).
 - **What happens:** Three related defects:
   1. **Deactivated email invite → 500:** the duplicate check deliberately ignores deactivated rows, but the database now enforces global `UNIQUE(email)`. Inviting a previously deactivated user (same org or another org) passes the check and then throws a unique violation, which the error handler maps to a generic 409/500. There is no path to rehire or move a user.
