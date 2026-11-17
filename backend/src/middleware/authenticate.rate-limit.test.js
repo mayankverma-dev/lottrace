@@ -84,6 +84,54 @@ describe('authenticate per-user rate limiting', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('does not apply userLimiter when the token is deactivated', async () => {
+    jwt.verify.mockReturnValue(DECODED);
+    redis.get.mockImplementation(async (key) => (key === 'du_user-1' ? '1' : null));
+
+    const req = { headers: VALID_HEADERS };
+    const res = {};
+    const next = jest.fn();
+
+    await authenticate(req, res, next);
+
+    expect(redis.get).toHaveBeenCalledWith('du_user-1');
+    expect(apiResponse.unauthorized).toHaveBeenCalledWith(
+      res,
+      'AUTH_SESSION_REVOKED',
+      'Token has been revoked'
+    );
+    expect(userLimiter).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('fails closed with 503 when the deactivation status cannot be checked', async () => {
+    jwt.verify.mockReturnValue(DECODED);
+    redis.get.mockImplementation(async (key) => {
+      if (key === 'du_user-1') throw new Error('redis unavailable');
+      return null;
+    });
+
+    const req = { headers: VALID_HEADERS };
+    const res = { set: jest.fn() };
+    const next = jest.fn();
+
+    await authenticate(req, res, next);
+
+    expect(res.set).toHaveBeenCalledWith('Retry-After', '5');
+    expect(apiResponse.error).toHaveBeenCalledWith(
+      res,
+      'Authentication temporarily unavailable',
+      'AUTH_UNAVAILABLE',
+      503
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      { err: expect.any(Error) },
+      'Deactivation lookup failed; denying request'
+    );
+    expect(userLimiter).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('fails closed with 503 when the blacklist cannot be checked', async () => {
     redis.get.mockRejectedValue(new Error('redis unavailable'));
 

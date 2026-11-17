@@ -121,7 +121,7 @@ AUTH_INVALID_TOKEN      — JWT invalid/malformed
 AUTH_TOKEN_EXPIRED      — JWT expired (client should refresh)
 AUTH_FORBIDDEN          — Valid token, insufficient role
 AUTH_INVALID_REFRESH    — Refresh token invalid/expired
-AUTH_SESSION_REVOKED    — Session family invalidated (theft detected)
+AUTH_SESSION_REVOKED    — Session family invalidated (theft detected) or user deactivated
 
 VALIDATION_ERROR        — Zod schema violation (always 422)
 
@@ -424,6 +424,8 @@ user returns
 existing user instead. Reactivating a user who never set a password returns
 `200` with `data.status = "invited"` and sends a fresh invitation. Reactivating
 a user who has a password returns `200` with `data.status = "active"`.
+Deactivation blocks the user's unexpired access tokens immediately; reactivation
+lifts the block.
 
 Locations:
 GET    /api/v1/locations

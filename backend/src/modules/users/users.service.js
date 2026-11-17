@@ -1,8 +1,14 @@
 const crypto = require('crypto');
 const db = require('../../db/knex');
 const AppError = require('../../utils/AppError');
+const logger = require('../../utils/logger');
+const redis = require('../../config/rateLimitRedis');
 const { paginate } = require('../../utils/pagination');
 const emailService = require('../../utils/email');
+
+// Access tokens live for 30 minutes. Deny deactivated users for one minute
+// longer so no token minted before deactivation can outlive the deny key.
+const DEACTIVATION_DENY_TTL_SECONDS = 31 * 60;
 
 // Sort field mapping: camelCase API → snake_case DB
 const SORT_MAP = {
@@ -260,19 +266,30 @@ const deactivateUser = async (organizationId, userId, actorId) => {
     }
   }
 
-  return db.transaction(async (trx) => {
-    const [updated] = await trx('users')
-      .where({ id: userId, organization_id: organizationId })
-      .update({ status: 'deactivated', updated_at: trx.fn.now() })
-      .returning('*');
+  const denyKey = `du_${userId}`;
+  await redis.set(denyKey, '1', 'EX', DEACTIVATION_DENY_TTL_SECONDS);
 
-    // Revoke all refresh tokens for this user
-    await trx('refresh_tokens')
-      .where({ user_id: userId })
-      .update({ is_used: true });
+  try {
+    return await db.transaction(async (trx) => {
+      const [updated] = await trx('users')
+        .where({ id: userId, organization_id: organizationId })
+        .update({ status: 'deactivated', updated_at: trx.fn.now() })
+        .returning('*');
 
-    return formatUser(updated);
-  });
+      // Revoke all refresh tokens for this user
+      await trx('refresh_tokens')
+        .where({ user_id: userId })
+        .update({ is_used: true });
+
+      return formatUser(updated);
+    });
+  } catch (err) {
+    // The deny key must not outlive a failed deactivation.
+    await redis.del(denyKey).catch((delErr) => {
+      logger.error({ err: delErr, userId }, 'Failed to clear deactivation deny key');
+    });
+    throw err;
+  }
 };
 
 /**
@@ -315,6 +332,12 @@ const reactivateUser = async (organizationId, userId) => {
   if (!updated) {
     throw new AppError('Only deactivated users can be reactivated', 'CONFLICT', 409);
   }
+
+  // Lift the access-token deny key set at deactivation. A failure here only
+  // delays access until the key expires; log it and keep the reactivation.
+  await redis.del(`du_${userId}`).catch((err) => {
+    logger.error({ err, userId }, 'Failed to clear deactivation deny key');
+  });
 
   if (inviteToken) {
     const org = await db('organizations').where({ id: organizationId }).select('name').first();

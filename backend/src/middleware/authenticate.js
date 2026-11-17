@@ -45,6 +45,31 @@ const authenticate = async (req, res, next) => {
     return apiResponse.unauthorized(res, 'AUTH_TOKEN_EXPIRED', 'Token is invalid or expired');
   }
 
+  // Deactivation revokes refresh tokens and sets a deny key for the user's
+  // still-valid access tokens. Check it here, after the token identifies the
+  // user, and fail closed when Redis cannot answer.
+  let isDeactivated;
+  try {
+    isDeactivated = await redis.get(`du_${decoded.sub}`);
+  } catch (err) {
+    if (req.log && req.log.error) {
+      req.log.error({ err }, 'Deactivation lookup failed; denying request');
+    } else {
+      logger.error({ err }, 'Deactivation lookup failed; denying request');
+    }
+    res.set('Retry-After', '5');
+    return apiResponse.error(
+      res,
+      'Authentication temporarily unavailable',
+      'AUTH_UNAVAILABLE',
+      503
+    );
+  }
+
+  if (isDeactivated) {
+    return apiResponse.unauthorized(res, 'AUTH_SESSION_REVOKED', 'Token has been revoked');
+  }
+
   req.user = {
     id: decoded.sub,
     organizationId: decoded.orgId,

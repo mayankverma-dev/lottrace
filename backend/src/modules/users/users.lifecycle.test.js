@@ -32,6 +32,11 @@ jest.mock('../../config/redis', () => ({
   get: jest.fn(),
   del: jest.fn(),
 }));
+jest.mock('../../config/rateLimitRedis', () => ({
+  set: jest.fn().mockResolvedValue('OK'),
+  get: jest.fn().mockResolvedValue(null),
+  del: jest.fn().mockResolvedValue(1),
+}));
 jest.mock('../../jobs/queues', () => ({
   emailQueue: { add: jest.fn() },
 }));
@@ -40,6 +45,7 @@ const crypto = require('crypto');
 const path = require('path');
 const argon2 = require('argon2');
 const { v4: uuid } = require('uuid');
+const rateLimitRedis = require('../../config/rateLimitRedis');
 
 const describeDb = RUN_DB_TESTS ? describe : describe.skip;
 const MIGRATIONS_DIR = path.join(__dirname, '../../db/migrations');
@@ -270,6 +276,30 @@ describeDb('P1-12 user lifecycle with global email uniqueness', () => {
 
     const login = await authService.login({ email, password: PASSWORD });
     expect(login.accessToken).toBeDefined();
+  });
+
+  it('sets a deny key on deactivation and clears it on reactivation', async () => {
+    const organizationId = await createOrganization('deny-key');
+    const passwordHash = await argon2.hash(PASSWORD, { type: argon2.argon2id });
+
+    const actor = await createUser({
+      organizationId,
+      email: uniqueEmail('deny-actor'),
+      passwordHash,
+    });
+    const target = await createUser({
+      organizationId,
+      email: uniqueEmail('deny-target'),
+      passwordHash,
+    });
+
+    await usersService.deactivateUser(organizationId, target.id, actor.id);
+
+    expect(rateLimitRedis.set).toHaveBeenCalledWith(`du_${target.id}`, '1', 'EX', 1860);
+
+    await usersService.reactivateUser(organizationId, target.id);
+
+    expect(rateLimitRedis.del).toHaveBeenCalledWith(`du_${target.id}`);
   });
 
   it('rejects reactivation of a user who is not deactivated', async () => {
