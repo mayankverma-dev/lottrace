@@ -104,4 +104,49 @@ describeDb('P0-15 email verification', () => {
     const login = await authService.login({ email, password: PASSWORD });
     expect(login.accessToken).toEqual(expect.any(String));
   });
+
+  it('rejects signup for an email with a pending invitation', async () => {
+    const email = `p1-36-invited-${uuid()}@example.test`;
+    const organizationId = uuid();
+
+    await db('organizations').insert({
+      id: organizationId,
+      name: `P1-36 Org ${organizationId.slice(0, 8)}`,
+      slug: `p1-36-${organizationId}`,
+    });
+    await db('users').insert({
+      id: uuid(),
+      organization_id: organizationId,
+      first_name: 'Pending',
+      last_name: 'Invite',
+      email,
+      role: 'operator',
+      status: 'invited',
+      invite_token_hash: 'a'.repeat(64),
+      invite_expires_at: new Date(Date.now() + 60 * 60 * 1000),
+    });
+
+    await expect(authService.register({
+      firstName: 'Signup',
+      lastName: 'Attempt',
+      email,
+      password: PASSWORD,
+      organizationName: `P1-36 Signup Org ${uuid()}`,
+    })).rejects.toMatchObject({
+      code: 'EMAIL_INVITED',
+      statusCode: 409,
+      details: [{
+        field: 'email',
+        message: 'Use the invitation link that was sent to this address instead of signing up.',
+      }],
+    });
+
+    const users = await db('users').where({ email });
+    expect(users).toHaveLength(1);
+    expect(users[0].status).toBe('invited');
+    expect(users[0].organization_id).toBe(organizationId);
+    expect(users[0].password_hash).toBeNull();
+    expect(emailQueue.add).not.toHaveBeenCalled();
+    expect(redis.__store.has(`signup:${email}`)).toBe(false);
+  });
 });

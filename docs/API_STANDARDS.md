@@ -128,6 +128,7 @@ VALIDATION_ERROR        — Zod schema violation (always 422)
 NOT_FOUND               — Resource not found (or cross-tenant, always 404)
 DUPLICATE_ENTRY         — Unique constraint violated
 EMAIL_DEACTIVATED       — Email belongs to a deactivated user (reactivate instead)
+EMAIL_INVITED           — Email has an unaccepted invitation (accept it instead of signing up)
 CONFLICT                — Optimistic lock / version conflict
 IDEMPOTENCY_KEY_REUSED  — Key reused with a different request
 IDEMPOTENCY_KEY_IN_PROGRESS — Matching request is still processing
@@ -414,8 +415,11 @@ POST   /api/v1/users/:userId/deactivate
 POST   /api/v1/users/:userId/reactivate
 
 Email is globally unique. One user belongs to one organization; there is no
-cross-org transfer in v1. Inviting an email that belongs to an active or
-invited user returns `409 DUPLICATE_ENTRY`. Inviting a deactivated user returns
+cross-org transfer in v1. Registering an email with an unaccepted invitation
+returns `409 EMAIL_INVITED` with `error.details[].field = "email"`; accept the
+invitation instead of creating a new account. Inviting an email that belongs to
+an active or invited user returns `409 DUPLICATE_ENTRY`. Inviting a deactivated
+user returns
 `409 EMAIL_DEACTIVATED` with `error.details[].field = "email"`; reactivate the
 existing user instead. Reactivating a user who never set a password returns
 `200` with `data.status = "invited"` and sends a fresh invitation. Reactivating

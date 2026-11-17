@@ -80,6 +80,18 @@ const register = async ({ firstName, lastName, email, password, organizationName
     return trx('users').where({ email }).first();
   });
   if (existingUser) {
+    if (existingUser.status === 'invited') {
+      throw new AppError(
+        'This email has a pending invitation. Accept the invitation from your inbox to continue.',
+        'EMAIL_INVITED',
+        409,
+        [{
+          field: 'email',
+          message: 'Use the invitation link that was sent to this address instead of signing up.',
+        }],
+      );
+    }
+
     throw new AppError('Email already in use', 'EMAIL_IN_USE', 400);
   }
 
