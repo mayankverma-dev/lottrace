@@ -15,6 +15,89 @@ export const apiClient = axios.create(config);
 // Main client with interceptors
 export const api = axios.create(config);
 
+const REFRESH_LOCK_KEY = 'lottrace-auth-refresh-lock';
+const REFRESH_CHANNEL_NAME = 'lottrace-auth-refresh';
+const REFRESH_LOCK_MS = 15000;
+const REFRESH_WAIT_MS = 20000;
+const refreshTabId = Math.random().toString(36).slice(2);
+const refreshChannel = typeof BroadcastChannel !== 'undefined'
+  ? new BroadcastChannel(REFRESH_CHANNEL_NAME)
+  : null;
+
+const readRefreshLock = () => {
+  try {
+    const lock = JSON.parse(window.localStorage.getItem(REFRESH_LOCK_KEY));
+    if (!lock || lock.expiresAt <= Date.now()) return null;
+    return lock;
+  } catch (_error) {
+    return null;
+  }
+};
+
+const tryAcquireRefreshLock = () => {
+  const current = readRefreshLock();
+  if (current && current.owner !== refreshTabId) return false;
+  window.localStorage.setItem(REFRESH_LOCK_KEY, JSON.stringify({
+    owner: refreshTabId,
+    expiresAt: Date.now() + REFRESH_LOCK_MS,
+  }));
+  return readRefreshLock()?.owner === refreshTabId;
+};
+
+const releaseRefreshLock = () => {
+  if (readRefreshLock()?.owner === refreshTabId) {
+    window.localStorage.removeItem(REFRESH_LOCK_KEY);
+  }
+};
+
+const waitForCrossTabRefresh = () => new Promise((resolve, reject) => {
+  if (!refreshChannel) {
+    reject(new Error('Cross-tab refresh channel unavailable'));
+    return;
+  }
+
+  let settled = false;
+  const finish = (callback, value) => {
+    if (settled) return;
+    settled = true;
+    refreshChannel.removeEventListener('message', onMessage);
+    window.clearTimeout(timeout);
+    callback(value);
+  };
+  const onMessage = (event) => {
+    if (event.data?.type !== 'refresh-result') return;
+    if (event.data.ok) finish(resolve, event.data.payload);
+    else finish(reject, event.data.error);
+  };
+  const timeout = window.setTimeout(() => {
+    finish(reject, new Error('Timed out waiting for another tab to refresh'));
+  }, REFRESH_WAIT_MS);
+
+  refreshChannel.addEventListener('message', onMessage);
+});
+
+const refreshAccessToken = async () => {
+  if (typeof window === 'undefined' || !refreshChannel || tryAcquireRefreshLock()) {
+    try {
+      const { data } = await apiClient.post('/auth/refresh');
+      const payload = data.data;
+      refreshChannel?.postMessage({ type: 'refresh-result', ok: true, payload });
+      return payload;
+    } catch (error) {
+      refreshChannel?.postMessage({
+        type: 'refresh-result',
+        ok: false,
+        error: error.response?.data || { message: error.message },
+      });
+      throw error;
+    } finally {
+      releaseRefreshLock();
+    }
+  }
+
+  return waitForCrossTabRefresh();
+};
+
 // Request: inject access token
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().accessToken;
@@ -54,8 +137,7 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const { data } = await apiClient.post('/auth/refresh');
-        const { user, accessToken: newToken } = data.data;
+        const { user, accessToken: newToken } = await refreshAccessToken();
         
         useAuthStore.getState().setAuth(user, newToken);
         

@@ -43,6 +43,7 @@ const envSchema = z.object({
   // JWT
   ACCESS_JWT_SECRET: z.string().min(64, 'ACCESS_JWT_SECRET must be at least 64 characters'),
   REFRESH_JWT_SECRET: z.string().min(64, 'REFRESH_JWT_SECRET must be at least 64 characters'),
+  REFRESH_TOKEN_ENCRYPTION_KEY: z.string().min(32, 'REFRESH_TOKEN_ENCRYPTION_KEY must be at least 32 characters'),
   ARGON2_SECRET: z.string().min(16, 'ARGON2_SECRET must be at least 16 characters'),
 
   // Hash chain HMAC keyring. The secret lives only in the environment/KMS,

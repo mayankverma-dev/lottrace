@@ -13,6 +13,7 @@ const REQUIRED_ENV = {
   REDIS_URL: 'redis://localhost:6379',
   ACCESS_JWT_SECRET: 'a'.repeat(64),
   REFRESH_JWT_SECRET: 'b'.repeat(64),
+  REFRESH_TOKEN_ENCRYPTION_KEY: 'e'.repeat(64),
   ARGON2_SECRET: 'c'.repeat(32),
   RESEND_API_KEY: 're_test_key',
   HASH_CHAIN_KEY_ID: 'test-k1',

@@ -12,6 +12,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://lottrace:lo
 process.env.REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 process.env.ACCESS_JWT_SECRET = process.env.ACCESS_JWT_SECRET || 'a'.repeat(64);
 process.env.REFRESH_JWT_SECRET = process.env.REFRESH_JWT_SECRET || 'b'.repeat(64);
+process.env.REFRESH_TOKEN_ENCRYPTION_KEY = process.env.REFRESH_TOKEN_ENCRYPTION_KEY || 'e'.repeat(64);
 process.env.ARGON2_SECRET = process.env.ARGON2_SECRET || 'c'.repeat(32);
 process.env.RESEND_API_KEY = process.env.RESEND_API_KEY || 're_test_key';
 process.env.HASH_CHAIN_KEY_ID = process.env.HASH_CHAIN_KEY_ID || 'test-k1';

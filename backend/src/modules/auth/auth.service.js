@@ -10,6 +10,34 @@ const redis = require('../../config/redis');
 const { emailQueue } = require('../../jobs/queues');
 const logger = require('../../utils/logger');
 
+const REFRESH_REUSE_GRACE_MS = 10 * 1000;
+const TOKEN_CIPHER_ALGORITHM = 'aes-256-gcm';
+
+const encryptionKey = () => crypto.createHash('sha256')
+  .update(env.REFRESH_TOKEN_ENCRYPTION_KEY)
+  .digest();
+
+const encryptRefreshToken = (token) => {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv(TOKEN_CIPHER_ALGORITHM, encryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(token, 'utf8'), cipher.final()]);
+  return [iv.toString('hex'), cipher.getAuthTag().toString('hex'), encrypted.toString('hex')].join('.');
+};
+
+const decryptRefreshToken = (ciphertext) => {
+  const [ivHex, tagHex, encryptedHex] = ciphertext.split('.');
+  const decipher = crypto.createDecipheriv(
+    TOKEN_CIPHER_ALGORITHM,
+    encryptionKey(),
+    Buffer.from(ivHex, 'hex')
+  );
+  decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+  return Buffer.concat([
+    decipher.update(Buffer.from(encryptedHex, 'hex')),
+    decipher.final(),
+  ]).toString('utf8');
+};
+
 /**
  * Generate a 6-digit OTP string
  * @returns {string}
@@ -143,7 +171,7 @@ const verifyEmail = async ({ email, otp }) => {
     throw new AppError('Invalid verification code', 'INVALID_VERIFICATION_CODE', 400);
   }
 
-  return knex.transaction(async (trx) => {
+  const result = await knex.transaction(async (trx) => {
     const orgId = uuid.v4();
     const orgSlug = payload.organizationName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
@@ -242,40 +270,72 @@ const resendVerification = async ({ email }) => {
 
 const refresh = async ({ refreshToken }) => {
   const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-  const storedToken = await knex('refresh_tokens').where({ token_hash: tokenHash }).first();
 
-  if (!storedToken) {
-    throw new AppError('Invalid refresh token', 'INVALID_TOKEN', 401);
-  }
+  const result = await knex.transaction(async (trx) => {
+    const storedToken = await trx('refresh_tokens')
+      .where({ token_hash: tokenHash })
+      .forUpdate()
+      .first();
 
-  if (storedToken.is_used) {
-    await knex('refresh_tokens').where({ session_family: storedToken.session_family }).del();
-    throw new AppError('Token reuse detected. Please login again.', 'TOKEN_REUSE', 401);
-  }
+    if (!storedToken) {
+      throw new AppError('Invalid refresh token', 'INVALID_TOKEN', 401);
+    }
 
-  if (new Date() > new Date(storedToken.expires_at)) {
-    throw new AppError('Refresh token expired', 'TOKEN_EXPIRED', 401);
-  }
-
-  const user = await knex.transaction(async (trx) => {
     await trx.raw('SELECT set_config(?, ?, true)', ['app.auth_user_id', storedToken.user_id]);
-    return trx('users').where({ id: storedToken.user_id, status: 'active' }).first();
-  });
-  if (!user) {
-    throw new AppError('User not found or inactive', 'USER_INVALID', 401);
-  }
+    const user = await trx('users').where({ id: storedToken.user_id, status: 'active' }).first();
+    if (!user) {
+      throw new AppError('User not found or inactive', 'USER_INVALID', 401);
+    }
 
-  return withTenantTransaction(user.organization_id, async (trx) => {
-    await trx('refresh_tokens').where({ id: storedToken.id }).update({ is_used: true });
+    await trx.raw('SELECT set_config(?, ?, true)', ['app.current_org_id', user.organization_id]);
 
+    if (new Date() > new Date(storedToken.expires_at)) {
+      throw new AppError('Refresh token expired', 'TOKEN_EXPIRED', 401);
+    }
+
+    if (storedToken.is_used) {
+      const rotatedAt = storedToken.rotated_at && new Date(storedToken.rotated_at).getTime();
+      const withinGrace = rotatedAt && Date.now() - rotatedAt <= REFRESH_REUSE_GRACE_MS;
+      if (withinGrace && storedToken.replacement_token_ciphertext) {
+        const replacementRefreshToken = decryptRefreshToken(storedToken.replacement_token_ciphertext);
+        const accessToken = jwt.sign(
+          { sub: user.id, orgId: user.organization_id, role: user.role },
+          env.ACCESS_JWT_SECRET,
+          { expiresIn: '30m' }
+        );
+        return {
+          user: { id: user.id, email: user.email, role: user.role, organizationId: user.organization_id },
+          accessToken,
+          refreshToken: replacementRefreshToken,
+        };
+      }
+
+      await trx('refresh_tokens').where({ session_family: storedToken.session_family }).del();
+      return { revoked: true };
+    }
+
+    const replacementId = uuid.v4();
     const tokens = generateTokens(user, storedToken.session_family);
 
     await trx('refresh_tokens').insert({
+      id: replacementId,
       user_id: user.id,
       token_hash: tokens.refreshTokenHash,
       session_family: tokens.sessionFamily,
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     });
+
+    const affectedRows = await trx('refresh_tokens')
+      .where({ id: storedToken.id, is_used: false })
+      .update({
+        is_used: true,
+        replaced_by_token_id: replacementId,
+        rotated_at: trx.fn.now(),
+        replacement_token_ciphertext: encryptRefreshToken(tokens.rawRefreshToken),
+      });
+    if (affectedRows !== 1) {
+      throw new AppError('Token reuse detected. Please login again.', 'TOKEN_REUSE', 401);
+    }
 
     return {
       user: { id: user.id, email: user.email, role: user.role, organizationId: user.organization_id },
@@ -283,6 +343,12 @@ const refresh = async ({ refreshToken }) => {
       refreshToken: tokens.rawRefreshToken,
     };
   });
+
+  if (result.revoked) {
+    throw new AppError('Token reuse detected. Please login again.', 'TOKEN_REUSE', 401);
+  }
+
+  return result;
 };
 
 const logout = async ({ refreshToken, accessToken }) => {

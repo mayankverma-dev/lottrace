@@ -11,11 +11,15 @@ exports.up = function(knex) {
     table.text('device_hint');
     table.specificType('ip_address', 'inet');
     table.boolean('is_used').notNullable().defaultTo(false);
+    table.uuid('replaced_by_token_id').references('id').inTable('refresh_tokens').onDelete('CASCADE');
+    table.timestamp('rotated_at', { useTz: true });
+    table.text('replacement_token_ciphertext');
     table.timestamp('expires_at', { useTz: true }).notNullable();
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
 
     table.index('user_id', 'idx_refresh_tokens_user');
     table.index('session_family', 'idx_refresh_tokens_family');
+    table.index('replaced_by_token_id', 'idx_refresh_tokens_replaced_by');
   });
 };
 
