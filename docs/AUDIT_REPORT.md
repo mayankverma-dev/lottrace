@@ -99,7 +99,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-07 | P1 | Permission map hides pages from roles that can use them | Fixed (2026-11-14, 4faf8a9) |
 | P1-08 | P1 | Scan PWA cannot create lots or record manual events | Open |
 | P1-09 | P1 | PWA caches authenticated lot responses across users | Open |
-| P1-10 | P1 | Attachment keys are client-trusted; no download or list | Open |
+| P1-10 | P1 | Attachment keys are client-trusted; no download or list | Fixed (2026-11-18, ff07736) |
 | P1-11 | P1 | Refresh-token rotation races log users out | Fixed (2026-11-17, bf7f1cb) |
 | P1-12 | P1 | User lifecycle breaks on global email uniqueness | Fixed (2026-11-17, 4c11f91) |
 | P1-13 | P1 | Notification 404 builds an invalid AppError | Fixed (2026-11-09, 18744eb) |
@@ -136,7 +136,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-06 | P2 | Local infrastructure uses default credentials and exposed consoles | Open |
 | P2-07 | P2 | Frontend bundle is one large chunk; no error boundaries | Open |
 | P2-08 | P2 | Documentation claims completion that the code does not deliver | Open |
-| P2-09 | P2 | Attachment upload flow leaves orphaned objects | Open |
+| P2-09 | P2 | Attachment upload flow leaves orphaned objects | Fixed (2026-11-18, ff07736) |
 | P2-10 | P2 | Minor API/UX inconsistencies (status codes, empty states) | Open |
 | P2-11 | P2 | Expected 4xx errors are logged at ERROR level | Fixed (2026-11-09, 315e54b) |
 | P2-12 | P2 | Event list pagination is unstable when `created_at` values tie | Fixed (2026-11-10, ca4985e) |
@@ -440,13 +440,15 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-10 — Attachment keys are client-trusted; no download or list
 
-- **Severity:** P1 · **Area:** backend + frontend / files · **Status:** Open
+- **Severity:** P1 · **Area:** backend + frontend / files · **Status:** Fixed (2026-11-18, ff07736)
 - **Evidence:** `backend/src/modules/events/events.service.js:279-300` (`addAttachment` inserts `data.key` after only checking the event), `:270-277` (presigned URL key generated safely), `frontend/src/pages/events/RecordEventPage.jsx:193-205` (upload `fetch` ignores `response.ok`; client sends the key back).
 - **What happens:** The presigned-URL endpoint generates a safe key, but `POST /events/:id/attachments` trusts whatever `key` the client sends. A user can attach any object in the bucket — another org's export, another event's attachment, or an arbitrary key they learned — to their own event. The server also trusts client-supplied `sizeBytes`/`contentType`. There is no endpoint to list or download attachments, so uploaded files are write-only. The frontend does not check whether the S3 PUT succeeded, so a failed upload still creates an attachment row pointing at a missing object.
 - **Real-world impact:** Broken access control on evidence files, orphaned records, and an inability to retrieve the documents an auditor asks for. A user can also claim a file is 1 KB when it is 5 GB.
 - **Fix direction:** Derive the key server-side or validate it strictly against `attachments/org_${orgId}/events/${eventId}/` and reject traversal. Call `HeadObject` before insert; take size/content type from S3, not the body. Whitelist MIME types and enforce a max size. Add `GET /events/:id/attachments` (list, org-scoped) and `GET /attachments/:id/download` (presigned GET, org-scoped). In the frontend, check `response.ok` and abort the attachment creation on failure; show per-file progress/errors.
 - **Greenfield note:** Delete existing attachment rows and objects instead of auditing or quarantining them. Enforce the server-derived key prefix for every new upload; no legacy rows need to survive.
 - **Verification:** Attempt to attach a key from another org → 404/400 and no row. Upload a file, list it, download it, and confirm bytes match. Simulate a failed PUT and confirm no attachment row is created.
+- **Fix:** Presign creates a server-owned pending attachment row and returns only `attachmentId` plus upload URL. Confirmation accepts only that ID, verifies `HeadObject`, persists storage metadata, and signs uploaded attachment evidence. Event attachment listing and tenant-scoped download URL endpoints were added. Frontend uploads through the configured Axios instance and does not confirm failed PUTs.
+- **Verified:** `events.attachments-access.test.js` covers pending lifecycle, missing objects, cross-tenant 404s, arbitrary-key rejection, list/download behavior, metadata authority, confirmed deletion, audit logging, and cleanup. Focused attachment, RBAC, idempotency, and hash-evidence suites pass; frontend and Scan PWA builds pass.
 
 ## P1-11 — Refresh-token rotation races log users out
 
@@ -796,12 +798,14 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P2-09 — Attachment upload flow leaves orphaned objects
 
-- **Severity:** P2 · **Area:** backend / storage · **Status:** Open
+- **Severity:** P2 · **Area:** backend / storage · **Status:** Fixed (2026-11-18, ff07736)
 - **Evidence:** `backend/src/modules/events/events.service.js:270-277` (presigned URL issued), `:279-300` (row created only after upload); `frontend/src/pages/events/RecordEventPage.jsx:193-205`.
 - **What happens:** A presigned URL is issued before any database row exists. If the user abandons the form, the upload fails, or the attachment row insert fails, the object stays in the bucket forever with no reference. There is no cleanup job or S3 lifecycle rule. Conversely, if the PUT succeeds but the browser crashes before `addAttachment`, the file is orphaned and the event looks attachment-free.
 - **Real-world impact:** Unbounded storage growth and orphaned evidence files that cannot be found or deleted, plus a mismatch between what the user uploaded and what the audit trail records.
 - **Fix direction:** Use a two-phase flow: create a `pending` attachment row when issuing the URL, mark it `uploaded` after a verified `HeadObject`, and clean up `pending` rows older than 24 hours. Add an S3 lifecycle rule to expire the `attachments/` prefix only for objects tagged `pending` (or use a `tmp/` prefix and copy on confirm). Add a delete endpoint that soft-deletes the row and removes the object after retention. Reconcile orphaned objects with a periodic job.
 - **Verification:** Upload and abandon → no permanent object after the cleanup window. Upload successfully → row is `uploaded` and downloadable. Delete → object removed and audit entry written.
+- **Fix:** Pending rows are created before presigned upload, expire after 24 hours, and are cleaned only after storage deletion succeeds. Cleanup retains rows when storage deletion fails for retry. Confirmed uploads transition to `uploaded` and are excluded from cleanup. Confirmed attachments can be soft-deleted through the tenant-scoped delete endpoint; storage deletion and `attachment.delete` audit logging occur before final `deleted` state, with signed deletion evidence.
+- **Verified:** `events.attachments-access.test.js` covers expired cleanup, recent-row retention, failed-delete retention, successful confirmation, download URL generation, confirmed deletion, and audit logging. No backfill or legacy-object migration exists.
 
 ## P2-10 — Minor API/UX inconsistencies
 
