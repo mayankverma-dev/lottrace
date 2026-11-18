@@ -31,18 +31,6 @@ export default defineConfig(({ mode }) => {
             { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
           ],
         },
-        workbox: {
-          runtimeCaching: [
-            {
-              urlPattern: ({ url }) => url.pathname.startsWith('/api/v1/lots'),
-              handler: 'NetworkFirst',
-              options: {
-                cacheName: 'api-cache',
-                expiration: { maxEntries: 100 },
-              },
-            },
-          ],
-        },
       }),
     ],
     resolve: {

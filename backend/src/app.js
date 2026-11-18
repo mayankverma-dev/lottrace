@@ -10,6 +10,7 @@ const logger = require('./utils/logger');
 const env = require('./config/env');
 const apiResponse = require('./utils/apiResponse');
 const requestId = require('./middleware/requestId');
+const noStore = require('./middleware/noStore');
 const errorHandler = require('./middleware/errorHandler');
 const { apiLimiter } = require('./middleware/rateLimiter');
 const authenticate = require('./middleware/authenticate');
@@ -44,13 +45,17 @@ app.use(
 // 3. Security headers
 app.use(helmet());
 
-// 4. Gzip compression
+// 4. API response cache policy. Authenticated payloads must never be stored by
+// browsers, service workers, or intermediary caches.
+app.use('/api', noStore);
+
+// 5. Gzip compression
 app.use(compression());
 
-// 5. Rate limiting (global)
+// 6. Rate limiting (global)
 app.use('/api', apiLimiter);
 
-// 5. HTTP request logging
+// 7. HTTP request logging
 app.use(
   pinoHttp({
     logger,
@@ -70,7 +75,7 @@ app.use(
   }),
 );
 
-// 6. Body parsing
+// 8. Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());

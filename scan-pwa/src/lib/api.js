@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { useAuthStore } from '../stores/auth.store';
+import { clearSessionData } from './session';
 
 const config = {
   baseURL: import.meta.env.VITE_API_BASE_URL + '/api/v1',
@@ -68,7 +69,7 @@ api.interceptors.response.use(
         queue.forEach(({ reject }) => reject(refreshError));
         queue = [];
         
-        useAuthStore.getState().clearAuth();
+        await clearSessionData();
         window.location.href = '/login';
         
         return Promise.reject(error);

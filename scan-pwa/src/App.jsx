@@ -3,6 +3,7 @@ import { ScanLine, Clock, Keyboard } from 'lucide-react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/sonner';
 import { queryClient } from './lib/queryClient';
+import { clearSessionData } from './lib/session';
 import { useAuthStore } from './stores/auth.store';
 import { useEffect } from 'react';
 import { apiClient } from './lib/api';
@@ -47,7 +48,6 @@ function BottomNav() {
 
 function AppHeader() {
   const { user } = useAuthStore();
-  const { clearAuth } = useAuthStore();
 
   const handleLogout = async () => {
     try {
@@ -55,8 +55,7 @@ function AppHeader() {
     } catch {
       // ignore — clear local state regardless
     } finally {
-      clearAuth();
-      queryClient.clear();
+      await clearSessionData();
     }
   };
 
@@ -131,13 +130,13 @@ function Layout() {
 }
 
 export default function App() {
-  const { setAuth, clearAuth } = useAuthStore();
+  const { setAuth } = useAuthStore();
 
   useEffect(() => {
     const initAuth = async () => {
       const isAuthenticated = localStorage.getItem('isAuthenticated');
       if (!isAuthenticated) {
-        clearAuth();
+        await clearSessionData();
         return;
       }
       try {
@@ -147,11 +146,11 @@ export default function App() {
         const { user, accessToken } = data.data;
         setAuth(user, accessToken);
       } catch {
-        clearAuth();
+        await clearSessionData();
       }
     };
     initAuth();
-  }, [setAuth, clearAuth]);
+  }, [setAuth]);
 
   return (
     <QueryClientProvider client={queryClient}>

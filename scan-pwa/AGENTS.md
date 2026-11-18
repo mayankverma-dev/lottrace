@@ -264,18 +264,14 @@ export default defineConfig({
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
         ],
       },
-      workbox: {
-        // Cache API routes for recently viewed lots (offline fallback)
-        runtimeCaching: [{
-          urlPattern: ({ url }) => url.pathname.startsWith('/api/v1/lots'),
-          handler: 'NetworkFirst',
-          options: { cacheName: 'api-cache', expiration: { maxEntries: 100 } },
-        }],
-      },
     }),
   ],
 });
 ```
+
+> Do not add Workbox runtime caching for `/api/**`. Authenticated responses must
+> never enter Cache Storage. The app shell is precached; API data is network-only.
+> Purge `api-cache` on logout and auth failure via `purgeApiCache()`.
 
 ---
 
@@ -312,8 +308,10 @@ scan-pwa/src/
 
 ## Offline Handling
 - Show banner when offline: `"You're offline — scans will sync when reconnected"`
-- Cache: recently viewed lots (last 100) for offline lookup
+- Do NOT cache authenticated API responses in the service worker or Cache Storage
+- Lot lookup is network-only; there is no offline lookup in v1
 - Do NOT allow event submission while offline in v1 — show clear "No connection" state
+- A future offline store must be keyed by `organizationId`/`userId` and purged on logout
 - Offline-first sync is Phase 4 scope
 
 ```javascript

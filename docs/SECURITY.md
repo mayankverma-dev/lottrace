@@ -165,6 +165,13 @@ helmet({
 Every request gets a unique ID in `X-Request-ID` header (set by `requestId` middleware).
 Logged with every log line for tracing across logs.
 
+### Response Caching
+- Every `/api/v1` response carries `Cache-Control: no-store`
+- Service workers must not runtime-cache authenticated API responses
+- Cache Storage must not contain API payloads after logout, refresh failure, or boot
+- Offline data, if introduced later, must be scoped to one user and organization and
+  purged when the session ends
+
 ---
 
 ## 6. Audit & Compliance

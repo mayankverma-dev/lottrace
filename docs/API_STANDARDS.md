@@ -34,6 +34,21 @@ Authorization: ApiKey <api_key>
 
 ---
 
+## Response Caching
+
+Every response under `/api/v1` is sent with:
+
+```
+Cache-Control: no-store
+```
+
+Clients and service workers must never persist authenticated response bodies in the
+browser HTTP cache, Cache Storage, or a service-worker runtime cache. If offline
+data is introduced later, it must be explicitly scoped to one user and
+organization and purged on logout.
+
+---
+
 ## Universal Response Envelope
 
 **EVERY response — success or error — uses this exact shape.**

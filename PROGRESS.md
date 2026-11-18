@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-18
-**Last Session:** 2026-11-18 — P1-10 and P2-09 fixed pending commit. Attachment storage keys are server-owned; uploads create pending rows, confirm through storage metadata, expose list/download APIs without raw keys, support audited soft deletion, and clean expired/interrupted pending objects. Focused attachment, event RBAC/idempotency, hash-evidence, frontend, and PWA checks pass.
+**Last Session:** 2026-11-18 — P1-09 fixed pending commit. The scan PWA no longer runtime-caches lot responses, every `/api` response carries `Cache-Control: no-store`, and logout, refresh failure, and boot auth failure purge the old `api-cache` bucket along with auth and React Query state. Offline lot lookup is intentionally network-only until a user/org-scoped offline store exists. Focused backend/PWA tests and both builds pass; no database commands were run.
 
 ---
 
@@ -59,6 +59,16 @@ backend suite pass.
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P1-09 — PWA cached authenticated lot responses across users:
+- `scan-pwa/vite.config.js` (removed the `/api/v1/lots` Workbox `NetworkFirst` runtime cache; app-shell precache only)
+- `scan-pwa/src/lib/apiCache.js` (`API_CACHE_NAME`, `purgeApiCache()`)
+- `scan-pwa/src/lib/session.js` (`clearSessionData()` clears auth, cancels/clears React Query, purges API cache)
+- `scan-pwa/src/App.jsx` (logout and boot auth failure use `clearSessionData()`)
+- `scan-pwa/src/lib/api.js` (refresh failure uses `clearSessionData()` before redirect)
+- `backend/src/middleware/noStore.js` (`Cache-Control: no-store`), mounted on `/api` in `backend/src/app.js`
+- Tests: `backend/src/middleware/noStore.test.js`, `scan-pwa/src/lib/session.test.js`, `scan-pwa/vite.config.test.js`
+- Docs: `docs/AUDIT_REPORT.md`, `docs/API_STANDARDS.md`, `docs/SECURITY.md`, `scan-pwa/AGENTS.md`, `PROGRESS.md`
 
 P0-15 — email verification returned 500 after account creation:
 - `backend/src/modules/auth/auth.service.js` (return verification result)
