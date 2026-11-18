@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-18
-**Last Session:** 2026-11-18 — P1-09 fixed pending commit. The scan PWA no longer runtime-caches lot responses, every `/api` response carries `Cache-Control: no-store`, and logout, refresh failure, and boot auth failure purge the old `api-cache` bucket along with auth and React Query state. Offline lot lookup is intentionally network-only until a user/org-scoped offline store exists. Focused backend/PWA tests and both builds pass; no database commands were run.
+**Last Session:** 2026-11-18 — P1-39 fixed pending commit. The scan PWA production build now uses `vite-plugin-pwa@2.0.0` (Vite 8/Rolldown compatible), emits `registerSW.js` and `manifest.webmanifest`, ships real 192/512 icons, and fails the build when those artifacts, manifest fields, icon dimensions, or precache entries are missing. Browser verification confirms automatic registration, activation, and an app-shell-only precache. P1-09 remains fixed: no API runtime caching, `Cache-Control: no-store`, and session purge on logout/auth failure.
 
 ---
 
@@ -59,6 +59,13 @@ backend suite pass.
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P1-39 — production PWA build omitted registration and manifest assets:
+- `scan-pwa/package.json`, `pnpm-lock.yaml` (`vite-plugin-pwa` ^2.0.0)
+- `scan-pwa/vite.config.js` (Vite 8-compatible plugin; maskable 192/512 icons)
+- `scan-pwa/public/icon-192.png`, `scan-pwa/public/icon-512.png`
+- `scan-pwa/scripts/verify-pwa-build.mjs`, `scan-pwa/scripts/verify-pwa-build.test.mjs`
+- Docs: `docs/TECH_STACK.md`, `scan-pwa/AGENTS.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P1-09 — PWA cached authenticated lot responses across users:
 - `scan-pwa/vite.config.js` (removed the `/api/v1/lots` Workbox `NetworkFirst` runtime cache; app-shell precache only)

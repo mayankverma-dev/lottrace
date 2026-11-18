@@ -184,7 +184,7 @@
 | Package | Version | Why |
 |---------|---------|-----|
 | `@vitejs/plugin-react` | ^4.x | JSX transform |
-| `vite-plugin-pwa` | ^0.19.x | PWA manifest + service worker (scan-pwa only) |
+| `vite-plugin-pwa` | ^2.0.x | PWA manifest + service worker; v2 supports Vite 8/Rolldown (scan-pwa only) |
 | `eslint` | ^8.x | Linting |
 | `prettier` | ^3.x | Formatting |
 | `vitest` | ^1.x | Unit testing |

@@ -260,8 +260,8 @@ export default defineConfig({
         orientation: 'portrait',
         start_url: '/scan',
         icons: [
-          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
       },
     }),
@@ -272,6 +272,11 @@ export default defineConfig({
 > Do not add Workbox runtime caching for `/api/**`. Authenticated responses must
 > never enter Cache Storage. The app shell is precached; API data is network-only.
 > Purge `api-cache` on logout and auth failure via `purgeApiCache()`.
+
+> `pnpm --filter scan-pwa build` runs `scripts/verify-pwa-build.mjs` after Vite.
+> The build fails if `registerSW.js`, `manifest.webmanifest`, the PNG icons, or
+> the precache entries are missing, if icon dimensions do not match the manifest,
+> or if the service worker starts caching API routes.
 
 ---
 
