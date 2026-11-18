@@ -128,6 +128,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-36 | P1 | Pending invitation blocks independent signup | Fixed (2026-11-17, 17f0e25) |
 | P1-37 | P1 | Deactivated user's access token remains valid | Fixed (2026-11-17, 6592ce4) |
 | P1-38 | P1 | Invitation resend write lacks organization scope | Fixed (2026-11-17, e56f79b) |
+| P1-39 | P1 | Production PWA build omits registration and manifest assets | Fixed (2026-11-18, 01b0556) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Fixed (2026-11-16, a2ac086) |
 | P2-02 | P2 | API response pagination shape is inconsistent | Fixed (2026-11-14, fdb11d7) |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Fixed (2026-11-15, 3915392) |
@@ -720,6 +721,15 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Evidence:** Resend lookup was organization-scoped, but the update predicate used only the user ID and status.
 - **Fix:** The update now requires `id`, `organization_id`, and `status = 'invited'`.
 - **Verified:** Lifecycle test confirms a cross-organization resend returns 404 and preserves the original token hash.
+
+## P1-39 — Production PWA build omits registration and manifest assets
+
+- **Severity:** P1 · **Area:** scan-pwa / build · **Status:** Fixed (2026-11-18, 01b0556)
+- **Evidence:** With `vite-plugin-pwa@0.21.2` under Vite 8/Rolldown, `dist/` contained `sw.js` and `workbox-*.js` but not `registerSW.js` or `manifest.webmanifest`. `dist/index.html` referenced both, preview requests fell through to the SPA shell, the browser reported manifest syntax errors, and the SW precached a missing manifest. The manifest also referenced icons that did not exist in `public/`.
+- **Impact:** The service worker was not auto-registered, installability was broken, and P1-09 could only be verified by manually registering the SW and supplying a temporary manifest.
+- **Fix direction:** Upgrade or replace the plugin with a Rolldown-compatible version, add the missing 192/512 icons, and assert that the production artifacts and SW precache are complete.
+- **Fix:** Upgraded `vite-plugin-pwa` to `^2.0.0` (native Vite 8 support, Workbox 7.4.1), added real `icon-192.png` and `icon-512.png` assets with `purpose: "any maskable"`, and added `scan-pwa/scripts/verify-pwa-build.mjs`. The verifier is wired into `pnpm --filter scan-pwa build`; it fails on missing registration/manifest/SW/Workbox artifacts, invalid manifest fields, missing or incorrectly sized icons, missing precache entries, or any API runtime caching.
+- **Verified:** `node --test scan-pwa/scripts/verify-pwa-build.test.mjs` (6 tests), `scan-pwa/vite.config.test.js` (2), and `scan-pwa/src/lib/session.test.js` (3) pass. `pnpm --filter scan-pwa build` emits `registerSW.js`, `manifest.webmanifest`, both icons, and 7 precache entries; the build verifier prints `✓ PWA build verified`. Browser check on a fresh profile: manifest returns `application/manifest+json`, both icons return `image/png`, `registerSW.js` registers `/sw.js`, the worker reaches `activated` with scope `/`, the page is controlled, and the only cache is the Workbox app-shell precache (no `api-cache`, `NetworkFirst`, or API routes). `pnpm install --frozen-lockfile --offline` and `pnpm lint` (0 errors; existing warnings only) pass. No database commands were run.
 
 ---
 
