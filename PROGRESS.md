@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-18
-**Last Session:** 2026-11-18 — P1-39 fixed pending commit. The scan PWA production build now uses `vite-plugin-pwa@2.0.0` (Vite 8/Rolldown compatible), emits `registerSW.js` and `manifest.webmanifest`, ships real 192/512 icons, and fails the build when those artifacts, manifest fields, icon dimensions, or precache entries are missing. Browser verification confirms automatic registration, activation, and an app-shell-only precache. P1-09 remains fixed: no API runtime caching, `Cache-Control: no-store`, and session purge on logout/auth failure.
+**Last Session:** 2026-11-18 — P1-39 and P2-35 fixed. The scan PWA production build now uses `vite-plugin-pwa@2.0.0` (Vite 8/Rolldown compatible), emits `registerSW.js` and `manifest.webmanifest`, ships real 192/512 icons, and fails the build when those artifacts, manifest fields, icon dimensions, or precache entries are missing. The ignored local backend `.env` now has the required refresh-token encryption key, hash-chain key ID/secret, and `SCAN_PWA_URL=http://localhost:3002`; the backend boots without inline overrides and local PWA login passes CORS. Browser verification confirms automatic PWA registration, activation, and an app-shell-only precache. P1-09 remains fixed: no API runtime caching, `Cache-Control: no-store`, and session purge on logout/auth failure.
 
 ---
 
@@ -59,6 +59,11 @@ backend suite pass.
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P2-35 — local backend env missing required keys and local PWA CORS origin:
+- `backend/.env` (ignored; added required refresh-token encryption and hash-chain keys, set local `SCAN_PWA_URL`; no secret committed)
+- `docs/ENVIRONMENT_SETUP.md` (documents the required keys and local PWA origin)
+- Docs: `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P1-39 — production PWA build omitted registration and manifest assets:
 - `scan-pwa/package.json`, `pnpm-lock.yaml` (`vite-plugin-pwa` ^2.0.0)

@@ -88,7 +88,14 @@ REDIS_URL=redis://localhost:6379
 # JWT (generate with: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))")
 ACCESS_JWT_SECRET=<64-char-random-hex>
 REFRESH_JWT_SECRET=<64-char-random-hex-different-from-above>
+REFRESH_TOKEN_ENCRYPTION_KEY=<64-char-random-hex>
 ARGON2_SECRET=<32-char-random-hex>
+
+# Hash chain HMAC keyring (required; signing keys stay out of the database)
+HASH_CHAIN_KEY_ID=dev-k1
+HASH_CHAIN_SECRET=<64-char-random-hex>
+# Optional previous keys for verification after rotation: {"dev-k0":"<64-char hex>"}
+HASH_CHAIN_OLD_KEYS=
 
 # Object Storage (use local MinIO for dev, R2 for prod)
 S3_ENDPOINT=http://localhost:9000
@@ -97,16 +104,18 @@ S3_ACCESS_KEY_ID=minioadmin
 S3_SECRET_ACCESS_KEY=minioadmin
 S3_BUCKET=lottrace-dev
 
-# Email (Resend for prod, Mailpit for dev)
-EMAIL_PROVIDER=smtp
-SMTP_HOST=localhost
-SMTP_PORT=1025
-EMAIL_FROM=noreply@lottrace.local
+# Email (Resend for prod; EMAIL_DRY_RUN=true for local)
+RESEND_API_KEY=re_your_api_key_here
+EMAIL_FROM=LotTrace <onboarding@resend.dev>
+DEV_EMAIL_OVERRIDE=developer@example.com
+EMAIL_DRY_RUN=true
 
 # App
 NODE_ENV=development
 PORT=3000
 FRONTEND_URL=http://localhost:3001
+# Local PWA origin for credentialed CORS. Use the deployed PWA URL only in
+# deployment environments.
 SCAN_PWA_URL=http://localhost:3002
 # Express `trust proxy` setting. Leave empty when the API is directly exposed.
 # Behind a proxy, set the exact hop count or a comma-separated trusted CIDR
@@ -123,6 +132,11 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 # Sentry (optional in dev)
 SENTRY_DSN=
 ```
+
+> `REFRESH_TOKEN_ENCRYPTION_KEY`, `HASH_CHAIN_KEY_ID`, and `HASH_CHAIN_SECRET`
+> are required. The backend validates them at startup and refuses to run when
+> they are missing or too short. Keep the real values in the ignored
+> `backend/.env`; never commit them.
 
 ### `frontend/.env`
 ```bash

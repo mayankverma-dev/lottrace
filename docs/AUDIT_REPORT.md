@@ -162,6 +162,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-32 | P2 | Invite email sends before tenant transaction commits | Fixed (2026-11-17, e5f4435) |
 | P2-33 | P2 | Local environment lacks refresh-token encryption key | Fixed locally (2026-11-17, no commit) |
 | P2-34 | P2 | AppError scanner rejects valid dynamic messages | Fixed (2026-11-18, b7bae13) |
+| P2-35 | P2 | Local backend env lacks required keys and local PWA CORS origin | Fixed locally (2026-11-18, no code commit) |
 
 ---
 
@@ -1022,6 +1023,14 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Fix direction:** Permit message expressions in the static guard while retaining literal code and numeric status enforcement. Add a regression test for conditional messages. No production behavior change.
 - **Fix:** Removed the message-literal requirement from the scanner. Error codes and HTTP statuses remain statically constrained.
 - **Verified:** Focused scanner test passes 8/8. Full backend suite passes: 60 suites, 517 passed, 4 skipped, 521 total. Lint reports 0 errors.
+
+## P2-35 — Local backend env lacks required keys and local PWA CORS origin
+
+- **Severity:** P2 · **Area:** backend / local development · **Status:** Fixed locally (2026-11-18, no code commit)
+- **Evidence:** `backend/.env` lacked `REFRESH_TOKEN_ENCRYPTION_KEY`, `HASH_CHAIN_KEY_ID`, and `HASH_CHAIN_SECRET`, so backend startup failed with `ZodError` until inline overrides were supplied. `SCAN_PWA_URL` pointed at the deployed Vercel PWA, so `http://localhost:3002` did not receive a CORS allow-origin header.
+- **Impact:** Local backend/PWA verification required undocumented inline overrides, and the local PWA could fail credentialed requests before reaching the API.
+- **Fix:** Added the required refresh-token encryption and hash-chain keys to the ignored local `backend/.env` (values are not committed), kept `HASH_CHAIN_KEY_ID=dev-k1`, and set `SCAN_PWA_URL=http://localhost:3002`. Updated `docs/ENVIRONMENT_SETUP.md` to match the required Resend, refresh-token, hash-chain, and local-origin variables. No production configuration or source code changed.
+- **Verified:** `pnpm --filter backend start` boots without inline environment overrides; `/health` returns 200; `OPTIONS /api/v1/auth/login` with `Origin: http://localhost:3002` returns 204 with `Access-Control-Allow-Origin: http://localhost:3002`; browser login from the local PWA returns 200 and reaches `/scan`; `backend/src/config/env.test.js` passes 29/29. The deployed Vercel origin no longer receives an allow-origin header from the local env. No secrets entered Git.
 
 # Recommended fix order
 
