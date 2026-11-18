@@ -129,6 +129,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-37 | P1 | Deactivated user's access token remains valid | Fixed (2026-11-17, 6592ce4) |
 | P1-38 | P1 | Invitation resend write lacks organization scope | Fixed (2026-11-17, e56f79b) |
 | P1-39 | P1 | Production PWA build omits registration and manifest assets | Fixed (2026-11-18, 01b0556) |
+| P1-40 | P1 | PWA has no offline outbox or sync | Open |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Fixed (2026-11-16, a2ac086) |
 | P2-02 | P2 | API response pagination shape is inconsistent | Fixed (2026-11-14, fdb11d7) |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Fixed (2026-11-15, 3915392) |
@@ -425,12 +426,14 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-08 — Scan PWA cannot create lots or record manual events
 
-- **Severity:** P1 · **Area:** scan-pwa / core workflow · **Status:** Open
+- **Severity:** P1 · **Area:** scan-pwa / core workflow · **Status:** Fixed (commit pending)
 - **Evidence:** `scan-pwa/src/pages/ScanPage.jsx:59-95` (lookup only; "not found" dead end), `:114-121` (`quantity: 1` hardcoded), `scan-pwa/src/App.jsx:110-124` (`/history` and `/manual` are "coming soon").
 - **What happens:** If a lot does not exist, the PWA tells the user so and offers no creation flow, even though creating lots is the first step of the workflow. Every scanned item is submitted with quantity `1` and the lot's UOM; there is no quantity keypad or edit. History and manual entry are placeholders. There is no offline queue, so a dropped connection loses the scan.
 - **Real-world impact:** The "scan PWA" cannot be used for real receiving or production counts. Quantities are wrong by default, which corrupts inventory and trace quantities. Workers fall back to paper, defeating the product.
-- **Fix direction:** Decide the PWA's phase scope explicitly. Minimum viable: lot creation from the not-found state (product/location picker, code, quantity/UOM), editable quantity per scanned item, a real history list from `GET /events?source=scan`, and manual event entry reusing the same form. Then add offline support: IndexedDB outbox keyed by user/org, background sync, idempotency keys per queued item (depends on P0-06), and a visible sync status. Do not ship a "coming soon" tab in a production PWA.
-- **Verification:** On a phone-sized viewport: scan an unknown code → create the lot → record a receiving event with quantity 12.5 → see it in history. Turn off the network, record an event, restore the network, confirm exactly one event syncs.
+- **Fix direction:** Decide the PWA's phase scope explicitly. Minimum viable: lot creation from the not-found state (product/location picker, code, quantity/UOM), editable quantity per scanned item, a real history list from `GET /events?source=scan`, and manual event entry reusing the same form. Do not ship a "coming soon" tab in a production PWA. Offline support is split into P1-40.
+- **Verification:** On a phone-sized viewport: scan an unknown code → create the lot → record a receiving event with quantity 12.5 → see it in history. Offline queueing is verified separately under P1-40.
+- **Fix:** Added `source` filtering to `GET /events` (`events.validation.js`, `events.service.js`) so History can filter Scan/Manual. Added `findLotByCode()` (`scan-pwa/src/api/lots.api.js`), pure payload helpers with GS1 lot-code resolution and positive-quantity checks (`scan-pwa/src/lib/recordEventPayload.js`), `CreateLotForm`, shared `QuickEventForm` with editable per-lot quantities and idempotency-key reuse, real `/history` and `/manual` pages, and `useOnlineStatus` driving a real Online/Offline header plus disabled submits when offline. Deleted the old inline event form, hardcoded `quantity: 1`, and both "coming soon" routes.
+- **Verified:** `events.source-filter.test.js` (5 tests, disposable local Postgres), `recordEventPayload.test.js` (8), existing PWA session/build tests (5), and backend event validation/receiving-link suites (9) pass. Playwright walkthrough on a 390×844 viewport: unknown scan → create lot → receiving 12.5 kg → history shows `Scan`; manual existing lot shipped at 7.25 kg; manual unknown code created at 5.5 kg; bulk 2 lots at 2 kg and 3.5 kg in one event; 25-event paging (20 + 5); foreign lot code not found and foreign IDs return 404; offline header/banner and disabled inputs verified. Camera decode not exercised headless; `Scanner.onScan` was invoked at the React layer, with all API calls real. Dev DB reset to 24 migrations from scratch. Offline queue remains P1-40.
 
 ## P1-09 — PWA caches authenticated lot responses across users
 
@@ -731,6 +734,15 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Fix direction:** Upgrade or replace the plugin with a Rolldown-compatible version, add the missing 192/512 icons, and assert that the production artifacts and SW precache are complete.
 - **Fix:** Upgraded `vite-plugin-pwa` to `^2.0.0` (native Vite 8 support, Workbox 7.4.1), added real `icon-192.png` and `icon-512.png` assets with `purpose: "any maskable"`, and added `scan-pwa/scripts/verify-pwa-build.mjs`. The verifier is wired into `pnpm --filter scan-pwa build`; it fails on missing registration/manifest/SW/Workbox artifacts, invalid manifest fields, missing or incorrectly sized icons, missing precache entries, or any API runtime caching.
 - **Verified:** `node --test scan-pwa/scripts/verify-pwa-build.test.mjs` (6 tests), `scan-pwa/vite.config.test.js` (2), and `scan-pwa/src/lib/session.test.js` (3) pass. `pnpm --filter scan-pwa build` emits `registerSW.js`, `manifest.webmanifest`, both icons, and 7 precache entries; the build verifier prints `✓ PWA build verified`. Browser check on a fresh profile: manifest returns `application/manifest+json`, both icons return `image/png`, `registerSW.js` registers `/sw.js`, the worker reaches `activated` with scope `/`, the page is controlled, and the only cache is the Workbox app-shell precache (no `api-cache`, `NetworkFirst`, or API routes). `pnpm install --frozen-lockfile --offline` and `pnpm lint` (0 errors; existing warnings only) pass. No database commands were run.
+
+## P1-40 — PWA has no offline outbox or sync
+
+- **Severity:** P1 · **Area:** scan-pwa / offline · **Status:** Open
+- **Evidence:** `scan-pwa/src/pages/ScanPage.jsx` disables event submit when `useOnlineStatus()` is false; `scan-pwa/src/pages/ManualEntryPage.jsx` disables the code input and Find Lot button. No IndexedDB, outbox, or sync code exists under `scan-pwa/src`. Smoke matrix row 16 fails.
+- **What happens:** A dropped connection cannot queue a scan or event. The user must keep the form open and reconnect, or the work is lost.
+- **Real-world impact:** Warehouse connectivity is unreliable. Without a durable queue, workers fall back to paper and events are missed.
+- **Fix direction:** Add an IndexedDB outbox keyed by `organizationId`/`userId`, one idempotency key per queued item, background sync with manual retry, and visible queued/synced/error state. Reuse `clearSessionData()` to purge the outbox on logout or org switch. Depends on P0-06.
+- **Verification:** Record an event offline, reconnect, confirm exactly one event syncs; retry the same queued item and confirm no duplicate; logout and log in as another org and confirm no queued data is visible.
 
 ---
 

@@ -1,42 +1,33 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { Scanner } from '@/features/scanner/Scanner';
-import { parseGS1 } from '@/utils/gs1Parser';
+import { CreateLotForm } from '@/features/lots/CreateLotForm';
+import { QuickEventForm } from '@/features/events/QuickEventForm';
+import { resolveScannedLotCode } from '@/lib/recordEventPayload';
+import { findLotByCode } from '@/api/lots.api';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { api } from '@/lib/api';
-import { useGetLocations } from '@/api/locations.api';
-import { useCreateEvent } from '@/api/events.api';
-import { newIdempotencyKey } from '@/lib/idempotency';
 import { toast } from 'sonner';
 import { CheckCircle, Send, ListPlus, ScanLine, RotateCcw } from 'lucide-react';
 
 const SCAN_STATES = {
-  IDLE:       'idle',
-  SCANNING:   'scanning',
-  LOOKING_UP: 'looking_up',
-  LOT_FOUND:  'lot_found',
-  NOT_FOUND:  'not_found',
-  EVENT_FORM: 'event_form',
-  SUCCESS:    'success',
-  ERROR:      'error',
+  IDLE:        'idle',
+  SCANNING:    'scanning',
+  LOOKING_UP:  'looking_up',
+  LOT_FOUND:   'lot_found',
+  NOT_FOUND:   'not_found',
+  CREATE_LOT:  'create_lot',
+  EVENT_FORM:  'event_form',
+  ERROR:       'error',
 };
 
 export default function ScanPage() {
-  const [scanState, setScanState]         = useState(SCAN_STATES.SCANNING);
-  const [scannedLot, setScannedLot]       = useState(null);
-  const [isBulkMode, setIsBulkMode]       = useState(false);
-  const [scannedItems, setScannedItems]   = useState([]);
-  const [showSuccess, setShowSuccess]     = useState(false);
-  const [isSubmitting, setIsSubmitting]   = useState(false);
-
-  const { data: locationsData } = useGetLocations({ limit: 100 });
-  const { mutateAsync: createEvent } = useCreateEvent();
-  const idempotencyRef = useRef({ signature: null, key: null });
-
-  const [eventData, setEventData] = useState({
-    locationId: '',
-    eventType: 'receiving',
-  });
+  const [scanState, setScanState]       = useState(SCAN_STATES.SCANNING);
+  const [scannedLot, setScannedLot]     = useState(null);
+  const [isBulkMode, setIsBulkMode]     = useState(false);
+  const [scannedItems, setScannedItems] = useState([]);
+  const [showSuccess, setShowSuccess]   = useState(false);
+  const isOnline = useOnlineStatus();
 
   const showSuccessFeedback = () => {
     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
@@ -47,34 +38,32 @@ export default function ScanPage() {
     }, 1500);
   };
 
-  const handleScan = async (code) => {
-    if (!code || !code.trim()) return;
-    
-    if (navigator.vibrate) navigator.vibrate(50);
-    const parsed = parseGS1(code);
-    const lotCode = parsed.lotCode || parsed.raw;
+  const toScannedItem = (lot, lotCode) => ({
+    lotId: lot.id,
+    tlc: lotCode,
+    uom: lot.uom,
+    quantity: Number(lot.quantity),
+  });
 
-    if (!lotCode || !lotCode.trim()) return;
+  const handleScan = async (code) => {
+    const lotCode = resolveScannedLotCode(code);
+    if (!lotCode) return;
+
+    if (navigator.vibrate) navigator.vibrate(50);
 
     if (isBulkMode) {
-      // Deduplicate
-      if (scannedItems.find((i) => i.tlc === lotCode)) {
+      if (scannedItems.some((item) => item.tlc === lotCode)) {
         toast.warning(`${lotCode} already scanned`);
         return;
       }
       try {
-        const response = await api.get('/lots', {
-          params: { traceabilityLotCode: lotCode, limit: 1 },
-        });
-        const lot = response.data?.data?.[0];
+        const lot = await findLotByCode(lotCode);
         if (lot) {
-          setScannedItems((prev) => [
-            ...prev,
-            { tlc: lotCode, parsed, lotId: lot.id, uom: lot.uom },
-          ]);
+          setScannedItems((prev) => [...prev, toScannedItem(lot, lotCode)]);
           if (navigator.vibrate) navigator.vibrate(100);
         } else {
-          toast.error(`Lot "${lotCode}" not found in system`);
+          setScannedLot({ tlc: lotCode });
+          setScanState(SCAN_STATES.NOT_FOUND);
         }
       } catch (err) {
         console.error(err);
@@ -85,12 +74,9 @@ export default function ScanPage() {
 
     setScanState(SCAN_STATES.LOOKING_UP);
     try {
-      const response = await api.get('/lots', {
-        params: { traceabilityLotCode: lotCode, limit: 1 },
-      });
-      const lot = response.data?.data?.[0];
+      const lot = await findLotByCode(lotCode);
       if (lot) {
-        setScannedLot({ tlc: lotCode, lotId: lot.id, uom: lot.uom });
+        setScannedLot(toScannedItem(lot, lotCode));
         setScanState(SCAN_STATES.LOT_FOUND);
       } else {
         setScannedLot({ tlc: lotCode });
@@ -102,51 +88,25 @@ export default function ScanPage() {
     }
   };
 
-  const handleEventSubmit = async () => {
-    if (!eventData.locationId) {
-      toast.error('Select a location before saving');
+  const handleCreatedLot = (lot) => {
+    const item = toScannedItem(lot, lot.traceabilityLotCode);
+
+    if (isBulkMode) {
+      setScannedItems((prev) => [...prev, item]);
+      setScannedLot(null);
+      setScanState(SCAN_STATES.SCANNING);
       return;
     }
-    setIsSubmitting(true);
-    try {
-      const payload = {
-        eventType: eventData.eventType,
-        locationId: eventData.locationId,
-        eventDatetime: new Date().toISOString(),
-        source: 'scan',
-        inputs: isBulkMode
-          ? scannedItems.map((item) => ({
-              lotId: item.lotId,
-              quantity: 1,
-              uom: item.uom,
-            }))
-          : [{ lotId: scannedLot.lotId, quantity: 1, uom: scannedLot.uom }],
-        outputs: [],
-      };
 
-      // Reuse one key for retries of the same logical submit. A changed
-      // payload is a new operation and gets a new key.
-      const signature = JSON.stringify(payload);
-      if (idempotencyRef.current.signature !== signature) {
-        idempotencyRef.current = { signature, key: newIdempotencyKey() };
-      }
+    setScannedItems([item]);
+    setScannedLot(null);
+    setScanState(SCAN_STATES.EVENT_FORM);
+  };
 
-      await createEvent({
-        payload,
-        idempotencyKey: idempotencyRef.current.key,
-      });
-      idempotencyRef.current = { signature: null, key: null };
-      setScannedItems([]);
-      setScannedLot(null);
-      setEventData({ locationId: '', eventType: 'receiving' });
-      showSuccessFeedback();
-    } catch (err) {
-      console.error(err);
-      toast.error(err.response?.data?.message || 'Failed to save event. Try again.');
-      setScanState(SCAN_STATES.ERROR);
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handleRecordFoundLot = () => {
+    if (!scannedLot?.lotId) return;
+    setScannedItems([scannedLot]);
+    setScanState(SCAN_STATES.EVENT_FORM);
   };
 
   const handleBulkSubmit = () => {
@@ -154,15 +114,32 @@ export default function ScanPage() {
     setScanState(SCAN_STATES.EVENT_FORM);
   };
 
+  const handleEventSubmitted = () => {
+    setScannedItems([]);
+    setScannedLot(null);
+    setScanState(SCAN_STATES.SCANNING);
+    showSuccessFeedback();
+  };
+
   const resetToScan = () => {
     setScannedLot(null);
-    setEventData({ locationId: '', eventType: 'receiving' });
+    setScanState(SCAN_STATES.SCANNING);
+  };
+
+  const cancelCreateLot = () => {
+    setScannedLot(null);
     setScanState(SCAN_STATES.SCANNING);
   };
 
   return (
     <div className="flex flex-col h-full relative">
       <div className="flex-1 p-4 flex flex-col">
+
+        {!isOnline && (
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            You're offline. Reconnect to record events.
+          </div>
+        )}
 
         {/* SCANNING */}
         {scanState === SCAN_STATES.SCANNING && (
@@ -196,15 +173,15 @@ export default function ScanPage() {
                     <ul className="flex flex-col gap-2">
                       {scannedItems.map((item, i) => (
                         <li
-                          key={i}
+                          key={item.lotId}
                           className="flex items-center justify-between rounded-md border bg-background p-2 text-sm shadow-sm"
                         >
-                          <span className="font-mono text-xs">{item.tlc}</span>
+                          <span className="font-mono text-xs break-all">{item.tlc}</span>
                           <button
                             onClick={() =>
                               setScannedItems((items) => items.filter((_, idx) => idx !== i))
                             }
-                            className="text-xs text-destructive hover:text-destructive/80 transition-colors"
+                            className="text-xs text-destructive hover:text-destructive/80 transition-colors min-h-[44px] px-2"
                           >
                             Remove
                           </button>
@@ -216,7 +193,7 @@ export default function ScanPage() {
                 <Button
                   onClick={handleBulkSubmit}
                   className="w-full min-h-[44px]"
-                  disabled={scannedItems.length === 0}
+                  disabled={scannedItems.length === 0 || !isOnline}
                 >
                   <Send data-icon="inline-start" />
                   Submit {scannedItems.length} Item{scannedItems.length !== 1 ? 's' : ''}
@@ -261,7 +238,8 @@ export default function ScanPage() {
             </div>
             <Button
               className="w-full min-h-[44px]"
-              onClick={() => setScanState(SCAN_STATES.EVENT_FORM)}
+              onClick={() => setScanState(SCAN_STATES.CREATE_LOT)}
+              disabled={!isOnline}
             >
               <ListPlus data-icon="inline-start" />
               Create New Lot
@@ -274,6 +252,16 @@ export default function ScanPage() {
               Cancel
             </Button>
           </div>
+        )}
+
+        {/* CREATE LOT */}
+        {scanState === SCAN_STATES.CREATE_LOT && (
+          <CreateLotForm
+            lotCode={scannedLot?.tlc ?? ''}
+            disabled={!isOnline}
+            onCreated={handleCreatedLot}
+            onCancel={cancelCreateLot}
+          />
         )}
 
         {/* LOT FOUND */}
@@ -289,8 +277,9 @@ export default function ScanPage() {
               </p>
             </div>
             <Button
-              onClick={() => setScanState(SCAN_STATES.EVENT_FORM)}
+              onClick={handleRecordFoundLot}
               className="w-full min-h-[44px]"
+              disabled={!isOnline}
             >
               Record Event for this Lot
             </Button>
@@ -308,63 +297,13 @@ export default function ScanPage() {
         {scanState === SCAN_STATES.EVENT_FORM && (
           <div className="flex flex-col gap-5">
             <h3 className="font-semibold text-lg">Record Event</h3>
-
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="event-type" className="text-sm font-medium">
-                  Event Type
-                </label>
-                <select
-                  id="event-type"
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-ring/50"
-                  value={eventData.eventType}
-                  onChange={(e) =>
-                    setEventData({ ...eventData, eventType: e.target.value })
-                  }
-                >
-                  <option value="receiving">Receiving</option>
-                  <option value="shipping">Shipping</option>
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="event-location" className="text-sm font-medium">
-                  Location
-                </label>
-                <select
-                  id="event-location"
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-ring/50"
-                  value={eventData.locationId}
-                  onChange={(e) =>
-                    setEventData({ ...eventData, locationId: e.target.value })
-                  }
-                >
-                  <option value="">Select Location…</option>
-                  {locationsData?.data?.map((loc) => (
-                    <option key={loc.id} value={loc.id}>
-                      {loc.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <Button
-              onClick={handleEventSubmit}
-              className="w-full min-h-[44px]"
-              disabled={isSubmitting}
-            >
-              {isSubmitting && <Spinner data-icon="inline-start" />}
-              Save Event
-            </Button>
-            <Button
-              variant="outline"
-              onClick={resetToScan}
-              className="w-full min-h-[44px]"
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
+            <QuickEventForm
+              items={scannedItems}
+              source="scan"
+              disabled={!isOnline}
+              onSubmitted={handleEventSubmitted}
+              onCancel={resetToScan}
+            />
           </div>
         )}
       </div>

@@ -71,6 +71,7 @@ const getEventsQuerySchema = z.object({
   ...paginationSchema.shape,
   eventType: z.enum(['creation', 'receiving', 'transformation', 'shipping']).optional(),
   status: z.enum(['active', 'amended', 'void']).optional(),
+  source: z.enum(['manual', 'scan', 'import', 'api']).optional(),
   locationId: z.string().uuid().optional(),
   lotId: z.string().uuid().optional(),
   dateFrom: z.string().datetime().optional(),

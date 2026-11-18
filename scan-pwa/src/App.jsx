@@ -8,7 +8,10 @@ import { useAuthStore } from './stores/auth.store';
 import { useEffect } from 'react';
 import { apiClient } from './lib/api';
 import { logoutApi } from './api/auth.api';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
 import ScanPage from '@/pages/ScanPage';
+import HistoryPage from '@/pages/HistoryPage';
+import ManualEntryPage from '@/pages/ManualEntryPage';
 import LoginPage from '@/pages/auth/LoginPage';
 
 const SCAN_NAV = [
@@ -46,7 +49,7 @@ function BottomNav() {
   );
 }
 
-function AppHeader() {
+function AppHeader({ isOnline }) {
   const { user } = useAuthStore();
 
   const handleLogout = async () => {
@@ -64,8 +67,13 @@ function AppHeader() {
       <h1 className="text-lg font-bold tracking-tight text-foreground">LotTrace</h1>
       <div className="flex items-center gap-3">
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="inline-block size-2 rounded-full bg-emerald-500" />
-          Online
+          <span
+            className={[
+              'inline-block size-2 rounded-full',
+              isOnline ? 'bg-emerald-500' : 'bg-destructive',
+            ].join(' ')}
+          />
+          {isOnline ? 'Online' : 'Offline'}
         </span>
         {user && (
           <button
@@ -99,29 +107,22 @@ const ProtectedRoute = ({ children }) => {
 };
 
 function Layout() {
+  const isOnline = useOnlineStatus();
+
   return (
     <div className="flex flex-col min-h-screen bg-background pb-16">
-      <AppHeader />
+      <AppHeader isOnline={isOnline} />
+      {!isOnline && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs text-amber-800">
+          You're offline — reconnect to scan and record events.
+        </div>
+      )}
       <main className="flex-1 overflow-y-auto">
         <Routes>
           <Route path="/" element={<ProtectedRoute><ScanPage /></ProtectedRoute>} />
           <Route path="/scan" element={<ProtectedRoute><ScanPage /></ProtectedRoute>} />
-          <Route
-            path="/history"
-            element={
-              <ProtectedRoute>
-                <div className="p-6 text-center text-muted-foreground mt-10">History coming soon</div>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/manual"
-            element={
-              <ProtectedRoute>
-                <div className="p-6 text-center text-muted-foreground mt-10">Manual entry coming soon</div>
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/history" element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
+          <Route path="/manual" element={<ProtectedRoute><ManualEntryPage /></ProtectedRoute>} />
         </Routes>
       </main>
       <BottomNav />

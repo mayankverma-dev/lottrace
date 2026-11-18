@@ -204,7 +204,7 @@ const createEvent = async (data, organizationId, userId) => {
 };
 
 const getEvents = async (query, organizationId) => {
-  const { page, limit, eventType, status, locationId, lotId, dateFrom, dateTo } = query;
+  const { page, limit, eventType, status, source, locationId, lotId, dateFrom, dateTo } = query;
   const offset = (page - 1) * limit;
 
   let queryBuilder = db('events').where({ 'events.organization_id': organizationId });
@@ -219,6 +219,7 @@ const getEvents = async (query, organizationId) => {
 
   if (eventType) queryBuilder = queryBuilder.where({ event_type: eventType });
   if (status) queryBuilder = queryBuilder.where('events.status', status);
+  if (source) queryBuilder = queryBuilder.where('events.source', source);
   if (locationId) queryBuilder = queryBuilder.where({ location_id: locationId });
   if (dateFrom) queryBuilder = queryBuilder.where('event_datetime', '>=', dateFrom);
   if (dateTo) queryBuilder = queryBuilder.where('event_datetime', '<=', dateTo);

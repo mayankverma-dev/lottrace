@@ -19,6 +19,19 @@ export const useGetLots = (params) => {
   });
 };
 
+/**
+ * Finds one lot by exact traceability lot code in the authenticated organization.
+ *
+ * @param {string} lotCode
+ * @returns {Promise<Object|null>}
+ */
+export const findLotByCode = async (lotCode) => {
+  const { data } = await api.get('/lots', {
+    params: { traceabilityLotCode: lotCode, limit: 1 },
+  });
+  return data?.data?.[0] ?? null;
+};
+
 export const useGetLot = (lotId) => {
   return useQuery({
     queryKey: LOTS_KEYS.detail(lotId),
