@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -36,13 +36,31 @@ const SELECT_CLASS = 'w-full rounded-lg border border-input bg-background px-3 p
  * }} props
  */
 export const CreateLotForm = ({ lotCode, disabled = false, onCreated, onCancel }) => {
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const { data: productsData, isLoading: isLoadingProducts } = useGetProducts({
     limit: 100,
     isActive: 'true',
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
   });
   const { mutateAsync: createLot } = useCreateLot();
 
   const products = useMemo(() => productsData?.data ?? [], [productsData]);
+
+  // Keep a selected product visible when a later search no longer returns it.
+  const productOptions = useMemo(() => {
+    if (selectedProduct && !products.some((product) => product.id === selectedProduct.id)) {
+      return [selectedProduct, ...products];
+    }
+    return products;
+  }, [products, selectedProduct]);
 
   const {
     register,
@@ -77,7 +95,8 @@ export const CreateLotForm = ({ lotCode, disabled = false, onCreated, onCancel }
 
   const handleProductChange = (event) => {
     const productId = event.target.value;
-    const product = products.find((item) => item.id === productId);
+    const product = productOptions.find((item) => item.id === productId) ?? null;
+    setSelectedProduct(product);
     setValue('productId', productId, { shouldValidate: true });
     if (product?.default_uom) {
       setValue('uom', product.default_uom, { shouldValidate: true });
@@ -96,24 +115,40 @@ export const CreateLotForm = ({ lotCode, disabled = false, onCreated, onCancel }
           <Spinner className="size-4" />
           Loading products…
         </div>
-      ) : products.length === 0 ? (
+      ) : productOptions.length === 0 ? (
         <p className="rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
-          No products available. Ask an admin to create a product before adding lots.
+          {debouncedSearch
+            ? `No products match "${debouncedSearch}".`
+            : 'No products available. Ask an admin to create a product before adding lots.'}
         </p>
       ) : null}
 
       <FieldGroup className="gap-4">
+        <Field>
+          <FieldLabel htmlFor="lot-product-search">Find product</FieldLabel>
+          <Input
+            id="lot-product-search"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by name, SKU, or GTIN"
+            autoComplete="off"
+            className="min-h-[44px] text-base"
+            disabled={disabled || isSubmitting}
+          />
+        </Field>
+
         <Field data-invalid={!!errors.productId}>
           <FieldLabel htmlFor="lot-product">Product</FieldLabel>
           <select
             id="lot-product"
             className={SELECT_CLASS}
             aria-invalid={!!errors.productId}
-            disabled={disabled || isSubmitting || products.length === 0}
+            disabled={disabled || isSubmitting || productOptions.length === 0}
             {...register('productId', { onChange: handleProductChange })}
           >
             <option value="">Select Product…</option>
-            {products.map((product) => (
+            {productOptions.map((product) => (
               <option key={product.id} value={product.id}>
                 {product.name}
                 {product.sku ? ` (${product.sku})` : ''}
@@ -170,7 +205,7 @@ export const CreateLotForm = ({ lotCode, disabled = false, onCreated, onCancel }
       <Button
         type="submit"
         className="w-full min-h-[44px]"
-        disabled={disabled || isSubmitting || products.length === 0}
+        disabled={disabled || isSubmitting || productOptions.length === 0}
       >
         {isSubmitting ? <Spinner data-icon="inline-start" /> : <PackagePlus data-icon="inline-start" />}
         Create Lot

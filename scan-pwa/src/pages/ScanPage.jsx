@@ -11,7 +11,6 @@ import { toast } from 'sonner';
 import { CheckCircle, Send, ListPlus, ScanLine, RotateCcw } from 'lucide-react';
 
 const SCAN_STATES = {
-  IDLE:        'idle',
   SCANNING:    'scanning',
   LOOKING_UP:  'looking_up',
   LOT_FOUND:   'lot_found',
@@ -135,12 +134,6 @@ export default function ScanPage() {
     <div className="flex flex-col h-full relative">
       <div className="flex-1 p-4 flex flex-col">
 
-        {!isOnline && (
-          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            You're offline. Reconnect to record events.
-          </div>
-        )}
-
         {/* SCANNING */}
         {scanState === SCAN_STATES.SCANNING && (
           <div className="flex flex-col gap-4 flex-1">
@@ -159,7 +152,10 @@ export default function ScanPage() {
               </button>
             </div>
 
-            <Scanner onScan={handleScan} />
+            <Scanner
+              onScan={handleScan}
+              onError={(err) => toast.error(err?.message || 'Camera error')}
+            />
 
             {isBulkMode && (
               <div className="flex flex-col gap-3 mt-2">
@@ -193,7 +189,7 @@ export default function ScanPage() {
                 <Button
                   onClick={handleBulkSubmit}
                   className="w-full min-h-[44px]"
-                  disabled={scannedItems.length === 0 || !isOnline}
+                  disabled={scannedItems.length === 0}
                 >
                   <Send data-icon="inline-start" />
                   Submit {scannedItems.length} Item{scannedItems.length !== 1 ? 's' : ''}
@@ -279,7 +275,6 @@ export default function ScanPage() {
             <Button
               onClick={handleRecordFoundLot}
               className="w-full min-h-[44px]"
-              disabled={!isOnline}
             >
               Record Event for this Lot
             </Button>
@@ -300,7 +295,6 @@ export default function ScanPage() {
             <QuickEventForm
               items={scannedItems}
               source="scan"
-              disabled={!isOnline}
               onSubmitted={handleEventSubmitted}
               onCancel={resetToScan}
             />

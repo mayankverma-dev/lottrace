@@ -212,7 +212,8 @@ that is unknown or belongs to another organization returns `404 NOT_FOUND`
 
 When supplied, `locationId` is validated against the event organization inside
 the same transaction. Unknown or foreign locations return `404 NOT_FOUND`
-(`Location not found`).
+(`Location not found`). Receiving events must supply `locationId`; for other
+CTEs it remains optional.
 
 Lot creation validates `productId` against the lot organization inside its
 transaction. Unknown or foreign products return `404 NOT_FOUND` (`Product not
@@ -221,7 +222,7 @@ found`), and the lot plus audit row are rolled back.
 ### Create Event — Base (shared fields)
 ```javascript
 const eventBaseSchema = z.object({
-  locationId:       z.string().uuid().optional(),
+  locationId:       z.string().uuid().optional(), // required for receiving
   eventDatetime:    z.string().datetime('Must be ISO 8601'),
   notes:            z.string().max(2000).optional(),
   kdePayload:       z.record(z.unknown()).default({}),

@@ -9,6 +9,7 @@ import { QuickEventForm } from '@/features/events/QuickEventForm';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 
 const MANUAL_STATES = {
@@ -76,12 +77,6 @@ export default function ManualEntryPage() {
 
   return (
     <div className="flex flex-col gap-5 p-4">
-      {!isOnline && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          You're offline. Reconnect to record events.
-        </div>
-      )}
-
       {manualState === MANUAL_STATES.ENTRY && (
         <form onSubmit={handleLookup} className="flex flex-col gap-4" noValidate>
           <div className="flex items-center gap-2">
@@ -91,7 +86,9 @@ export default function ManualEntryPage() {
           <p className="text-sm text-muted-foreground">
             Use this when the barcode is damaged. The code must match exactly.
           </p>
+          <Label htmlFor="manual-lot-code">Lot code</Label>
           <Input
+            id="manual-lot-code"
             value={code}
             onChange={(event) => setCode(event.target.value)}
             placeholder="Lot code"
@@ -159,7 +156,6 @@ export default function ManualEntryPage() {
           <QuickEventForm
             items={items}
             source="manual"
-            disabled={!isOnline}
             onSubmitted={handleSubmitted}
             onCancel={resetToEntry}
           />

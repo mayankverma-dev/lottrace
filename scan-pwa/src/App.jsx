@@ -9,6 +9,9 @@ import { useEffect } from 'react';
 import { apiClient } from './lib/api';
 import { logoutApi } from './api/auth.api';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
+import { useOutboxSync } from './hooks/useOutboxSync';
+import { purgeOutbox } from './lib/outboxSync';
+import { ConnectivityBanner } from '@/components/ConnectivityBanner';
 import ScanPage from '@/pages/ScanPage';
 import HistoryPage from '@/pages/HistoryPage';
 import ManualEntryPage from '@/pages/ManualEntryPage';
@@ -58,6 +61,7 @@ function AppHeader({ isOnline }) {
     } catch {
       // ignore — clear local state regardless
     } finally {
+      await purgeOutbox();
       await clearSessionData();
     }
   };
@@ -108,15 +112,12 @@ const ProtectedRoute = ({ children }) => {
 
 function Layout() {
   const isOnline = useOnlineStatus();
+  useOutboxSync();
 
   return (
     <div className="flex flex-col min-h-screen bg-background pb-16">
       <AppHeader isOnline={isOnline} />
-      {!isOnline && (
-        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs text-amber-800">
-          You're offline — reconnect to scan and record events.
-        </div>
-      )}
+      <ConnectivityBanner />
       <main className="flex-1 overflow-y-auto">
         <Routes>
           <Route path="/" element={<ProtectedRoute><ScanPage /></ProtectedRoute>} />

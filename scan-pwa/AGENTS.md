@@ -312,12 +312,15 @@ scan-pwa/src/
 ---
 
 ## Offline Handling
-- Show banner when offline: `"You're offline — scans will sync when reconnected"`
+- Show one global banner when offline: `"You're offline — events will sync when reconnected"`
 - Do NOT cache authenticated API responses in the service worker or Cache Storage
 - Lot lookup is network-only; there is no offline lookup in v1
-- Do NOT allow event submission while offline in v1 — show clear "No connection" state
-- A future offline store must be keyed by `organizationId`/`userId` and purged on logout
-- Offline-first sync is Phase 4 scope
+- Lot creation is online-only because the server assigns the lot ID
+- Event submission while offline is queued in IndexedDB (`src/lib/outbox.js`) and synced when the connection returns
+- Queue entries carry one idempotency key each, so a retry cannot duplicate an event
+- The outbox is keyed by `organizationId`/`userId` and purged on sign-out
+- Service-worker Background Sync is not used; `useOutboxSync` flushes on reconnect and when the app becomes visible
+- Conflict resolution is not needed: events are append-only, and the idempotency key makes a replay safe
 
 ```javascript
 // Offline detection

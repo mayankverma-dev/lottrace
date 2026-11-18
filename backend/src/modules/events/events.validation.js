@@ -39,6 +39,9 @@ const createEventSchema = z.object({
 }).refine(data => data.eventType !== 'receiving' || data.outputs.length === 0, {
   message: "Receiving events have no output lots",
   path: ["outputs"],
+}).refine(data => data.eventType !== 'receiving' || Boolean(data.locationId), {
+  message: "Receiving location is required",
+  path: ["locationId"],
 });
 
 const amendEventSchema = createEventSchema.and(z.object({

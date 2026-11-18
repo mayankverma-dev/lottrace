@@ -1,12 +1,13 @@
 import { BrowserMultiFormatReader, NotFoundException } from '@zxing/library';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CameraOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { useNavigate } from 'react-router-dom';
 
 export const Scanner = ({ onScan, onError }) => {
   const videoRef = useRef(null);
-  const [permissionState, setPermissionState] = useState('prompt');
+  const [permissionState, setPermissionState] = useState('starting');
   const navigate = useNavigate();
   const lastScanRef = useRef({ code: null, time: 0 });
 
@@ -19,6 +20,7 @@ export const Scanner = ({ onScan, onError }) => {
   useEffect(() => {
     // Create the reader inside the effect so it's fully owned by this lifecycle.
     const reader = new BrowserMultiFormatReader();
+    let cancelled = false;
 
     // ZXing emits noise on EVERY frame where no barcode is found — both via
     // console.warn AND console.error ("MultiFormatReader: non-ReaderException …").
@@ -57,17 +59,31 @@ export const Scanner = ({ onScan, onError }) => {
       };
     });
 
+    const fail = (err) => {
+      if (cancelled) return;
+      setPermissionState('denied');
+
+      // Permission and missing-camera errors already have a dedicated fallback
+      // screen; forward only genuinely unexpected failures to the caller.
+      const name = err?.name;
+      if (name !== 'NotAllowedError' && name !== 'NotFoundError') {
+        onErrorRef.current?.(err);
+      }
+    };
+
     const startScanner = async () => {
       try {
         const devices = await reader.listVideoInputDevices();
         if (devices.length === 0) {
-          setPermissionState('denied');
+          if (!cancelled) setPermissionState('denied');
           return;
         }
 
         setPermissionState('granted');
 
-        reader.decodeFromVideoDevice(null, videoRef.current, (result, err) => {
+        // ZXing returns a promise here. A denied getUserMedia call rejects it
+        // asynchronously, so the surrounding try/catch cannot see it.
+        const scanning = reader.decodeFromVideoDevice(null, videoRef.current, (result, err) => {
           if (result) {
             const code = result.getText()?.trim();
             if (!code) return; // Prevent empty scan triggers
@@ -95,15 +111,20 @@ export const Scanner = ({ onScan, onError }) => {
             }
           }
         });
+
+        if (scanning && typeof scanning.catch === 'function') {
+          scanning.catch(fail);
+        }
       } catch (err) {
         // Camera permission denied or not available
-        setPermissionState('denied');
+        fail(err);
       }
     };
 
     startScanner();
 
     return () => {
+      cancelled = true;
       // Restore patched console methods before teardown
       Object.keys(originalConsole).forEach((method) => {
         console[method] = originalConsole[method];
@@ -134,10 +155,18 @@ export const Scanner = ({ onScan, onError }) => {
   return (
     <div className="relative w-full aspect-[4/3] bg-black rounded-lg overflow-hidden">
       <video ref={videoRef} className="w-full h-full object-cover" />
+      {permissionState !== 'granted' && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-white">
+          <Spinner className="size-6" />
+          <span className="text-sm">Starting camera…</span>
+        </div>
+      )}
       {/* Viewfinder overlay */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="w-64 h-64 border-2 border-white/70 rounded-lg" />
-      </div>
+      {permissionState === 'granted' && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-64 h-64 border-2 border-white/70 rounded-lg" />
+        </div>
+      )}
     </div>
   );
 };

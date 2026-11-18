@@ -2,11 +2,13 @@ const { amendEventSchema, createEventSchema } = require('./events.validation');
 
 const LOT_ID = '00000000-0000-4000-8000-000000000001';
 const OUTPUT_ID = '00000000-0000-4000-8000-000000000002';
+const LOCATION_ID = '00000000-0000-4000-8000-000000000003';
 
 const link = (lotId) => ({ lotId, quantity: 1, uom: 'kg' });
 
 const receivingPayload = (overrides = {}) => ({
   eventType: 'receiving',
+  locationId: LOCATION_ID,
   eventDatetime: '2026-11-15T10:00:00.000Z',
   source: 'manual',
   kdePayload: {},
@@ -54,6 +56,18 @@ describe('P1-33 receiving link validation', () => {
     const result = createEventSchema.safeParse(receivingPayload({ inputs: [] }));
 
     expect(result.success).toBe(false);
+  });
+
+  it('rejects receiving without a location', () => {
+    const result = createEventSchema.safeParse(receivingPayload({ locationId: undefined }));
+
+    expect(result.success).toBe(false);
+    expect(result.error.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: ['locationId'],
+        message: 'Receiving location is required',
+      }),
+    ]));
   });
 
   it('rejects an amendment that adds an output lot to receiving', () => {

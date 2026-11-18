@@ -8,6 +8,10 @@ import { Send, Trash2, RotateCcw } from 'lucide-react';
 import { useGetLocations } from '@/api/locations.api';
 import { useCreateEvent } from '@/api/events.api';
 import { newIdempotencyKey } from '@/lib/idempotency';
+import { enqueueEvent } from '@/lib/outbox';
+import { refreshOutboxState } from '@/lib/outboxSync';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { useAuthStore } from '@/stores/auth.store';
 import { buildEventPayload, toPositiveQuantity } from '@/lib/recordEventPayload';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,14 +41,14 @@ const quickEventSchema = z.object({
  * @param {{
  *   items: Array<{ lotId: string, tlc: string, uom: string, quantity: number }>,
  *   source: 'scan'|'manual',
- *   disabled?: boolean,
  *   onSubmitted: () => void,
  *   onCancel: () => void,
  * }} props
  */
-export const QuickEventForm = ({ items, source, disabled = false, onSubmitted, onCancel }) => {
+export const QuickEventForm = ({ items, source, onSubmitted, onCancel }) => {
   const { data: locationsData } = useGetLocations({ limit: 100 });
   const { mutateAsync: createEvent } = useCreateEvent();
+  const isOnline = useOnlineStatus();
   const eventDatetimeRef = useRef(new Date().toISOString());
   const idempotencyRef = useRef({ signature: null, key: null });
 
@@ -87,11 +91,42 @@ export const QuickEventForm = ({ items, source, disabled = false, onSubmitted, o
       if (idempotencyRef.current.signature !== signature) {
         idempotencyRef.current = { signature, key: newIdempotencyKey() };
       }
+      const idempotencyKey = idempotencyRef.current.key;
 
-      await createEvent({
-        payload,
-        idempotencyKey: idempotencyRef.current.key,
-      });
+      const queue = async () => {
+        const user = useAuthStore.getState().user;
+        if (!user?.id || !user?.organizationId) {
+          throw new Error('Your session has expired. Sign in again.');
+        }
+        await enqueueEvent({
+          organizationId: user.organizationId,
+          userId: user.id,
+          payload,
+          idempotencyKey,
+        });
+        await refreshOutboxState();
+        idempotencyRef.current = { signature: null, key: null };
+        toast.success('Event queued — it will sync when you are online');
+        onSubmitted();
+      };
+
+      if (!isOnline) {
+        await queue();
+        return;
+      }
+
+      try {
+        await createEvent({ payload, idempotencyKey });
+      } catch (err) {
+        // A request that never reached the API is safe to queue: the same
+        // idempotency key makes a later retry a no-op if it did arrive.
+        if (!err.response) {
+          await queue();
+          return;
+        }
+        throw err;
+      }
+
       idempotencyRef.current = { signature: null, key: null };
       toast.success('Event saved');
       onSubmitted();
@@ -108,7 +143,7 @@ export const QuickEventForm = ({ items, source, disabled = false, onSubmitted, o
           <select
             id="quick-event-type"
             className={SELECT_CLASS}
-            disabled={disabled || isSubmitting}
+            disabled={isSubmitting}
             {...register('eventType')}
           >
             <option value="receiving">Receiving</option>
@@ -122,7 +157,7 @@ export const QuickEventForm = ({ items, source, disabled = false, onSubmitted, o
             id="quick-event-location"
             className={SELECT_CLASS}
             aria-invalid={!!errors.locationId}
-            disabled={disabled || isSubmitting}
+            disabled={isSubmitting}
             {...register('locationId')}
           >
             <option value="">Select Location…</option>
@@ -149,7 +184,7 @@ export const QuickEventForm = ({ items, source, disabled = false, onSubmitted, o
                       type="button"
                       className="text-xs text-destructive hover:text-destructive/80 transition-colors min-h-[44px] px-2"
                       onClick={() => remove(index)}
-                      disabled={disabled || isSubmitting}
+                      disabled={isSubmitting}
                     >
                       <Trash2 className="size-4" />
                       <span className="sr-only">Remove {field.tlc}</span>
@@ -167,7 +202,7 @@ export const QuickEventForm = ({ items, source, disabled = false, onSubmitted, o
                       step="any"
                       className="min-h-[44px] text-base"
                       aria-invalid={!!errors.items?.[index]?.quantity}
-                      disabled={disabled || isSubmitting}
+                      disabled={isSubmitting}
                       {...register(`items.${index}.quantity`)}
                     />
                     {errors.items?.[index]?.quantity && (
@@ -187,7 +222,7 @@ export const QuickEventForm = ({ items, source, disabled = false, onSubmitted, o
             id="quick-event-notes"
             className="min-h-[44px] text-base"
             aria-invalid={!!errors.notes}
-            disabled={disabled || isSubmitting}
+            disabled={isSubmitting}
             {...register('notes')}
           />
           {errors.notes && <FieldError>{errors.notes.message}</FieldError>}
@@ -197,7 +232,7 @@ export const QuickEventForm = ({ items, source, disabled = false, onSubmitted, o
       <Button
         type="submit"
         className="w-full min-h-[44px]"
-        disabled={disabled || isSubmitting}
+        disabled={isSubmitting}
       >
         {isSubmitting ? <Spinner data-icon="inline-start" /> : <Send data-icon="inline-start" />}
         Save Event
