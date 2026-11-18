@@ -9,6 +9,7 @@ import { AuthLayout } from './components/layout/AuthLayout';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { useAuthStore } from './stores/auth.store';
 import { apiClient } from './lib/api';
+import NotFoundPage from './pages/NotFoundPage';
 
 // Auth Pages
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
@@ -113,9 +114,8 @@ function App() {
               <Route path="/recall" element={<RecallSimulationsPage />} />
               <Route path="/recall/:id" element={<RecallSimulationDetailPage />} />
               <Route path="/audit" element={<AuditLogPage />} />
+              <Route path="*" element={<NotFoundPage />} />
             </Route>
-            
-            <Route path="*" element={<div>404 Not Found</div>} />
           </Routes>
         </Suspense>
       </BrowserRouter>

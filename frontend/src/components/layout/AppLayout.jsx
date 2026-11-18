@@ -1,6 +1,7 @@
 import { Sidebar } from './Sidebar';
 import { Outlet } from 'react-router-dom';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { RouteErrorBoundary } from './RouteErrorBoundary';
 
 export const AppLayout = () => {
   return (
@@ -11,7 +12,9 @@ export const AppLayout = () => {
           <NotificationBell />
         </header>
         <div className="p-6 space-y-6 flex-1 overflow-auto">
-          <Outlet />
+          <RouteErrorBoundary>
+            <Outlet />
+          </RouteErrorBoundary>
         </div>
       </main>
     </div>

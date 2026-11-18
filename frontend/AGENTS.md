@@ -296,6 +296,22 @@ export default App;
 
 ---
 
+## Error Boundaries and 404
+
+- Every page route renders inside `RouteErrorBoundary` from `AppLayout`. The
+  boundary clears itself when the location key changes, so sidebar navigation
+  recovers from a bad page without a reload.
+- `main.jsx` wraps the app in a root `ErrorBoundary` with a full-screen fallback.
+  The root fallback is the last resort for errors outside `AppLayout`.
+- Caught render errors are reported through `src/lib/errorReporter.js`. Sentry
+  is initialized only when `VITE_SENTRY_DSN` is set; an empty value keeps the
+  SDK out of the loaded bundle.
+- Unknown routes render `pages/NotFoundPage.jsx` inside the app shell. Do not
+  add a plain-text 404 outside the layout.
+- `pnpm --filter frontend build` runs `scripts/verify-build.mjs`. Keep the
+  React, query, UI, and chart vendor groups in `vite.config.js`; the build fails
+  if a group disappears or a size budget is exceeded.
+
 ## Sidebar Navigation Items
 
 ```javascript

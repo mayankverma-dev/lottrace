@@ -170,6 +170,11 @@
 |---------|---------|-----|
 | `sonner` | ^1.x | Toast notifications |
 
+### Monitoring (Frontend)
+| Package | Version | Why |
+|---------|---------|-----|
+| `@sentry/react` | ^10.x | Browser error reporting; loaded only when `VITE_SENTRY_DSN` is set |
+
 ### Barcode Scanning (Frontend — loaded only in PWA)
 | Package | Version | Why |
 |---------|---------|-----|

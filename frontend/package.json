@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "vite build && node scripts/verify-build.mjs",
+    "preview": "vite preview",
+    "verify:build": "node scripts/verify-build.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
     "@hookform/resolvers": "^5.4.0",
+    "@sentry/react": "^10.78.0",
     "@tanstack/react-query": "^5.101.1",
     "@tanstack/react-table": "^8.21.3",
     "axios": "^1.18.1",

@@ -144,6 +144,9 @@ VITE_API_BASE_URL=http://localhost:3000
 VITE_SENTRY_DSN=
 ```
 
+`VITE_SENTRY_DSN` is read at build time. Leave it empty to disable browser error
+reporting; the Sentry SDK chunk is not loaded when the DSN is empty.
+
 ### `scan-pwa/.env`
 ```bash
 VITE_API_BASE_URL=http://localhost:3000

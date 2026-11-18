@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-18
-**Last Session:** 2026-11-18 — P1-40 and P2-36 through P2-40 fixed. The scan PWA now queues event submissions in an IndexedDB outbox when offline or when the API is unreachable, syncs them on reconnect with one idempotency key per record, and purges the queue on sign-out. A single connectivity banner reports queued, syncing, failed, and offline states. The scanner now falls back to the manual-entry screen when `getUserMedia` rejects asynchronously. Receiving events require `locationId`, the manual lot-code input has a programmatic label, and the product picker searches server-side instead of truncating at 100. Verified with a real offline→online round trip (exactly one event), sign-out purge across organizations, a denied-camera browser run, and 105 seeded products.
+**Last Session:** 2026-11-19 — P2-07 fixed. The web app now has a route-level error boundary and a root fallback, an in-shell 404 page, stable React/query/UI/chart vendor chunks, and optional Sentry reporting behind `VITE_SENTRY_DSN`. The production entry chunk dropped from 383,001 to 83,647 bytes. A build verifier rejects missing vendor groups, oversized assets, and vendor-to-page imports. Frontend tests pass (58). Playwright verified in-shell 404 recovery and lazy-chunk failure recovery with zero browser errors under stubbed local API responses.
 
 ---
 
@@ -58,6 +58,17 @@ backend suite pass.
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P2-07 — frontend error boundaries, in-shell 404, stable vendor chunks, optional Sentry:
+- `frontend/src/components/common/ErrorBoundary.jsx`, `ErrorFallback.jsx` (route/root fallback with reload and dashboard actions)
+- `frontend/src/components/layout/RouteErrorBoundary.jsx`, `frontend/src/components/layout/AppLayout.jsx` (route-level boundary around the page outlet)
+- `frontend/src/main.jsx` (root boundary; initialize Sentry before render)
+- `frontend/src/pages/NotFoundPage.jsx`, `frontend/src/App.jsx` (in-shell 404 for unknown routes)
+- `frontend/src/lib/errorReporter.js` (normalized reports, injectable reporter, dynamic Sentry import)
+- `frontend/vite.config.js` (Rolldown `codeSplitting` groups for React, query, UI, and charts)
+- `frontend/scripts/verify-build.mjs`, `frontend/scripts/verify-build.test.mjs` (entry/vendor/asset size gate)
+- Tests: `frontend/src/lib/errorReporter.test.js`; full `node --test` in `frontend`
+- Docs: `docs/AUDIT_REPORT.md`, `docs/TECH_STACK.md`, `docs/ENVIRONMENT_SETUP.md`, `frontend/AGENTS.md`, `PROGRESS.md`
 
 P1-40 / P2-36..P2-40 — PWA offline outbox plus scanner, banner, label, receiving-location, and product-search fixes:
 - `scan-pwa/src/lib/outbox.js`, `scan-pwa/src/lib/outboxSync.js` (IndexedDB queue keyed by organization/user, single-flight sync, permanent-failure parking)
