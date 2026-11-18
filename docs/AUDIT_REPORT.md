@@ -97,7 +97,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-05 | P1 | Compliance gaps page reads the wrong pagination field | Fixed (2026-11-14, 0324cae) |
 | P1-06 | P1 | Recall simulations page breaks pagination | Fixed (2026-11-14, 0324cae) |
 | P1-07 | P1 | Permission map hides pages from roles that can use them | Fixed (2026-11-14, 4faf8a9) |
-| P1-08 | P1 | Scan PWA cannot create lots or record manual events | Open |
+| P1-08 | P1 | Scan PWA cannot create lots or record manual events | Fixed (2026-11-18, ba5b77c) |
 | P1-09 | P1 | PWA caches authenticated lot responses across users | Fixed (2026-11-18, 5d04005) |
 | P1-10 | P1 | Attachment keys are client-trusted; no download or list | Fixed (2026-11-18, ff07736) |
 | P1-11 | P1 | Refresh-token rotation races log users out | Fixed (2026-11-17, bf7f1cb) |
@@ -426,7 +426,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-08 — Scan PWA cannot create lots or record manual events
 
-- **Severity:** P1 · **Area:** scan-pwa / core workflow · **Status:** Fixed (commit pending)
+- **Severity:** P1 · **Area:** scan-pwa / core workflow · **Status:** Fixed (2026-11-18, ba5b77c)
 - **Evidence:** `scan-pwa/src/pages/ScanPage.jsx:59-95` (lookup only; "not found" dead end), `:114-121` (`quantity: 1` hardcoded), `scan-pwa/src/App.jsx:110-124` (`/history` and `/manual` are "coming soon").
 - **What happens:** If a lot does not exist, the PWA tells the user so and offers no creation flow, even though creating lots is the first step of the workflow. Every scanned item is submitted with quantity `1` and the lot's UOM; there is no quantity keypad or edit. History and manual entry are placeholders. There is no offline queue, so a dropped connection loses the scan.
 - **Real-world impact:** The "scan PWA" cannot be used for real receiving or production counts. Quantities are wrong by default, which corrupts inventory and trace quantities. Workers fall back to paper, defeating the product.
