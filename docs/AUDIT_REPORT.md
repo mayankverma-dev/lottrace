@@ -129,7 +129,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-37 | P1 | Deactivated user's access token remains valid | Fixed (2026-11-17, 6592ce4) |
 | P1-38 | P1 | Invitation resend write lacks organization scope | Fixed (2026-11-17, e56f79b) |
 | P1-39 | P1 | Production PWA build omits registration and manifest assets | Fixed (2026-11-18, 01b0556) |
-| P1-40 | P1 | PWA has no offline outbox or sync | Open |
+| P1-40 | P1 | PWA has no offline outbox or sync | Fixed (2026-11-18, 3eae1b8) |
 | P2-01 | P2 | Pagination inputs are unvalidated (`NaN`, huge limits) | Fixed (2026-11-16, a2ac086) |
 | P2-02 | P2 | API response pagination shape is inconsistent | Fixed (2026-11-14, fdb11d7) |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Fixed (2026-11-15, 3915392) |
@@ -164,6 +164,11 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-33 | P2 | Local environment lacks refresh-token encryption key | Fixed locally (2026-11-17, no commit) |
 | P2-34 | P2 | AppError scanner rejects valid dynamic messages | Fixed (2026-11-18, b7bae13) |
 | P2-35 | P2 | Local backend env lacks required keys and local PWA CORS origin | Fixed locally (2026-11-18, no code commit) |
+| P2-36 | P2 | Scanner has no fallback when camera permission is denied | Fixed (2026-11-18, 3eae1b8) |
+| P2-37 | P2 | Duplicate offline banners | Fixed (2026-11-18, 3eae1b8) |
+| P2-38 | P2 | Manual lot code input lacks a programmatic label | Fixed (2026-11-18, 3eae1b8) |
+| P2-39 | P2 | Receiving `locationId` doc/code mismatch | Fixed (2026-11-18, 3eae1b8) |
+| P2-40 | P2 | Product picker caps at 100 and has no search | Fixed (2026-11-18, 3eae1b8) |
 
 ---
 
@@ -737,12 +742,13 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-40 — PWA has no offline outbox or sync
 
-- **Severity:** P1 · **Area:** scan-pwa / offline · **Status:** Open
-- **Evidence:** `scan-pwa/src/pages/ScanPage.jsx` disables event submit when `useOnlineStatus()` is false; `scan-pwa/src/pages/ManualEntryPage.jsx` disables the code input and Find Lot button. No IndexedDB, outbox, or sync code exists under `scan-pwa/src`. Smoke matrix row 16 fails.
-- **What happens:** A dropped connection cannot queue a scan or event. The user must keep the form open and reconnect, or the work is lost.
+- **Severity:** P1 · **Area:** scan-pwa / offline · **Status:** Fixed (2026-11-18, 3eae1b8)
+- **Evidence:** `scan-pwa/src/pages/ScanPage.jsx` disabled event submit when `useOnlineStatus()` was false; `scan-pwa/src/pages/ManualEntryPage.jsx` did the same. No IndexedDB, outbox, or sync code existed under `scan-pwa/src`. Smoke matrix row 16 failed.
+- **What happens:** A dropped connection could not queue a scan or event. The user had to keep the form open and reconnect, or the work was lost.
 - **Real-world impact:** Warehouse connectivity is unreliable. Without a durable queue, workers fall back to paper and events are missed.
-- **Fix direction:** Add an IndexedDB outbox keyed by `organizationId`/`userId`, one idempotency key per queued item, background sync with manual retry, and visible queued/synced/error state. Reuse `clearSessionData()` to purge the outbox on logout or org switch. Depends on P0-06.
-- **Verification:** Record an event offline, reconnect, confirm exactly one event syncs; retry the same queued item and confirm no duplicate; logout and log in as another org and confirm no queued data is visible.
+- **Fix direction:** Add an IndexedDB outbox keyed by `organizationId`/`userId`, one idempotency key per queued item, sync with manual retry, and visible queued/synced/error state. Purge the outbox on logout or org switch.
+- **Fix:** Added `scan-pwa/src/lib/outbox.js` (IndexedDB store keyed by `organizationId:userId`, one idempotency key per record, retryable versus permanent-failure state) and `outboxSync.js` (single-flight flush, 4xx parking, count store). `useOutboxSync` flushes on reconnect and when the app becomes visible; `ConnectivityBanner` replaces the per-page offline banners and shows queued, syncing, failed, and offline states. `QuickEventForm` queues offline submissions and requests that never reach the API. Sign-out calls `purgeOutbox()` before clearing the session. Lot lookup and lot creation remain online-only because both need the server.
+- **Verified:** Playwright on the local PWA: opened a receiving event for `P108-SCAN-001`, went offline, saved at 12.5 kg, and confirmed one IndexedDB record with one idempotency key. Reconnecting flushed it; the outbox dropped to 0 and `select count(*) from events where notes = 'p140-offline-1'` returned exactly 1. Queued a second event, signed out while offline, and confirmed the outbox was empty; logging in as another organization showed no queue or banner. Online save still returns `Event saved` without touching the outbox. `outbox.test.js` (5 tests) and the existing PWA tests pass (18 total).
 
 ---
 
@@ -1043,6 +1049,51 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Impact:** Local backend/PWA verification required undocumented inline overrides, and the local PWA could fail credentialed requests before reaching the API.
 - **Fix:** Added the required refresh-token encryption and hash-chain keys to the ignored local `backend/.env` (values are not committed), kept `HASH_CHAIN_KEY_ID=dev-k1`, and set `SCAN_PWA_URL=http://localhost:3002`. Updated `docs/ENVIRONMENT_SETUP.md` to match the required Resend, refresh-token, hash-chain, and local-origin variables. No production configuration or source code changed.
 - **Verified:** `pnpm --filter backend start` boots without inline environment overrides; `/health` returns 200; `OPTIONS /api/v1/auth/login` with `Origin: http://localhost:3002` returns 204 with `Access-Control-Allow-Origin: http://localhost:3002`; browser login from the local PWA returns 200 and reaches `/scan`; `backend/src/config/env.test.js` passes 29/29. The deployed Vercel origin no longer receives an allow-origin header from the local env. No secrets entered Git.
+
+## P2-36 — Scanner has no fallback when camera permission is denied
+
+- **Severity:** P2 · **Area:** scan-pwa / scanner · **Status:** Fixed (2026-11-18, 3eae1b8)
+- **Evidence:** `scan-pwa/src/features/scanner/Scanner.jsx` set `permissionState` to `granted` after `listVideoInputDevices()` succeeded, then called `decodeFromVideoDevice()`. That call returns a promise; when `getUserMedia` rejected, the rejection was unhandled and the component stayed on the black viewfinder. `ScanPage` did not pass `onError`.
+- **What happens:** A browser that lists a camera but denies access leaves a dead black rectangle with no manual-entry fallback.
+- **Real-world impact:** Users cannot scan and do not know why; no path forward without reloading and guessing.
+- **Fix:** Catch the promise returned by `decodeFromVideoDevice`, switch to the `denied` state, forward non-permission errors through `onError`, show a starting overlay until the camera is live, and pass an `onError` handler from `ScanPage`.
+- **Verified:** Playwright injected `enumerateDevices` returning one fake camera and `getUserMedia` rejecting with `NotAllowedError`. The “Camera access needed” fallback rendered, “Enter Code Manually” navigated to `/manual`, and no `pageerror` or console error was emitted. The ordinary headless denial path also still renders the fallback.
+
+## P2-37 — Duplicate offline banners
+
+- **Severity:** P2 · **Area:** scan-pwa / UI · **Status:** Fixed (2026-11-18, 3eae1b8)
+- **Evidence:** `scan-pwa/src/App.jsx` rendered a layout-level offline banner while `ScanPage.jsx` and `ManualEntryPage.jsx` each rendered their own near-identical banner.
+- **What happens:** Going offline showed the same warning twice.
+- **Real-world impact:** Visual noise and an inconsistent offline story.
+- **Fix:** Removed both page-level banners and replaced the layout banner with `ConnectivityBanner`, which owns offline, queued, syncing, failed, and retry states.
+- **Verified:** Offline Playwright run on `/manual` found exactly one element matching “You're offline”; the banner text included the queued count after an offline save.
+
+## P2-38 — Manual lot code input lacks a programmatic label
+
+- **Severity:** P2 · **Area:** scan-pwa / accessibility · **Status:** Fixed (2026-11-18, 3eae1b8)
+- **Evidence:** `scan-pwa/src/pages/ManualEntryPage.jsx` used only `placeholder="Lot code"`, so `getByLabel('Lot code')` and screen readers had no label.
+- **What happens:** The input has no accessible name.
+- **Real-world impact:** Screen-reader users cannot identify the field, and role-based tests cannot target it reliably.
+- **Fix:** Added `<Label htmlFor="manual-lot-code">` and matching `id` on the input.
+- **Verified:** Playwright `getByLabel('Lot code')` resolves and fills the input; the offline-queue and product-search walkthroughs used it.
+
+## P2-39 — Receiving `locationId` doc/code mismatch
+
+- **Severity:** P2 · **Area:** backend / validation · **Status:** Fixed (2026-11-18, 3eae1b8)
+- **Evidence:** `docs/VALIDATION_RULES.md` documented `locationId` as required for the receiving CTE, while `backend/src/modules/events/events.validation.js` kept it optional for every event type.
+- **What happens:** `POST /events` accepted receiving events with no location even though the documented contract and both UIs require one.
+- **Real-world impact:** Receiving records can omit the location KDE, weakening traceability and disagreeing with the documented API.
+- **Fix:** Added a schema refinement requiring `locationId` when `eventType` is `receiving`, with `path: ['locationId']`; documented the base-schema override.
+- **Verified:** `POST /api/v1/events` receiving without `locationId` returns `422 VALIDATION_ERROR` with `details[0] = { field: 'locationId', message: 'Receiving location is required' }`; the same request with the location returns `201`. `events.receiving-links.test.js` and `events.validation.test.js` pass 10/10, including the new regression test.
+
+## P2-40 — Product picker caps at 100 and has no search
+
+- **Severity:** P2 · **Area:** scan-pwa / lot creation · **Status:** Fixed (2026-11-18, 3eae1b8)
+- **Evidence:** `scan-pwa/src/features/lots/CreateLotForm.jsx` requested `GET /products?limit=100` and rendered the result in a plain select, so organizations with more than 100 products could not reach the rest.
+- **What happens:** Products outside the first page are unselectable, blocking lot creation for them.
+- **Real-world impact:** Larger customers cannot create lots for part of their catalog.
+- **Fix:** Added a 300 ms debounced search field that passes the existing `search` query parameter to `GET /products`, and kept a selected product in the option list when a later search no longer returns it.
+- **Verified:** Seeded 105 active products. The unfiltered picker returned 100 products plus the placeholder and hid five (`Bulk Product 100`–`104`); searching `Bulk Product 100` returned exactly that product, selecting it set the unit to `kg`, and cancelling returned to manual entry.
 
 # Recommended fix order
 

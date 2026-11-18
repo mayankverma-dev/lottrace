@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-18
-**Last Session:** 2026-11-18 — P1-39 and P2-35 fixed. The scan PWA production build now uses `vite-plugin-pwa@2.0.0` (Vite 8/Rolldown compatible), emits `registerSW.js` and `manifest.webmanifest`, ships real 192/512 icons, and fails the build when those artifacts, manifest fields, icon dimensions, or precache entries are missing. The ignored local backend `.env` now has the required refresh-token encryption key, hash-chain key ID/secret, and `SCAN_PWA_URL=http://localhost:3002`; the backend boots without inline overrides and local PWA login passes CORS. Browser verification confirms automatic PWA registration, activation, and an app-shell-only precache. P1-09 remains fixed: no API runtime caching, `Cache-Control: no-store`, and session purge on logout/auth failure.
+**Last Session:** 2026-11-18 — P1-40 and P2-36 through P2-40 fixed. The scan PWA now queues event submissions in an IndexedDB outbox when offline or when the API is unreachable, syncs them on reconnect with one idempotency key per record, and purges the queue on sign-out. A single connectivity banner reports queued, syncing, failed, and offline states. The scanner now falls back to the manual-entry screen when `getUserMedia` rejects asynchronously. Receiving events require `locationId`, the manual lot-code input has a programmatic label, and the product picker searches server-side instead of truncating at 100. Verified with a real offline→online round trip (exactly one event), sign-out purge across organizations, a denied-camera browser run, and 105 seeded products.
 
 ---
 
@@ -37,7 +37,6 @@ _Scale & Integrate (3.1 - 3.18)_
 
 ## 🚫 Blocked / Open Questions
 - Pricing model not finalized (per-location vs per-event-volume vs flat tiers)
-- Offline scanning scope (Phase 2 vs Phase 3 decision pending)
 
 P2-34 — AppError usage scanner now permits dynamic messages while retaining
 literal error-code and numeric-status checks. Focused scanner test and full
@@ -59,6 +58,18 @@ backend suite pass.
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P1-40 / P2-36..P2-40 — PWA offline outbox plus scanner, banner, label, receiving-location, and product-search fixes:
+- `scan-pwa/src/lib/outbox.js`, `scan-pwa/src/lib/outboxSync.js` (IndexedDB queue keyed by organization/user, single-flight sync, permanent-failure parking)
+- `scan-pwa/src/hooks/useOutboxSync.js`, `scan-pwa/src/components/ConnectivityBanner.jsx` (reconnect/visibility flush, one queue banner)
+- `scan-pwa/src/features/events/QuickEventForm.jsx` (queue when offline or when the request never reaches the API)
+- `scan-pwa/src/App.jsx` (purge the outbox on sign-out; mount one banner)
+- `scan-pwa/src/features/scanner/Scanner.jsx` (catch the async `getUserMedia` rejection; starting state)
+- `scan-pwa/src/features/lots/CreateLotForm.jsx` (debounced server-side product search)
+- `scan-pwa/src/pages/ScanPage.jsx`, `scan-pwa/src/pages/ManualEntryPage.jsx` (remove duplicate banners; label the lot-code input)
+- `backend/src/modules/events/events.validation.js` (receiving requires `locationId`)
+- Tests: `scan-pwa/src/lib/outbox.test.js`, `backend/src/modules/events/events.receiving-links.test.js`
+- Docs: `scan-pwa/AGENTS.md`, `docs/FEATURE_MAP.md`, `docs/VALIDATION_RULES.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P2-35 — local backend env missing required keys and local PWA CORS origin:
 - `backend/.env` (ignored; added required refresh-token encryption and hash-chain keys, set local `SCAN_PWA_URL`; no secret committed)
