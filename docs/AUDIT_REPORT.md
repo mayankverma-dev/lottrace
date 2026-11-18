@@ -98,7 +98,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P1-06 | P1 | Recall simulations page breaks pagination | Fixed (2026-11-14, 0324cae) |
 | P1-07 | P1 | Permission map hides pages from roles that can use them | Fixed (2026-11-14, 4faf8a9) |
 | P1-08 | P1 | Scan PWA cannot create lots or record manual events | Open |
-| P1-09 | P1 | PWA caches authenticated lot responses across users | Open |
+| P1-09 | P1 | PWA caches authenticated lot responses across users | Fixed (2026-11-18, 5d04005) |
 | P1-10 | P1 | Attachment keys are client-trusted; no download or list | Fixed (2026-11-18, ff07736) |
 | P1-11 | P1 | Refresh-token rotation races log users out | Fixed (2026-11-17, bf7f1cb) |
 | P1-12 | P1 | User lifecycle breaks on global email uniqueness | Fixed (2026-11-17, 4c11f91) |
@@ -432,12 +432,14 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P1-09 — PWA caches authenticated lot responses across users
 
-- **Severity:** P1 · **Area:** scan-pwa / security · **Status:** Open
+- **Severity:** P1 · **Area:** scan-pwa / security · **Status:** Fixed (2026-11-18, 5d04005)
 - **Evidence:** `scan-pwa/vite.config.js:35-45` (`urlPattern: /api/v1/lots`, `NetworkFirst`, `cacheName: 'api-cache'`); `scan-pwa/src/App.jsx:50-60` (logout clears Zustand and React Query only).
 - **What happens:** Workbox caches `/api/v1/lots` responses in Cache Storage keyed by URL, ignoring the `Authorization` header. Logout does not delete the cache. On a shared shop-floor device, the next user can go offline (or hit a network failure) and see the previous user's/org's lot codes, product names, and quantities. The cache also serves stale lot data after edits.
 - **Real-world impact:** Cross-tenant/cross-user data exposure on the most shared device in the facility, plus stale data causing wrong scans. This is a privacy and confidentiality incident waiting to happen.
 - **Fix direction:** Do not runtime-cache authenticated API responses. If offline lookup is a requirement, store data in IndexedDB keyed by `organizationId`/`userId`, purge on logout and on org switch, and encrypt at rest where feasible. At minimum, add `caches.delete('api-cache')` (and any Workbox precache API caches) to logout and set `Cache-Control: no-store` on API responses. Add a test that logs out and asserts Cache Storage is empty.
 - **Verification:** Login as org A, load a lot, logout, login as org B, go offline, search for A's lot code → no result. Confirm the network panel shows no `(from service worker cache)` for `/api/v1/lots` while authenticated.
+- **Fix:** Deleted the Workbox `/api/v1/lots` runtime route entirely. Every `/api/v1` response now carries `Cache-Control: no-store` (`backend/src/middleware/noStore.js`). Added `clearSessionData()` (`scan-pwa/src/lib/session.js`), which clears Zustand auth, cancels and clears React Query, and deletes the old `api-cache` bucket via `purgeApiCache()`. Logout, refresh failure, and failed/absent boot authentication all use it. Only the Workbox app-shell precache remains; offline lot lookup is intentionally network-only.
+- **Verified:** `backend/src/middleware/noStore.test.js` (3 tests), `scan-pwa/src/lib/session.test.js` + `scan-pwa/vite.config.test.js` (5 tests), generated `dist/sw.js` contains no `api/v1/lots` or `api-cache`, backend syntax checks, `pnpm --filter frontend build`, `pnpm --filter scan-pwa build`, and `pnpm lint` (0 errors; existing warnings only) pass. No database commands were run and Neon was not contacted.
 
 ## P1-10 — Attachment keys are client-trusted; no download or list
 
