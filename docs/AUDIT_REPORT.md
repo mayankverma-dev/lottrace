@@ -136,7 +136,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-04 | P2 | Trace product lookup is not organization-scoped | Open |
 | P2-05 | P2 | Event list search and filters are not indexed for scale | Open |
 | P2-06 | P2 | Local infrastructure uses default credentials and exposed consoles | Open |
-| P2-07 | P2 | Frontend bundle is one large chunk; no error boundaries | Open |
+| P2-07 | P2 | Frontend bundle is one large chunk; no error boundaries | Fixed (2026-11-19, d68cdd8) |
 | P2-08 | P2 | Documentation claims completion that the code does not deliver | Open |
 | P2-09 | P2 | Attachment upload flow leaves orphaned objects | Fixed (2026-11-18, ff07736) |
 | P2-10 | P2 | Minor API/UX inconsistencies (status codes, empty states) | Open |
@@ -812,12 +812,14 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P2-07 — Frontend bundle is one large chunk; no error boundaries
 
-- **Severity:** P2 · **Area:** frontend / resilience · **Status:** Open
-- **Evidence:** `frontend/src/App.jsx:30-45` (lazy routes), `:116` (plain `<div>404 Not Found</div>`); no `ErrorBoundary` in `frontend/src`.
+- **Severity:** P2 · **Area:** frontend / resilience · **Status:** Fixed (2026-11-19, d68cdd8)
+- **Evidence:** `frontend/src/App.jsx:14-43` (lazy routes), former `:118` (plain `<div>404 Not Found</div>`); no `ErrorBoundary` in `frontend/src` before the fix.
 - **What happens:** Routes are lazy-loaded, but there is no error boundary, so any render-time exception (such as P0-08) unmounts the entire app and leaves a blank screen. Vendor code is not split into stable chunks, so every deploy invalidates the main bundle. The 404 route is unstyled and offers no navigation.
 - **Real-world impact:** A single bad record blanks the whole dashboard. Users cannot recover without a full reload, and the blank screen looks like a total outage.
 - **Fix direction:** Add a route-level `ErrorBoundary` with a "reload / go to dashboard" fallback and report the error to Sentry. Add a proper 404 page inside the app shell. Configure `build.rollupOptions.output.manualChunks` for React, query, and UI libraries, and verify chunk sizes. Add a top-level boundary around the app as a last resort.
 - **Verification:** Throw in a page component; only that route shows the fallback, navigation still works, and the error reaches Sentry. Refresh a deep link on the deployed app and get the app, not a 404.
+- **Fix:** Added a route boundary inside `AppLayout`, a root boundary in `main.jsx`, and a shared fallback with reload and dashboard actions. Unknown routes now render an in-shell `NotFoundPage`. Replaced the 404 `<div>` and added stable React, TanStack, UI, and chart vendor groups with `build.rolldownOptions.output.codeSplitting.groups` (Vite 8/Rolldown; deprecated object `manualChunks` is not supported). Added browser Sentry reporting behind `VITE_SENTRY_DSN`; the SDK is dynamically imported and not loaded when the DSN is empty. Added `frontend/scripts/verify-build.mjs` to fail the build when the entry budget, required vendor groups, per-asset cap, or vendor-to-page imports are invalid. Removed `includeDependenciesRecursively: false`, which created a broken vendor-to-page dependency graph.
+- **Verified:** `node --test` in `frontend` passes (58 tests), including vendor graph, build verifier, and error reporter suites. `pnpm --filter frontend build` emits `react-vendor`, `query-vendor`, `ui-vendor`, and `charts-vendor` chunks; the entry is 83,647 bytes. Playwright preview verification authenticated with stubbed local API responses, rendered the in-shell 404 with sidebar and dashboard navigation, and reported zero browser errors. Playwright aborted a lazy page chunk; route fallback rendered, sidebar stayed visible, and navigation recovered. `pnpm --filter scan-pwa build`, `pnpm lint`, frozen-lockfile install, and `git diff --check` pass. Legacy behavior was confirmed before the fix: the entry chunk was 383,001 bytes and no error boundary or styled 404 existed. Production deep links still require the SPA rewrite tracked by P1-20.
 
 ## P2-08 — Documentation claims completion that the code does not deliver
 
