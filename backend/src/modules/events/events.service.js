@@ -14,6 +14,7 @@ const AppError = require('../../utils/AppError');
 const logger = require('../../utils/logger');
 const { assertLotsBelongToOrganization } = require('../../utils/tenantLots');
 const { buildPagination } = require('../../utils/pagination');
+const { encodeCursor, decodeCursor } = require('../../utils/cursor');
 const crc32 = require('crc-32');
 const { bumpTraceCacheVersion } = require('../trace/trace.service');
 const { checkComplianceGaps } = require('./compliance');
@@ -204,8 +205,7 @@ const createEvent = async (data, organizationId, userId) => {
 };
 
 const getEvents = async (query, organizationId) => {
-  const { page, limit, eventType, status, source, locationId, lotId, dateFrom, dateTo } = query;
-  const offset = (page - 1) * limit;
+  const { limit, cursor, eventType, status, source, locationId, lotId, dateFrom, dateTo } = query;
 
   let queryBuilder = db('events').where({ 'events.organization_id': organizationId });
 
@@ -224,10 +224,15 @@ const getEvents = async (query, organizationId) => {
   if (dateFrom) queryBuilder = queryBuilder.where('event_datetime', '>=', dateFrom);
   if (dateTo) queryBuilder = queryBuilder.where('event_datetime', '<=', dateTo);
 
-  const [countResult] = await queryBuilder.clone().count('events.id as count');
-  const total = parseInt(countResult.count, 10);
+  if (cursor) {
+    const decoded = decodeCursor(cursor);
+    queryBuilder = queryBuilder.whereRaw(
+      '(events.created_at, events.chain_seq) < (?::timestamptz, ?::bigint)',
+      [decoded.t, decoded.s]
+    );
+  }
 
-  const events = await queryBuilder
+  const rows = await queryBuilder
     .leftJoin('locations', 'events.location_id', 'locations.id')
     .leftJoin('users', 'events.recorded_by', 'users.id')
     .select(
@@ -239,7 +244,10 @@ const getEvents = async (query, organizationId) => {
         FROM event_lot_links ell
         JOIN lots ON lots.id = ell.lot_id
         WHERE ell.event_id = events.id
-      ) as lot_links`)
+      ) as lot_links`),
+      // pg decodes timestamptz to a millisecond Date, which truncates the
+      // microseconds needed for a stable keyset. Format the exact value in SQL.
+      db.raw(`to_char(events.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at_cursor`)
     )
     // created_at is the transaction start time and can tie under concurrency.
     // chain_seq is unique per organization, so it makes pagination stable.
@@ -247,12 +255,29 @@ const getEvents = async (query, organizationId) => {
       { column: 'events.created_at', order: 'desc' },
       { column: 'events.chain_seq', order: 'desc' },
     ])
-    .limit(limit)
-    .offset(offset);
+    .limit(limit + 1);
+
+  const hasNextPage = rows.length > limit;
+  const events = hasNextPage ? rows.slice(0, limit) : rows;
+  const lastEvent = events[events.length - 1];
+  const nextCursor = hasNextPage && lastEvent
+    ? encodeCursor({
+      t: lastEvent.created_at_cursor,
+      s: String(lastEvent.chain_seq),
+    })
+    : null;
+
+  events.forEach((event) => {
+    delete event.created_at_cursor;
+  });
 
   return {
     data: events,
-    pagination: buildPagination(total, page, limit),
+    pagination: {
+      limit,
+      hasNextPage,
+      nextCursor,
+    },
   };
 };
 

@@ -1,5 +1,5 @@
 /**
- * P2-12 regression test — stable event list pagination.
+ * P2-05/P2-12 regression tests — stable keyset event-list pagination.
  *
  * Requires a disposable local PostgreSQL database whose name ends in `_test`:
  *
@@ -35,7 +35,7 @@ const { v4: uuidv4 } = require('uuid');
 const describeDb = RUN_DB_TESTS ? describe : describe.skip;
 const MIGRATIONS_DIR = path.join(__dirname, '../../db/migrations');
 
-describeDb('P2-12 stable event list pagination', () => {
+describeDb('P2-05 stable keyset event-list pagination', () => {
   jest.setTimeout(120000);
 
   let db;
@@ -50,8 +50,8 @@ describeDb('P2-12 stable event list pagination', () => {
 
     await db('organizations').insert({
       id: organizationId,
-      name: 'P2-12 pagination',
-      slug: `p2-12-${organizationId.slice(0, 8)}`,
+      name: 'P2-05 pagination',
+      slug: `p2-05-${organizationId.slice(0, 8)}`,
     });
 
     await db('users').insert({
@@ -69,30 +69,48 @@ describeDb('P2-12 stable event list pagination', () => {
    * Inserts events that share one `created_at`, the same shape PostgreSQL
    * produces when concurrent transactions begin in the same millisecond.
    */
-  const seedTiedTimestamps = async (count) => {
+  const seedTiedTimestamps = async (count, startSeq = 1) => {
     const createdAt = new Date('2026-06-01T12:00:00.000Z');
 
     for (let index = 0; index < count; index += 1) {
+      const chainSeq = startSeq + index;
       // eslint-disable-next-line no-await-in-loop
       await db('events').insert({
         id: uuidv4(),
         organization_id: organizationId,
         event_type: 'creation',
-        event_datetime: new Date(Date.UTC(2026, 5, 1, 12, 0, index)),
+        event_datetime: new Date(Date.UTC(2026, 5, 1, 12, 0, chainSeq)),
         recorded_by: userId,
         source: 'manual',
-        kde_payload: JSON.stringify({ sequence: index }),
-        record_hash: `p2-12-hash-${index + 1}`,
-        prev_hash: index === 0 ? 'GENESIS' : `p2-12-hash-${index}`,
-        chain_seq: index + 1,
+        kde_payload: JSON.stringify({ sequence: chainSeq }),
+        record_hash: `p2-05-hash-${chainSeq}`,
+        prev_hash: chainSeq === 1 ? 'GENESIS' : `p2-05-hash-${chainSeq - 1}`,
+        chain_seq: chainSeq,
         hash_key_id: hashChain.getCurrentHashKeyId(),
         created_at: createdAt,
       });
     }
   };
 
-  const page = async (pageNumber, limit) => eventsService.getEvents(
-    { page: pageNumber, limit },
+  const seedEventAt = async (createdAt, chainSeq) => {
+    await db('events').insert({
+      id: uuidv4(),
+      organization_id: organizationId,
+      event_type: 'creation',
+      event_datetime: new Date('2026-06-01T12:00:00.000Z'),
+      recorded_by: userId,
+      source: 'manual',
+      kde_payload: JSON.stringify({ sequence: chainSeq }),
+      record_hash: `p2-05-micro-hash-${chainSeq}`,
+      prev_hash: chainSeq === 1 ? 'GENESIS' : `p2-05-micro-hash-${chainSeq - 1}`,
+      chain_seq: chainSeq,
+      hash_key_id: hashChain.getCurrentHashKeyId(),
+      created_at: db.raw('?::timestamptz', [createdAt]),
+    });
+  };
+
+  const listEvents = ({ limit = 20, cursor } = {}) => eventsService.getEvents(
+    { limit, ...(cursor ? { cursor } : {}) },
     organizationId,
   );
 
@@ -117,17 +135,17 @@ describeDb('P2-12 stable event list pagination', () => {
   it('orders tied created_at rows by chain position', async () => {
     await seedTiedTimestamps(5);
 
-    const { data } = await page(1, 5);
+    const { data } = await listEvents({ limit: 5 });
 
     expect(data.map((event) => Number(event.chain_seq))).toEqual([5, 4, 3, 2, 1]);
   });
 
-  it('partitions every event into exactly one page', async () => {
+  it('partitions every event into exactly one page with cursors', async () => {
     await seedTiedTimestamps(5);
 
-    const first = await page(1, 2);
-    const second = await page(2, 2);
-    const third = await page(3, 2);
+    const first = await listEvents({ limit: 2 });
+    const second = await listEvents({ limit: 2, cursor: first.pagination.nextCursor });
+    const third = await listEvents({ limit: 2, cursor: second.pagination.nextCursor });
 
     const seen = [...first.data, ...second.data, ...third.data]
       .map((event) => event.id);
@@ -137,7 +155,41 @@ describeDb('P2-12 stable event list pagination', () => {
     expect(first.data.map((event) => Number(event.chain_seq))).toEqual([5, 4]);
     expect(second.data.map((event) => Number(event.chain_seq))).toEqual([3, 2]);
     expect(third.data.map((event) => Number(event.chain_seq))).toEqual([1]);
-    expect(first.pagination.total).toBe(5);
-    expect(third.pagination.hasNextPage).toBe(false);
+    expect(first.pagination).toEqual({
+      limit: 2,
+      hasNextPage: true,
+      nextCursor: expect.any(String),
+    });
+    expect(third.pagination).toEqual({
+      limit: 2,
+      hasNextPage: false,
+      nextCursor: null,
+    });
+  });
+
+  it('does not duplicate rows when a newer event arrives between pages', async () => {
+    await seedTiedTimestamps(5);
+
+    const first = await listEvents({ limit: 2 });
+    await seedTiedTimestamps(1, 6);
+    const second = await listEvents({ limit: 2, cursor: first.pagination.nextCursor });
+
+    expect(first.data.map((event) => Number(event.chain_seq))).toEqual([5, 4]);
+    expect(second.data.map((event) => Number(event.chain_seq))).toEqual([3, 2]);
+    expect(second.data.map((event) => event.id)).not.toContain(first.data[0].id);
+  });
+
+  it('preserves microsecond created_at values in the cursor', async () => {
+    await seedEventAt('2026-06-01T12:00:00.000100Z', 1);
+    await seedEventAt('2026-06-01T12:00:00.000200Z', 2);
+    await seedEventAt('2026-06-01T12:00:00.000300Z', 3);
+
+    const first = await listEvents({ limit: 1 });
+    const second = await listEvents({ limit: 1, cursor: first.pagination.nextCursor });
+    const third = await listEvents({ limit: 1, cursor: second.pagination.nextCursor });
+
+    expect(first.data.map((event) => Number(event.chain_seq))).toEqual([3]);
+    expect(second.data.map((event) => Number(event.chain_seq))).toEqual([2]);
+    expect(third.data.map((event) => Number(event.chain_seq))).toEqual([1]);
   });
 });

@@ -14,7 +14,7 @@ exports.up = async (knex) => {
 
     // Critical indexes for recursive trace CTEs
     table.index('event_id', 'idx_ell_event');
-    table.index('lot_id', 'idx_ell_lot');
+    table.index(['lot_id', 'event_id'], 'idx_ell_lot_event');
     table.index('organization_id', 'idx_ell_org');
     table.index(['lot_id', 'direction'], 'idx_ell_lot_direction');
     table.index(['event_id', 'direction'], 'idx_ell_event_direction');

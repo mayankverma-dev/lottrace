@@ -36,12 +36,13 @@ const { v4: uuidv4 } = require('uuid');
 const { getEventsQuerySchema } = require('./events.validation');
 
 describe('P1-08 event list source validation', () => {
-  it('accepts a known source and keeps pagination defaults', () => {
+  it('accepts a known source and keeps the cursor pagination default', () => {
     const parsed = getEventsQuerySchema.parse({ source: 'scan' });
 
     expect(parsed.source).toBe('scan');
-    expect(parsed.page).toBe(1);
     expect(parsed.limit).toBe(20);
+    expect(parsed.cursor).toBeUndefined();
+    expect(parsed.page).toBeUndefined();
   });
 
   it('rejects an unknown source', () => {
@@ -49,6 +50,13 @@ describe('P1-08 event list source validation', () => {
 
     expect(result.success).toBe(false);
     expect(result.error.issues[0].path).toEqual(['source']);
+  });
+
+  it('rejects the removed offset page parameter', () => {
+    const result = getEventsQuerySchema.safeParse({ page: 2 });
+
+    expect(result.success).toBe(false);
+    expect(result.error.issues[0].path).toEqual([]);
   });
 });
 
@@ -131,13 +139,17 @@ describeDb('P1-08 event list source filter', () => {
     await seedEvent({ organizationId, userId, source: 'manual', chainSeq: 3 });
 
     const { data, pagination } = await eventsService.getEvents(
-      { page: 1, limit: 20, source: 'scan' },
+      { limit: 20, source: 'scan' },
       organizationId,
     );
 
     expect(data).toHaveLength(2);
     expect(data.every((event) => event.source === 'scan')).toBe(true);
-    expect(pagination.total).toBe(2);
+    expect(pagination).toEqual({
+      limit: 20,
+      hasNextPage: false,
+      nextCursor: null,
+    });
   });
 
   it('combines the source filter with the event type filter', async () => {
@@ -148,7 +160,7 @@ describeDb('P1-08 event list source filter', () => {
     await seedEvent({ organizationId, userId, source: 'manual', eventType: 'receiving', chainSeq: 3 });
 
     const { data } = await eventsService.getEvents(
-      { page: 1, limit: 20, source: 'scan', eventType: 'receiving' },
+      { limit: 20, source: 'scan', eventType: 'receiving' },
       organizationId,
     );
 
@@ -165,12 +177,16 @@ describeDb('P1-08 event list source filter', () => {
     await seedEvent({ organizationId: second.organizationId, userId: second.userId, source: 'scan', chainSeq: 1 });
 
     const { data, pagination } = await eventsService.getEvents(
-      { page: 1, limit: 20, source: 'scan' },
+      { limit: 20, source: 'scan' },
       first.organizationId,
     );
 
     expect(data).toHaveLength(1);
     expect(data[0].organization_id).toBe(first.organizationId);
-    expect(pagination.total).toBe(1);
+    expect(pagination).toEqual({
+      limit: 20,
+      hasNextPage: false,
+      nextCursor: null,
+    });
   });
 });

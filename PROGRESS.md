@@ -2,8 +2,8 @@
 
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
-**Last Updated:** 2026-11-18
-**Last Session:** 2026-11-19 — P2-07 fixed. The web app now has a route-level error boundary and a root fallback, an in-shell 404 page, stable React/query/UI/chart vendor chunks, and optional Sentry reporting behind `VITE_SENTRY_DSN`. The production entry chunk dropped from 383,001 to 83,647 bytes. A build verifier rejects missing vendor groups, oversized assets, and vendor-to-page imports. Frontend tests pass (58). Playwright verified in-shell 404 recovery and lazy-chunk failure recovery with zero browser errors under stubbed local API responses.
+**Last Updated:** 2026-11-19
+**Last Session:** 2026-11-19 — P2-05 fixed. `GET /api/v1/events` now uses keyset cursor pagination on `(created_at DESC, chain_seq DESC)`, returns `{ limit, hasNextPage, nextCursor }`, and rejects `page` with 422. Added five composite event-list indexes, replaced `idx_ell_lot` with `(lot_id, event_id)`, and removed the superseded indexes. Web and PWA event pagers follow opaque cursors. On 1,000,000 synthetic events, first page ran in 0.66 ms and the deep cursor page in 0.99 ms; no plan used `Seq Scan on events`. Backend suite passes (65 suites, 557 passed, 4 skipped), as do fixed tests, frontend tests (58), PWA tests (24), both production builds, and lint with 0 errors.
 
 ---
 
@@ -58,6 +58,16 @@ backend suite pass.
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P2-05 — keyset event-list pagination and scale indexes:
+- `backend/src/utils/cursor.js` (opaque base64url cursor; exact microseconds and bigint chain positions)
+- `backend/src/modules/events/events.service.js`, `events.validation.js` (keyset list, `limit + 1`, 422 for `page`/invalid cursors)
+- `backend/src/db/migrations/20240101000007_create_events.js` (five filter+sort composite indexes; removed superseded indexes)
+- `backend/src/db/migrations/20240101000008_create_event_lot_links.js` (`idx_ell_lot_event`)
+- `frontend/src/pages/events/EventsListPage.jsx`, `scan-pwa/src/pages/HistoryPage.jsx` (cursor stack pagers)
+- `backend/scripts/benchmark-events-list.js` (1M-row `EXPLAIN ANALYZE` benchmark)
+- Tests: `backend/src/utils/cursor.test.js`, `backend/src/modules/events/events.pagination.test.js`, `events.indexes.test.js`, `events.list-order.test.js`, plus updated event filter/read tests
+- Docs: `docs/API_STANDARDS.md`, `docs/DATABASE_SCHEMA.md`, `docs/VALIDATION_RULES.md`, `docs/BACKEND_ARCHITECTURE.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P2-07 — frontend error boundaries, in-shell 404, stable vendor chunks, optional Sentry:
 - `frontend/src/components/common/ErrorBoundary.jsx`, `ErrorFallback.jsx` (route/root fallback with reload and dashboard actions)

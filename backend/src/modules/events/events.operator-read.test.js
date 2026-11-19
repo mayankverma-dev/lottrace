@@ -180,7 +180,11 @@ describeDb('P0-12 operator event read access', () => {
     expect(list.status).toBe(200);
     expect(list.body.success).toBe(true);
     expect(list.body.data.map((event) => event.id)).toContain(created.id);
-    expect(list.body.pagination.total).toBe(1);
+    expect(list.body.pagination).toEqual({
+      limit: 20,
+      hasNextPage: false,
+      nextCursor: null,
+    });
 
     const detail = await as(request(app).get(`/api/v1/events/${created.id}`), org.operator);
     expect(detail.status).toBe(200);

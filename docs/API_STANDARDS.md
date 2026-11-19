@@ -190,23 +190,61 @@ POST   /api/v1/[resource]/:id/amend — action: amend
 
 ## Pagination
 
-All list endpoints that could grow unbounded support pagination.
+All list endpoints that could grow unbounded support pagination. There are two
+contracts; an endpoint uses exactly one of them.
 
-### Query Parameters
+### Offset pagination
+
+Used by every list except the event list.
+
 ```
-?page=1&limit=20     — offset-based (default for most lists)
-?cursor=<value>      — cursor-based (required for audit log, large event lists)
-?sort=createdAt      — sort field
-?order=desc          — asc | desc (default: desc)
+?page=1&limit=20
 ```
 
-### Defaults
+```json
+{
+  "pagination": {
+    "total": 42,
+    "page": 1,
+    "limit": 20,
+    "totalPages": 3,
+    "hasNextPage": true,
+    "hasPrevPage": false
+  }
+}
+```
+
 - Default page: 1
 - Default limit: 20
 - Max limit: 100 (reject with 422 if exceeded)
 
-All current list endpoints use the offset-based shape above. Cursor pagination is
-not part of the current contract; add it only as a future breaking API change.
+### Cursor pagination
+
+Used by `GET /api/v1/events`. The event list has no total count and no page
+numbers; it pages by the opaque cursor returned with the previous page.
+
+```
+GET /api/v1/events?limit=20&cursor=<opaque>
+```
+
+```json
+{
+  "pagination": {
+    "limit": 20,
+    "hasNextPage": true,
+    "nextCursor": "eyJ0IjoiMjAyNi0xMS0xOVQxMjozNDo1Ni4xMjM0NTZaIiwicyI6IjQyIn0"
+  }
+}
+```
+
+- Default limit: 20
+- Max limit: 100 (reject with 422 if exceeded)
+- `nextCursor` is `null` when there is no next page.
+- Cursor values are opaque. Clients must not parse or construct them.
+- A cursor is valid only with the same filters and sort order that produced it.
+  Clients reset the cursor when filters change.
+- Invalid or tampered cursors return `422 VALIDATION_ERROR`.
+- `page` is not accepted by the event list; it returns `422 VALIDATION_ERROR`.
 
 ---
 

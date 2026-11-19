@@ -104,8 +104,8 @@ describeDb('P1-24 event status filters', () => {
     }
   };
 
-  const listByStatus = (status, page = 1, limit = 20) => eventsService.getEvents(
-    { page, limit, status },
+  const listByStatus = (status, limit = 20, cursor) => eventsService.getEvents(
+    { limit, ...(cursor ? { cursor } : {}), status },
     org.organizationId,
   );
 
@@ -129,45 +129,36 @@ describeDb('P1-24 event status filters', () => {
   });
 
   it.each(['active', 'amended', 'void'])(
-    'returns only %s events and reports the matching total',
+    'returns only %s events',
     async (status) => {
       const result = await listByStatus(status);
 
       expect(result.data).toHaveLength(STATUS_COUNTS[status]);
       expect(result.data.every((event) => event.status === status)).toBe(true);
-      expect(result.pagination).toMatchObject({
-        total: STATUS_COUNTS[status],
-        page: 1,
+      expect(result.pagination).toEqual({
         limit: 20,
-        totalPages: 1,
         hasNextPage: false,
-        hasPrevPage: false,
+        nextCursor: null,
       });
     },
   );
 
   it('paginates within the filtered status set', async () => {
-    const firstPage = await listByStatus('active', 1, 1);
-    const secondPage = await listByStatus('active', 2, 1);
+    const firstPage = await listByStatus('active', 1);
+    const secondPage = await listByStatus('active', 1, firstPage.pagination.nextCursor);
 
     expect(firstPage.data).toHaveLength(1);
-    expect(firstPage.pagination).toMatchObject({
-      total: 2,
-      page: 1,
+    expect(firstPage.pagination).toEqual({
       limit: 1,
-      totalPages: 2,
       hasNextPage: true,
-      hasPrevPage: false,
+      nextCursor: expect.any(String),
     });
 
     expect(secondPage.data).toHaveLength(1);
-    expect(secondPage.pagination).toMatchObject({
-      total: 2,
-      page: 2,
+    expect(secondPage.pagination).toEqual({
       limit: 1,
-      totalPages: 2,
       hasNextPage: false,
-      hasPrevPage: true,
+      nextCursor: null,
     });
 
     expect(secondPage.data[0].id).not.toBe(firstPage.data[0].id);

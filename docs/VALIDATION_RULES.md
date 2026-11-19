@@ -425,13 +425,20 @@ const createWebhookSchema = z.object({
 ## Common Query Param Schemas
 
 ```javascript
-// Pagination (used across all list endpoints)
+// Offset pagination (used by every list except events)
 const paginationSchema = z.object({
   page:  z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   sort:  z.string().optional(),
   order: z.enum(['asc', 'desc']).default('desc'),
 });
+
+// Cursor pagination (GET /events)
+const eventListQuerySchema = z.object({
+  limit:  z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().min(1).max(512).optional(),
+  // eventType, status, source, locationId, lotId, dateFrom, dateTo
+}).strict();
 
 // Date range filter
 const dateRangeSchema = z.object({

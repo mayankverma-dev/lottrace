@@ -231,10 +231,18 @@ CREATE TABLE events (
   -- NO updated_at — events are immutable
 );
 
-CREATE INDEX idx_events_org ON events(organization_id);
-CREATE INDEX idx_events_org_type ON events(organization_id, event_type);
+-- Event-list keyset indexes: filter column, then the exact list sort order.
+CREATE INDEX idx_events_org_created_seq
+  ON events(organization_id, created_at DESC, chain_seq DESC);
+CREATE INDEX idx_events_org_type_created_seq
+  ON events(organization_id, event_type, created_at DESC, chain_seq DESC);
+CREATE INDEX idx_events_org_status_created_seq
+  ON events(organization_id, status, created_at DESC, chain_seq DESC);
+CREATE INDEX idx_events_org_source_created_seq
+  ON events(organization_id, source, created_at DESC, chain_seq DESC);
+CREATE INDEX idx_events_org_location_created_seq
+  ON events(organization_id, location_id, created_at DESC, chain_seq DESC);
 CREATE INDEX idx_events_org_datetime ON events(organization_id, event_datetime DESC);
-CREATE INDEX idx_events_org_status ON events(organization_id, status);
 CREATE INDEX idx_events_location ON events(location_id);
 
 -- Tenant-safe location relationship. The event organization must match the
@@ -380,7 +388,7 @@ CREATE UNIQUE INDEX uq_events_id_org ON events(id, organization_id);
 
 -- Critical indexes for the recursive trace CTEs
 CREATE INDEX idx_ell_event ON event_lot_links(event_id);
-CREATE INDEX idx_ell_lot ON event_lot_links(lot_id);
+CREATE INDEX idx_ell_lot_event ON event_lot_links(lot_id, event_id);  -- event list lot filter
 CREATE INDEX idx_ell_lot_direction ON event_lot_links(lot_id, direction);  -- trace traversal
 CREATE INDEX idx_ell_event_direction ON event_lot_links(event_id, direction);
 

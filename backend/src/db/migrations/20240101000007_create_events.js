@@ -31,9 +31,6 @@ exports.up = async (knex) => {
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
     // NO updated_at — events are immutable
 
-    table.index('organization_id', 'idx_events_org');
-    table.index(['organization_id', 'event_type'], 'idx_events_org_type');
-    table.index(['organization_id', 'status'], 'idx_events_org_status');
     table.index('location_id', 'idx_events_location');
     table.index('recorded_by', 'idx_events_recorded_by');
 
@@ -70,6 +67,29 @@ exports.up = async (knex) => {
     CREATE UNIQUE INDEX idx_events_supersedes_once
     ON events(supersedes_event_id)
     WHERE supersedes_event_id IS NOT NULL
+  `);
+
+  // Event-list indexes. Each filter column is followed by the exact list sort
+  // order so PostgreSQL can satisfy equality + keyset paging from one index.
+  await knex.raw(`
+    CREATE INDEX idx_events_org_created_seq
+    ON events(organization_id, created_at DESC, chain_seq DESC)
+  `);
+  await knex.raw(`
+    CREATE INDEX idx_events_org_type_created_seq
+    ON events(organization_id, event_type, created_at DESC, chain_seq DESC)
+  `);
+  await knex.raw(`
+    CREATE INDEX idx_events_org_status_created_seq
+    ON events(organization_id, status, created_at DESC, chain_seq DESC)
+  `);
+  await knex.raw(`
+    CREATE INDEX idx_events_org_source_created_seq
+    ON events(organization_id, source, created_at DESC, chain_seq DESC)
+  `);
+  await knex.raw(`
+    CREATE INDEX idx_events_org_location_created_seq
+    ON events(organization_id, location_id, created_at DESC, chain_seq DESC)
   `);
 
   // Indexes that need raw SQL

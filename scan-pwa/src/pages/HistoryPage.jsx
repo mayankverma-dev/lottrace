@@ -31,10 +31,11 @@ const formatQuantity = (quantity, uom) => {
 };
 
 export default function HistoryPage() {
-  const [page, setPage] = useState(1);
+  const [cursorStack, setCursorStack] = useState([]);
   const [source, setSource] = useState('');
+  const cursor = cursorStack[cursorStack.length - 1];
 
-  const params = { page, limit: 20, ...(source ? { source } : {}) };
+  const params = { limit: 20, ...(cursor ? { cursor } : {}), ...(source ? { source } : {}) };
   const { data, isLoading, isError, refetch, isFetching } = useGetEvents(params);
 
   const events = data?.data ?? [];
@@ -42,7 +43,7 @@ export default function HistoryPage() {
 
   const changeSource = (value) => {
     setSource(value);
-    setPage(1);
+    setCursorStack([]);
   };
 
   return (
@@ -140,23 +141,27 @@ export default function HistoryPage() {
         </ul>
       )}
 
-      {pagination && pagination.total > 0 && (
+      {pagination && (events.length > 0 || cursorStack.length > 0) && (
         <div className="flex items-center justify-between gap-2 pt-1">
           <Button
             variant="outline"
             className="min-h-[44px]"
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-            disabled={!pagination.hasPrevPage || isFetching}
+            onClick={() => setCursorStack((stack) => stack.slice(0, -1))}
+            disabled={cursorStack.length === 0 || isFetching}
           >
             Previous
           </Button>
           <span className="text-xs text-muted-foreground">
-            Page {pagination.page} of {Math.max(1, pagination.totalPages)}
+            Page {cursorStack.length + 1}
           </span>
           <Button
             variant="outline"
             className="min-h-[44px]"
-            onClick={() => setPage((current) => current + 1)}
+            onClick={() => {
+              if (pagination.nextCursor) {
+                setCursorStack((stack) => [...stack, pagination.nextCursor]);
+              }
+            }}
             disabled={!pagination.hasNextPage || isFetching}
           >
             Next

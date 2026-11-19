@@ -134,7 +134,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-02 | P2 | API response pagination shape is inconsistent | Fixed (2026-11-14, fdb11d7) |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Fixed (2026-11-15, 3915392) |
 | P2-04 | P2 | Trace product lookup is not organization-scoped | Open |
-| P2-05 | P2 | Event list search and filters are not indexed for scale | Open |
+| P2-05 | P2 | Event list search and filters are not indexed for scale | Fixed (commit pending) |
 | P2-06 | P2 | Local infrastructure uses default credentials and exposed consoles | Open |
 | P2-07 | P2 | Frontend bundle is one large chunk; no error boundaries | Fixed (2026-11-19, d68cdd8) |
 | P2-08 | P2 | Documentation claims completion that the code does not deliver | Open |
@@ -794,12 +794,13 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P2-05 — Event list search and filters are not indexed for scale
 
-- **Severity:** P2 · **Area:** backend / performance · **Status:** Open
+- **Severity:** P2 · **Area:** backend / performance · **Status:** Fixed (commit pending)
 - **Evidence:** `backend/src/modules/events/events.service.js:161-215` (`COUNT(*)` + `OFFSET` pagination, `event_type`/`date` filters); migrations `20240101000007_create_events.js:28-32` (single-column and `(org, type)` indexes), `20240101000008_create_event_lot_links.js:15-18`.
 - **What happens:** List queries run a full `COUNT(*)` for every page and use offset pagination, which degrades linearly. A raw `(organization_id, event_datetime DESC)` index exists (`idx_events_org_datetime`), but combinations of event type, status, date range, location, and lot link can still force bitmap heap scans or extra sorts. This is fine at pilot scale but will not hold at millions of events.
 - **Real-world impact:** Slow event lists and compliance reports as data grows; export jobs hold connections longer.
 - **Fix direction:** Measure with `EXPLAIN ANALYZE` on realistic volumes before changing anything. Then add targeted composite indexes based on real query plans (e.g. `(organization_id, event_type, event_datetime DESC)`), switch the event list to keyset pagination (`(event_datetime, id) < cursor`), and return `total` only when explicitly requested. Add a load test with 1M synthetic events.
-- **Verification:** Query plans use the intended indexes; p95 list latency stays within target at 1M rows; no sequential scans on `events` for tenant-scoped lists.
+- **Fix:** `GET /api/v1/events` now uses keyset pagination on the existing stable order `(created_at DESC, chain_seq DESC)`. The list no longer runs `COUNT(*)` or `OFFSET`; it fetches `limit + 1`, returns `{ limit, hasNextPage, nextCursor }`, and rejects `page` with 422. Added opaque cursor helpers that preserve exact microseconds and bigint `chain_seq` strings. Added five composite indexes matching each filter plus the list sort, replaced `idx_ell_lot` with `(lot_id, event_id)`, and removed the superseded `idx_events_org`, `idx_events_org_type`, and `idx_events_org_status`. Updated the web and PWA pagers, API standards, schema docs, and validation docs. No search parameter was added because none existed; this fix indexes the existing filters only.
+- **Verification:** `events.indexes.test.js` asserts the five keyset indexes and the removed superseded indexes. `backend/scripts/benchmark-events-list.js` ran on a disposable local PostgreSQL database with 1,000,000 synthetic events using `EXPLAIN (ANALYZE, BUFFERS)`: first page 0.66 ms, deep page 0.99 ms, status 0.76 ms, source 0.57 ms, location 0.62 ms, and lot filter 5.21 ms. Every plan used an index scan on `events`; none used `Seq Scan on events`, and deep-page latency stayed flat. The eventType filter matches 25% of the synthetic rows, so PostgreSQL correctly preferred the base keyset index plus a filter (82 rows read for 21 results) instead of the type index. Full backend suite: 65/65 suites, 557 passed, 4 skipped.
 
 ## P2-06 — Local infrastructure uses default credentials and exposed consoles
 

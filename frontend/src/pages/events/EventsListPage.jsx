@@ -33,10 +33,12 @@ const getEventTypeBadge = (type) => {
 };
 
 const EventsListPage = () => {
-  const [params, setParams] = useState({ page: 1, limit: 20 });
+  const [cursorStack, setCursorStack] = useState([]);
+  const cursor = cursorStack[cursorStack.length - 1];
+  const params = { limit: 20, ...(cursor ? { cursor } : {}) };
   const navigate = useNavigate();
   const { can } = usePermissions();
-  const { data, isLoading, isError, refetch } = useGetEvents(params);
+  const { data, isLoading, isError, isFetching, refetch } = useGetEvents(params);
   const { mutate: requestExport, isPending: isExporting } = useRequestExport();
 
   const handleExport = (format) => {
@@ -191,12 +193,34 @@ const EventsListPage = () => {
           }
         />
       ) : (
-        <DataTable
-          columns={columns}
-          data={events}
-          pagination={pagination}
-          onPaginationChange={setParams}
-        />
+        <>
+          <DataTable columns={columns} data={events} />
+          {pagination && (
+            <div className="flex items-center justify-between px-2">
+              <div className="text-sm text-gray-500">
+                Page {cursorStack.length + 1}
+              </div>
+              <div className="space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCursorStack((stack) => stack.slice(0, -1))}
+                  disabled={cursorStack.length === 0 || isFetching}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCursorStack((stack) => [...stack, pagination.nextCursor])}
+                  disabled={!pagination.hasNextPage || isFetching}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

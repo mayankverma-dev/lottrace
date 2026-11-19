@@ -1,5 +1,4 @@
 const { z } = require('zod');
-const { paginationSchema } = require('../../utils/pagination');
 
 const lotLinkSchema = z.object({
   lotId: z.string().uuid(),
@@ -71,7 +70,8 @@ const listAttachmentsQuerySchema = z.object({
 }).strict();
 
 const getEventsQuerySchema = z.object({
-  ...paginationSchema.shape,
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().min(1).max(512).optional(),
   eventType: z.enum(['creation', 'receiving', 'transformation', 'shipping']).optional(),
   status: z.enum(['active', 'amended', 'void']).optional(),
   source: z.enum(['manual', 'scan', 'import', 'api']).optional(),
@@ -79,7 +79,7 @@ const getEventsQuerySchema = z.object({
   lotId: z.string().uuid().optional(),
   dateFrom: z.string().datetime().optional(),
   dateTo: z.string().datetime().optional(),
-});
+}).strict();
 
 module.exports = {
   createEventSchema,

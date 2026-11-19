@@ -336,7 +336,7 @@ describeDb('P0-11 trace excludes amended events', () => {
     expect(current.status).toBe('active');
     expect(current.supersedes_event_id).toBe(original.id);
 
-    const listed = await eventsService.getEvents({ page: 1, limit: 20 }, org.orgId);
+    const listed = await eventsService.getEvents({ limit: 20 }, org.orgId);
     const listedOriginal = listed.data.find((event) => event.id === original.id);
     const listedReplacement = listed.data.find((event) => event.id === replacement.id);
     expect(listedOriginal.status).toBe('amended');

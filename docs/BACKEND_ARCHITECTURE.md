@@ -401,7 +401,8 @@ Workers are BullMQ consumers that run asynchronously, decoupled from the HTTP re
 | `AppError.js` | Custom operational error class with `statusCode`, `code`, `details`, and `isOperational = true`. Thrown by services; caught by `errorHandler.js`. |
 | `hashChain.js` | HMAC-SHA256 event and evidence hash computation for the ledger. Sorts object keys before stringifying so results are deterministic, resolves the env/KMS keyring, and seals hashes from persisted rows. |
 | `auditTrail.js` | Helper function `writeAuditLog({...})` called directly by services or by the `auditLogger` middleware. Inserts a row into `audit_log`. |
-| `pagination.js` | Helper that computes `total`, `page`, `limit`, `totalPages`, `hasNextPage`, `hasPrevPage` from a count query result. |
+| `pagination.js` | Offset-pagination helper that computes `total`, `page`, `limit`, `totalPages`, `hasNextPage`, `hasPrevPage` from a count query result. |
+| `cursor.js` | Opaque keyset-cursor encoder/decoder. Preserves exact microseconds and bigint chain positions; invalid cursors raise `422 VALIDATION_ERROR`. |
 | `logger.js` | Singleton Pino logger instance, configured for structured JSON output in production and pretty-print in development. |
 | `email.js` | Wrapper for sending branded HTML emails via the configured email provider. |
 
