@@ -134,7 +134,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-02 | P2 | API response pagination shape is inconsistent | Fixed (2026-11-14, fdb11d7) |
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Fixed (2026-11-15, 3915392) |
 | P2-04 | P2 | Trace product lookup is not organization-scoped | Open |
-| P2-05 | P2 | Event list search and filters are not indexed for scale | Fixed (commit pending) |
+| P2-05 | P2 | Event list search and filters are not indexed for scale | Fixed (2026-11-19, 2fd6c45) |
 | P2-06 | P2 | Local infrastructure uses default credentials and exposed consoles | Open |
 | P2-07 | P2 | Frontend bundle is one large chunk; no error boundaries | Fixed (2026-11-19, d68cdd8) |
 | P2-08 | P2 | Documentation claims completion that the code does not deliver | Open |
@@ -794,7 +794,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P2-05 — Event list search and filters are not indexed for scale
 
-- **Severity:** P2 · **Area:** backend / performance · **Status:** Fixed (commit pending)
+- **Severity:** P2 · **Area:** backend / performance · **Status:** Fixed (2026-11-19, 2fd6c45)
 - **Evidence:** `backend/src/modules/events/events.service.js:161-215` (`COUNT(*)` + `OFFSET` pagination, `event_type`/`date` filters); migrations `20240101000007_create_events.js:28-32` (single-column and `(org, type)` indexes), `20240101000008_create_event_lot_links.js:15-18`.
 - **What happens:** List queries run a full `COUNT(*)` for every page and use offset pagination, which degrades linearly. A raw `(organization_id, event_datetime DESC)` index exists (`idx_events_org_datetime`), but combinations of event type, status, date range, location, and lot link can still force bitmap heap scans or extra sorts. This is fine at pilot scale but will not hold at millions of events.
 - **Real-world impact:** Slow event lists and compliance reports as data grows; export jobs hold connections longer.
