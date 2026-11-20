@@ -1,5 +1,5 @@
 /**
- * P2-05 event-list benchmark.
+ * P2-05/P2-41 event-list benchmark.
  *
  * Run against a migrated, empty, disposable local database whose name ends in
  * `_bench`:
@@ -20,6 +20,8 @@ const db = require('../src/db/knex');
 
 const EVENT_COUNT = Number(process.env.BENCH_EVENTS || 1000000);
 const BASE_TIME = '2026-01-01T00:00:00.000Z';
+// Keep in sync with DATE_FILTER_MATCH_LIMIT in the events service.
+const DATE_FILTER_MATCH_LIMIT = 50000;
 
 const assertDisposableTarget = () => {
   if (process.env.NODE_ENV === 'production') {
@@ -135,33 +137,72 @@ const seedLinks = async ({ organizationId, lotId }) => {
   await db.raw('ANALYZE event_lot_links');
 };
 
-const explain = async (label, whereClause, bindings) => {
-  const { rows } = await db.raw(`
-    EXPLAIN (ANALYZE, BUFFERS)
-    SELECT
-      events.*,
-      locations.name AS location_name,
-      users.first_name || ' ' || users.last_name AS recorded_by_name,
-      (
-        SELECT json_agg(json_build_object(
-          'id', lots.id,
-          'traceabilityLotCode', lots.traceability_lot_code,
-          'direction', ell.direction,
-          'quantity', ell.quantity,
-          'uom', ell.uom
-        ))
-        FROM event_lot_links ell
-        JOIN lots ON lots.id = ell.lot_id
-        WHERE ell.event_id = events.id
-      ) AS lot_links,
-      to_char(events.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at_cursor
+const selectList = `
+  events.*,
+  locations.name AS location_name,
+  users.first_name || ' ' || users.last_name AS recorded_by_name,
+  (
+    SELECT json_agg(json_build_object(
+      'id', lots.id,
+      'traceabilityLotCode', lots.traceability_lot_code,
+      'direction', ell.direction,
+      'quantity', ell.quantity,
+      'uom', ell.uom
+    ))
+    FROM event_lot_links ell
+    JOIN lots ON lots.id = ell.lot_id
+    WHERE ell.event_id = events.id
+  ) AS lot_links,
+  to_char(events.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at_cursor
+`;
+
+// Mirrors the service's keyset path: select the page keys from an index-only
+// subquery, then join details for at most one page.
+const keysetPageSql = (whereClause) => `
+  SELECT ${selectList}
+  FROM events
+  JOIN (
+    SELECT organization_id, created_at, chain_seq
     FROM events
-    LEFT JOIN locations ON events.location_id = locations.id
-    LEFT JOIN users ON events.recorded_by = users.id
     WHERE ${whereClause}
-    ORDER BY events.created_at DESC, events.chain_seq DESC
+    ORDER BY created_at DESC, chain_seq DESC
     LIMIT 21
-  `, bindings);
+  ) page
+    ON page.organization_id = events.organization_id
+   AND page.chain_seq = events.chain_seq
+  LEFT JOIN locations ON events.location_id = locations.id
+  LEFT JOIN users ON events.recorded_by = users.id
+  ORDER BY page.created_at DESC, page.chain_seq DESC
+`;
+
+// Mirrors the service's date-first path: materialize a bounded set of date
+// matches, then sort that set by the public list order.
+const dateFirstSql = (whereClause) => `
+  WITH matched AS (
+    SELECT organization_id, created_at, chain_seq
+    FROM events
+    WHERE ${whereClause}
+    ORDER BY event_datetime DESC
+    LIMIT ${DATE_FILTER_MATCH_LIMIT + 1}
+  )
+  SELECT ${selectList},
+    (SELECT count(*) FROM matched) AS matched_count
+  FROM events
+  JOIN (
+    SELECT organization_id, created_at, chain_seq
+    FROM matched
+    ORDER BY created_at DESC, chain_seq DESC
+    LIMIT 21
+  ) page
+    ON page.organization_id = events.organization_id
+   AND page.chain_seq = events.chain_seq
+  LEFT JOIN locations ON events.location_id = locations.id
+  LEFT JOIN users ON events.recorded_by = users.id
+  ORDER BY page.created_at DESC, page.chain_seq DESC
+`;
+
+const explain = async (label, sql, bindings) => {
+  const { rows } = await db.raw(`EXPLAIN (ANALYZE, BUFFERS)\n${sql}`, bindings);
 
   console.log(`\n### ${label}`);
   console.log(rows.map((row) => row['QUERY PLAN']).join('\n'));
@@ -186,6 +227,11 @@ const main = async () => {
   await seedEvents(fixture);
   await seedLinks(fixture);
 
+  // A bulk-loaded table has no visibility map, so every index-only scan falls
+  // back to the heap. Autovacuum sets it in production; do it explicitly so
+  // the benchmark measures steady-state plans.
+  await db.raw('VACUUM (ANALYZE) events');
+
   const deepSeq = Math.max(1, Math.floor(EVENT_COUNT / 1000));
   const deep = await db('events')
     .where({ organization_id: organizationId, chain_seq: deepSeq })
@@ -197,41 +243,66 @@ const main = async () => {
   if (!deep) throw new Error('Deep cursor fixture not found');
 
   const baseBindings = [organizationId];
-  await explain('first page', 'events.organization_id = ?', baseBindings);
+  await explain('first page', keysetPageSql('events.organization_id = ?'), baseBindings);
   await explain(
     'deep cursor page',
-    'events.organization_id = ? AND (events.created_at, events.chain_seq) < (?::timestamptz, ?::bigint)',
+    keysetPageSql('events.organization_id = ? AND (events.created_at, events.chain_seq) < (?::timestamptz, ?::bigint)'),
     [organizationId, deep.cursor_time, String(deep.chain_seq)],
   );
   await explain(
     'eventType filter',
-    'events.organization_id = ? AND events.event_type = ?',
+    keysetPageSql('events.organization_id = ? AND events.event_type = ?'),
     [organizationId, 'shipping'],
   );
   await explain(
     'status filter',
-    'events.organization_id = ? AND events.status = ?',
+    keysetPageSql('events.organization_id = ? AND events.status = ?'),
     [organizationId, 'void'],
   );
   await explain(
     'source filter',
-    'events.organization_id = ? AND events.source = ?',
+    keysetPageSql('events.organization_id = ? AND events.source = ?'),
     [organizationId, 'api'],
   );
   await explain(
     'location filter',
-    'events.organization_id = ? AND events.location_id = ?',
+    keysetPageSql('events.organization_id = ? AND events.location_id = ?'),
     [organizationId, locationId],
   );
   await explain(
     'lot filter',
-    `events.organization_id = ? AND EXISTS (
+    keysetPageSql(`events.organization_id = ? AND EXISTS (
       SELECT 1 FROM event_lot_links
       WHERE event_lot_links.event_id = events.id
         AND event_lot_links.lot_id = ?
-    )`,
+    )`),
     [organizationId, lotId],
   );
+
+  const dateWhere = 'events.organization_id = ? AND events.event_datetime >= ? AND events.event_datetime <= ?';
+  const baseMs = Date.parse(BASE_TIME);
+  const dateRanges = [
+    ['date range narrow (10s)', baseMs + 10000, baseMs + 20000],
+    ['date range full', baseMs, baseMs + EVENT_COUNT],
+  ];
+
+  for (const [label, fromMs, toMs] of dateRanges) {
+    const bindings = [organizationId, new Date(fromMs).toISOString(), new Date(toMs).toISOString()];
+    const { rows: [{ n }] } = await db.raw(`
+      SELECT count(*)::int AS n
+      FROM (
+        SELECT 1 FROM events
+        WHERE ${dateWhere}
+        ORDER BY event_datetime DESC
+        LIMIT ${DATE_FILTER_MATCH_LIMIT + 1}
+      ) probe
+    `, bindings);
+    const path = n > DATE_FILTER_MATCH_LIMIT ? 'keyset fallback' : 'date-first';
+
+    console.log(`\n### ${label} — ${n} matching rows, service path: ${path}`);
+    await explain(`${label} date-first`, dateFirstSql(dateWhere), bindings);
+    await explain(`${label} keyset`, keysetPageSql(dateWhere), bindings);
+  }
 
   console.log(`\nbenchmark organization: ${organizationId}`);
   console.log(`benchmark user: ${userId}`);

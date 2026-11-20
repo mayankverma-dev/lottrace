@@ -20,6 +20,10 @@ const { bumpTraceCacheVersion } = require('../trace/trace.service');
 const { checkComplianceGaps } = require('./compliance');
 
 const MAX_ATTACHMENT_SIZE_BYTES = 50 * 1024 * 1024;
+// Date filters are applied before the list sort. Materializing more than this
+// many matching rows just to return one page is slower than walking the
+// created_at keyset, so the date-first path is capped and falls back.
+const DATE_FILTER_MATCH_LIMIT = 50000;
 const ALLOWED_ATTACHMENT_TYPES = new Set([
   'application/pdf',
   'image/jpeg',
@@ -204,10 +208,25 @@ const createEvent = async (data, organizationId, userId) => {
   return event;
 };
 
-const getEvents = async (query, organizationId) => {
-  const { limit, cursor, eventType, status, source, locationId, lotId, dateFrom, dateTo } = query;
+const eventListSelect = () => [
+  'events.*',
+  'locations.name as location_name',
+  db.raw("users.first_name || ' ' || users.last_name as recorded_by_name"),
+  db.raw(`(
+    SELECT json_agg(json_build_object('id', lots.id, 'traceabilityLotCode', lots.traceability_lot_code, 'direction', ell.direction, 'quantity', ell.quantity, 'uom', ell.uom))
+    FROM event_lot_links ell
+    JOIN lots ON lots.id = ell.lot_id
+    WHERE ell.event_id = events.id
+  ) as lot_links`),
+  // pg decodes timestamptz to a millisecond Date, which truncates the
+  // microseconds needed for a stable keyset. Format the exact value in SQL.
+  db.raw(`to_char(events.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at_cursor`),
+];
 
-  let queryBuilder = db('events').where({ 'events.organization_id': organizationId });
+const applyEventListFilters = (queryBuilder, query, organizationId) => {
+  const { eventType, status, source, locationId, lotId, dateFrom, dateTo, cursor } = query;
+
+  queryBuilder.where({ 'events.organization_id': organizationId });
 
   if (lotId) {
     queryBuilder = queryBuilder.whereExists(
@@ -232,30 +251,87 @@ const getEvents = async (query, organizationId) => {
     );
   }
 
-  const rows = await queryBuilder
+  return queryBuilder;
+};
+
+// Select only the keyset columns so the filter, order, and limit can be
+// satisfied by an index-only scan. Reading events.* here would force a heap
+// fetch for every row the date filter rejects.
+const buildEventListPage = (query, organizationId) => applyEventListFilters(
+  db('events'),
+  query,
+  organizationId,
+).select('organization_id', 'created_at', 'chain_seq')
+  .orderBy([
+    { column: 'created_at', order: 'desc' },
+    { column: 'chain_seq', order: 'desc' },
+  ])
+  .limit(query.limit + 1);
+
+const fetchEventListRows = async (pageQuery, options = {}) => {
+  let queryBuilder = db('events')
+    .join(pageQuery.as('page'), function joinEventPage() {
+      // chain_seq is unique per organization, so the organization predicate is
+      // part of the join key, not just the subquery.
+      this.on('page.organization_id', '=', 'events.organization_id')
+        .andOn('page.chain_seq', '=', 'events.chain_seq');
+    })
     .leftJoin('locations', 'events.location_id', 'locations.id')
     .leftJoin('users', 'events.recorded_by', 'users.id')
-    .select(
-      'events.*',
-      'locations.name as location_name',
-      db.raw("users.first_name || ' ' || users.last_name as recorded_by_name"),
-      db.raw(`(
-        SELECT json_agg(json_build_object('id', lots.id, 'traceabilityLotCode', lots.traceability_lot_code, 'direction', ell.direction, 'quantity', ell.quantity, 'uom', ell.uom))
-        FROM event_lot_links ell
-        JOIN lots ON lots.id = ell.lot_id
-        WHERE ell.event_id = events.id
-      ) as lot_links`),
-      // pg decodes timestamptz to a millisecond Date, which truncates the
-      // microseconds needed for a stable keyset. Format the exact value in SQL.
-      db.raw(`to_char(events.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at_cursor`)
-    )
-    // created_at is the transaction start time and can tie under concurrency.
-    // chain_seq is unique per organization, so it makes pagination stable.
+    .select(eventListSelect())
     .orderBy([
-      { column: 'events.created_at', order: 'desc' },
-      { column: 'events.chain_seq', order: 'desc' },
-    ])
-    .limit(limit + 1);
+      { column: 'page.created_at', order: 'desc' },
+      { column: 'page.chain_seq', order: 'desc' },
+    ]);
+
+  if (options.matchedCte) {
+    queryBuilder = queryBuilder.with('matched', options.matchedCte);
+  }
+  if (options.withMatchedCount) {
+    queryBuilder = queryBuilder.select(db.raw('(SELECT count(*) FROM matched) as matched_count'));
+  }
+
+  return queryBuilder;
+};
+
+const getEvents = async (query, organizationId) => {
+  const { limit, dateFrom, dateTo } = query;
+
+  let rows;
+
+  if (dateFrom || dateTo) {
+    // Filter-first path: materialize a bounded set of date matches, sort that
+    // set by the public list order, then join details for one page. The limit
+    // is one above the cap so a full/truncated match set is detectable.
+    const matched = applyEventListFilters(db('events'), query, organizationId)
+      .select('organization_id', 'created_at', 'chain_seq')
+      // Force the date index for the bounded scan when the planner would
+      // otherwise walk created_at from the newest event.
+      .orderBy('event_datetime', 'desc')
+      .limit(DATE_FILTER_MATCH_LIMIT + 1);
+
+    const datePage = db('matched')
+      .select('organization_id', 'created_at', 'chain_seq')
+      .orderBy([
+        { column: 'created_at', order: 'desc' },
+        { column: 'chain_seq', order: 'desc' },
+      ])
+      .limit(limit + 1);
+
+    rows = await fetchEventListRows(datePage, {
+      matchedCte: matched,
+      withMatchedCount: true,
+    });
+
+    const matchedCount = Number(rows[0]?.matched_count || 0);
+    if (matchedCount > DATE_FILTER_MATCH_LIMIT) {
+      // Broad range: the bounded sort cannot prove it saw the top rows. The
+      // covering keyset index returns the same order without sorting the set.
+      rows = await fetchEventListRows(buildEventListPage(query, organizationId));
+    }
+  } else {
+    rows = await fetchEventListRows(buildEventListPage(query, organizationId));
+  }
 
   const hasNextPage = rows.length > limit;
   const events = hasNextPage ? rows.slice(0, limit) : rows;
@@ -269,6 +345,7 @@ const getEvents = async (query, organizationId) => {
 
   events.forEach((event) => {
     delete event.created_at_cursor;
+    delete event.matched_count;
   });
 
   return {

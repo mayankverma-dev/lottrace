@@ -66,15 +66,21 @@ describeDb('P2-05 event list indexes', () => {
     ['idx_events_org_status_created_seq', /\(organization_id, status, created_at DESC, chain_seq DESC\)/],
     ['idx_events_org_source_created_seq', /\(organization_id, source, created_at DESC, chain_seq DESC\)/],
     ['idx_events_org_location_created_seq', /\(organization_id, location_id, created_at DESC, chain_seq DESC\)/],
+    ['idx_events_org_datetime_created_seq', /\(organization_id, event_datetime DESC, created_at DESC, chain_seq DESC\)/],
     ['idx_ell_lot_event', /\(lot_id, event_id\)/],
   ])('defines %s with the keyset column order', (name, pattern) => {
     expect(indexes.get(name)).toMatch(pattern);
+  });
+
+  it('covers event_datetime on the base keyset index', () => {
+    expect(indexes.get('idx_events_org_created_seq')).toMatch(/INCLUDE \(event_datetime\)/);
   });
 
   it.each([
     'idx_events_org',
     'idx_events_org_type',
     'idx_events_org_status',
+    'idx_events_org_datetime',
     'idx_ell_lot',
   ])('removes the superseded index %s', (name) => {
     expect(indexes.has(name)).toBe(false);

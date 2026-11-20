@@ -232,8 +232,11 @@ CREATE TABLE events (
 );
 
 -- Event-list keyset indexes: filter column, then the exact list sort order.
+-- The base keyset index includes event_datetime so a date filter can reject
+-- rows without a heap fetch (P2-41).
 CREATE INDEX idx_events_org_created_seq
-  ON events(organization_id, created_at DESC, chain_seq DESC);
+  ON events(organization_id, created_at DESC, chain_seq DESC)
+  INCLUDE (event_datetime);
 CREATE INDEX idx_events_org_type_created_seq
   ON events(organization_id, event_type, created_at DESC, chain_seq DESC);
 CREATE INDEX idx_events_org_status_created_seq
@@ -242,7 +245,10 @@ CREATE INDEX idx_events_org_source_created_seq
   ON events(organization_id, source, created_at DESC, chain_seq DESC);
 CREATE INDEX idx_events_org_location_created_seq
   ON events(organization_id, location_id, created_at DESC, chain_seq DESC);
-CREATE INDEX idx_events_org_datetime ON events(organization_id, event_datetime DESC);
+-- Date-range filter plus the public list order. Replaces the old
+-- (organization_id, event_datetime) index, which is a prefix of this one.
+CREATE INDEX idx_events_org_datetime_created_seq
+  ON events(organization_id, event_datetime DESC, created_at DESC, chain_seq DESC);
 CREATE INDEX idx_events_location ON events(location_id);
 
 -- Tenant-safe location relationship. The event organization must match the

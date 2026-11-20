@@ -258,6 +258,75 @@ describeDb('P2-05 event list keyset pagination', () => {
     expect(second.data[0].event_datetime.toISOString()).toBe('2026-11-19T10:00:03.000Z');
   });
 
+  it('keeps the public created_at order when a date range matches backdated events', async () => {
+    const backdatedId = uuidv4();
+    const outsideId = uuidv4();
+
+    await db('events').insert([
+      {
+        id: backdatedId,
+        organization_id: organizationId,
+        event_type: 'receiving',
+        event_datetime: new Date('2026-11-19T10:00:02.500Z'),
+        recorded_by: fixture.userId,
+        source: 'scan',
+        kde_payload: JSON.stringify({}),
+        record_hash: 'p2-41-backdated',
+        prev_hash: 'p2-41-prev',
+        chain_seq: 7,
+        hash_key_id: 'p2-41-test-key',
+        status: 'active',
+        created_at: new Date('2026-11-19T10:00:10.000Z'),
+      },
+      {
+        id: outsideId,
+        organization_id: organizationId,
+        event_type: 'shipping',
+        event_datetime: new Date('2026-11-19T10:00:05.000Z'),
+        recorded_by: fixture.userId,
+        source: 'scan',
+        kde_payload: JSON.stringify({}),
+        record_hash: 'p2-41-outside',
+        prev_hash: 'p2-41-prev-2',
+        chain_seq: 8,
+        hash_key_id: 'p2-41-test-key',
+        status: 'active',
+        created_at: new Date('2026-11-19T10:00:11.000Z'),
+      },
+    ]);
+
+    const filters = {
+      dateFrom: '2026-11-19T10:00:02.000Z',
+      dateTo: '2026-11-19T10:00:04.000Z',
+    };
+
+    const first = await list({ limit: 2, ...filters });
+    expect(first.data.map((event) => event.id)).toEqual([
+      backdatedId,
+      fixture.eventIds[3],
+    ]);
+    expect(first.data.some((event) => event.id === outsideId)).toBe(false);
+    expect(first.data.every((event) => !Object.hasOwn(event, 'matched_count'))).toBe(true);
+
+    const second = await list({
+      limit: 2,
+      ...filters,
+      cursor: first.pagination.nextCursor,
+    });
+    expect(second.data.map((event) => event.id)).toEqual([
+      fixture.eventIds[2],
+      fixture.eventIds[1],
+    ]);
+  });
+
+  it('supports open-ended date filters', async () => {
+    const fromOnly = await list({ limit: 20, dateFrom: '2026-11-19T10:00:05.000Z' });
+    const toOnly = await list({ limit: 20, dateTo: '2026-11-19T10:00:02.000Z' });
+
+    expect(fromOnly.data.map((event) => event.chain_seq)).toEqual(['6', '5']);
+    expect(toOnly.data.map((event) => event.chain_seq)).toEqual(['2', '1']);
+  });
+
   it('never returns another organization\'s rows when given a foreign cursor', async () => {
     const first = await list({ limit: 1 });
     const other = await seedOrganization();

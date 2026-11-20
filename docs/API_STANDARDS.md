@@ -240,6 +240,8 @@ GET /api/v1/events?limit=20&cursor=<opaque>
 - Default limit: 20
 - Max limit: 100 (reject with 422 if exceeded)
 - `nextCursor` is `null` when there is no next page.
+- Events are ordered by `created_at DESC, chain_seq DESC` with or without
+  filters. A date filter changes which events are returned, never the order.
 - Cursor values are opaque. Clients must not parse or construct them.
 - A cursor is valid only with the same filters and sort order that produced it.
   Clients reset the cursor when filters change.

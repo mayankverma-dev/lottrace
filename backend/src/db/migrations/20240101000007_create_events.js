@@ -69,11 +69,15 @@ exports.up = async (knex) => {
     WHERE supersedes_event_id IS NOT NULL
   `);
 
-  // Event-list indexes. Each filter column is followed by the exact list sort
-  // order so PostgreSQL can satisfy equality + keyset paging from one index.
+  // Event-list indexes. Each non-date filter column is followed by the exact
+  // list sort order so PostgreSQL can satisfy equality + keyset paging from one
+  // index. The base keyset index includes event_datetime so a date filter can
+  // reject rows without a heap fetch; the date-ordered index lets a bounded
+  // filter-first plan avoid walking the whole created_at keyset (P2-41).
   await knex.raw(`
     CREATE INDEX idx_events_org_created_seq
     ON events(organization_id, created_at DESC, chain_seq DESC)
+    INCLUDE (event_datetime)
   `);
   await knex.raw(`
     CREATE INDEX idx_events_org_type_created_seq
@@ -92,9 +96,11 @@ exports.up = async (knex) => {
     ON events(organization_id, location_id, created_at DESC, chain_seq DESC)
   `);
 
-  // Indexes that need raw SQL
+  // Date-range filter plus the public list order. The old
+  // (organization_id, event_datetime) index is a prefix and is removed.
   await knex.raw(`
-    CREATE INDEX idx_events_org_datetime ON events(organization_id, event_datetime DESC)
+    CREATE INDEX idx_events_org_datetime_created_seq
+    ON events(organization_id, event_datetime DESC, created_at DESC, chain_seq DESC)
   `);
   await knex.raw(`
     CREATE INDEX idx_events_compliance_gaps ON events(organization_id, has_compliance_gaps)
