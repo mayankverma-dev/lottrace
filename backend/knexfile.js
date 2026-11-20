@@ -1,5 +1,16 @@
 require('dotenv').config();
 
+const { assertNoDefaultDatabaseCredentials } = require('./src/config/credentialSafety');
+
+// The knex CLI loads this file directly, bypassing src/config/env.js. Guard
+// database credentials here too so migrations/seeds cannot run in a deployed
+// environment with a local default or missing password.
+assertNoDefaultDatabaseCredentials({
+  NODE_ENV: process.env.NODE_ENV,
+  DATABASE_URL: process.env.DATABASE_URL,
+  APP_DATABASE_URL: process.env.APP_DATABASE_URL,
+});
+
 const isNeon = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('neon.tech');
 
 /** @type {import('knex').Knex.Config} */

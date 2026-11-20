@@ -88,15 +88,32 @@ const inspectUrlCredential = (name, raw, issues) => {
 };
 
 /**
+ * Returns default or missing database credentials, including the optional
+ * runtime URL used by the API when it runs as a non-owner role.
+ *
+ * @param {Object} env
+ * @returns {string[]}
+ */
+const findDatabaseCredentialIssues = (env = {}) => {
+  const issues = [];
+
+  inspectUrlCredential('DATABASE_URL', env.DATABASE_URL, issues);
+  if (env.APP_DATABASE_URL !== undefined) {
+    inspectUrlCredential('APP_DATABASE_URL', env.APP_DATABASE_URL, issues);
+  }
+
+  return issues;
+};
+
+/**
  * Returns every default or missing infrastructure credential in `env`.
  *
  * @param {Object} env
  * @returns {string[]}
  */
 const findCredentialIssues = (env = {}) => {
-  const issues = [];
+  const issues = findDatabaseCredentialIssues(env);
 
-  inspectUrlCredential('DATABASE_URL', env.DATABASE_URL, issues);
   inspectUrlCredential('REDIS_URL', env.REDIS_URL, issues);
 
   if (isDefaultSecret(env.S3_ACCESS_KEY_ID)) {
@@ -128,9 +145,30 @@ const assertNoDefaultCredentials = (env) => {
   }
 };
 
+/**
+ * Fails in staging and production when the migration/owner URL or the runtime
+ * app URL is missing or uses a known development default. Database tooling
+ * (knex CLI, seeds) calls this directly because it does not load `env.js`.
+ *
+ * @param {Object} env
+ * @throws {Error}
+ */
+const assertNoDefaultDatabaseCredentials = (env) => {
+  if (!PROTECTED_ENVIRONMENTS.has(env.NODE_ENV)) return;
+
+  const issues = findDatabaseCredentialIssues(env);
+  if (issues.length > 0) {
+    throw new Error(
+      `Refusing to run database tooling in ${env.NODE_ENV} with default or missing credentials: ${issues.join('; ')}`,
+    );
+  }
+};
+
 module.exports = {
   DEFAULT_SECRETS,
   isDefaultSecret,
+  findDatabaseCredentialIssues,
   findCredentialIssues,
   assertNoDefaultCredentials,
+  assertNoDefaultDatabaseCredentials,
 };

@@ -9,8 +9,10 @@
 const {
   DEFAULT_SECRETS,
   isDefaultSecret,
+  findDatabaseCredentialIssues,
   findCredentialIssues,
   assertNoDefaultCredentials,
+  assertNoDefaultDatabaseCredentials,
 } = require('./credentialSafety');
 
 const STRONG_DB = 'postgresql://lottrace:4f8a2c9e7b1d6a3f@127.0.0.1:5432/lottrace';
@@ -94,6 +96,74 @@ describe('findCredentialIssues', () => {
 
     expect(issues).toContain('DATABASE_URL is not a valid URL');
     expect(issues.join(' ')).not.toContain('not-a-url');
+  });
+});
+
+describe('findDatabaseCredentialIssues', () => {
+  it('returns no issues for strong database URLs', () => {
+    expect(findDatabaseCredentialIssues(strongEnv())).toEqual([]);
+  });
+
+  it('ignores an absent runtime app URL', () => {
+    expect(findDatabaseCredentialIssues(strongEnv({ APP_DATABASE_URL: undefined }))).toEqual([]);
+  });
+
+  it('flags a default runtime app URL', () => {
+    const issues = findDatabaseCredentialIssues(
+      strongEnv({ APP_DATABASE_URL: 'postgresql://lottrace_app:lottrace@127.0.0.1:5432/lottrace' }),
+    );
+
+    expect(issues).toEqual(['APP_DATABASE_URL uses a default password']);
+  });
+
+  it('ignores Redis and S3 problems in the scoped check', () => {
+    expect(
+      findDatabaseCredentialIssues(
+        strongEnv({ REDIS_URL: 'redis://127.0.0.1:6379', S3_ACCESS_KEY_ID: 'minioadmin' }),
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('assertNoDefaultDatabaseCredentials', () => {
+  it.each(['development', 'test'])('allows local defaults in %p', (nodeEnv) => {
+    expect(() =>
+      assertNoDefaultDatabaseCredentials({
+        NODE_ENV: nodeEnv,
+        DATABASE_URL: 'postgresql://lottrace:lottrace@127.0.0.1:5432/lottrace_test',
+      }),
+    ).not.toThrow();
+  });
+
+  it.each(['staging', 'production'])('rejects a default owner URL in %p', (nodeEnv) => {
+    expect(() =>
+      assertNoDefaultDatabaseCredentials(
+        strongEnv({
+          NODE_ENV: nodeEnv,
+          DATABASE_URL: 'postgresql://lottrace:lottrace@127.0.0.1:5432/lottrace',
+        }),
+      ),
+    ).toThrow(/Refusing to run database tooling in .* with default or missing credentials/);
+  });
+
+  it('rejects a default runtime app URL in production', () => {
+    expect(() =>
+      assertNoDefaultDatabaseCredentials(
+        strongEnv({
+          APP_DATABASE_URL: 'postgresql://lottrace_app:lottrace@127.0.0.1:5432/lottrace',
+        }),
+      ),
+    ).toThrow(/APP_DATABASE_URL uses a default password/);
+  });
+
+  it('accepts strong database URLs in production', () => {
+    expect(() =>
+      assertNoDefaultDatabaseCredentials(
+        strongEnv({
+          APP_DATABASE_URL: 'postgresql://lottrace_app:7b1e4f8a2c9d6e3f@127.0.0.1:5432/lottrace',
+        }),
+      ),
+    ).not.toThrow();
   });
 });
 
