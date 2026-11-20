@@ -30,11 +30,14 @@ const serviceBlock = (name) => {
   return next === -1 ? rest : rest.slice(0, next);
 };
 
-test('compose requires every infrastructure password from the environment', () => {
+test('compose requires every infrastructure value from the environment', () => {
   for (const name of [
     'POSTGRES_PASSWORD',
     'REDIS_PASSWORD',
     'MINIO_ROOT_PASSWORD',
+    'MINIO_BUCKET',
+    'MINIO_APP_ACCESS_KEY',
+    'MINIO_APP_SECRET_KEY',
     'PGADMIN_DEFAULT_PASSWORD',
   ]) {
     assert.ok(
@@ -48,6 +51,47 @@ test('compose no longer contains known default passwords', () => {
   for (const value of ['lottrace:lottrace', 'minioadmin', 'admin123']) {
     assert.ok(!compose.includes(value), `docker-compose.yml still contains "${value}"`);
   }
+});
+
+test('every compose image is pinned to an immutable digest', () => {
+  const images = [...compose.matchAll(/^\s+image:\s*(\S+)\s*$/gm)].map((match) => match[1]);
+
+  assert.ok(images.length >= 6, `expected at least 6 pinned services, found ${images.length}`);
+  for (const image of images) {
+    assert.match(
+      image,
+      /^[\w./-]+@sha256:[a-f0-9]{64}$/,
+      `image must be pinned to a sha256 digest: ${image}`,
+    );
+    assert.ok(!image.includes(':latest'), `image still uses a floating tag: ${image}`);
+  }
+});
+
+test('minio-init bootstraps the bucket and a least-privilege app user', () => {
+  const init = serviceBlock('minio-init');
+  const minio = serviceBlock('minio');
+
+  const digest = minio.match(/image:\s*(\S+)/)[1];
+  assert.ok(init.includes(`image: ${digest}`), 'minio-init must reuse the pinned MinIO image');
+
+  assert.match(init, /MINIO_ROOT_PASSWORD: \$\{MINIO_ROOT_PASSWORD:\?/);
+  assert.match(init, /MINIO_BUCKET: \$\{MINIO_BUCKET:\?/);
+  assert.match(init, /MINIO_APP_ACCESS_KEY: \$\{MINIO_APP_ACCESS_KEY:\?/);
+  assert.match(init, /MINIO_APP_SECRET_KEY: \$\{MINIO_APP_SECRET_KEY:\?/);
+
+  assert.match(init, /mc alias set local http:\/\/minio:9000/);
+  assert.match(init, /mc mb --ignore-existing/);
+  assert.match(init, /mc admin policy create local lottrace-app/);
+  assert.match(init, /mc admin user add local/);
+  assert.match(init, /mc admin policy attach local lottrace-app --user/);
+  assert.match(init, /s3:ListBucket/);
+  assert.match(init, /s3:GetObject/);
+  assert.match(init, /s3:PutObject/);
+  assert.match(init, /s3:DeleteObject/);
+
+  assert.match(init, /condition: service_healthy/, 'minio-init must wait for MinIO health');
+  assert.match(minio, /healthcheck:/, 'minio needs a healthcheck');
+  assert.ok(!/ports:/.test(init), 'minio-init must not publish a port');
 });
 
 test('every published port binds to loopback only', () => {
@@ -97,6 +141,23 @@ test('root .env.example lists every required secret with no value', () => {
   assert.ok(!rootEnvExample.includes('lottrace:lottrace'));
   assert.ok(!rootEnvExample.includes('minioadmin'));
   assert.ok(!rootEnvExample.includes('admin123'));
+});
+
+test('root .env.example declares the MinIO bucket and app credentials', () => {
+  const lines = rootEnvExample.split('\n');
+  const valueOf = (name) => lines.find((entry) => entry.startsWith(`${name}=`));
+
+  assert.equal(valueOf('MINIO_BUCKET'), 'MINIO_BUCKET=lottrace-dev');
+  assert.equal(valueOf('MINIO_APP_ACCESS_KEY'), 'MINIO_APP_ACCESS_KEY=');
+  assert.equal(valueOf('MINIO_APP_SECRET_KEY'), 'MINIO_APP_SECRET_KEY=');
+});
+
+test('backend .env.example uses the MinIO app user, not the root user', () => {
+  assert.match(backendEnvExample, /S3_ACCESS_KEY_ID=<minio-app-access-key>/);
+  assert.match(backendEnvExample, /S3_SECRET_ACCESS_KEY=<minio-app-secret-key>/);
+  assert.match(backendEnvExample, /S3_BUCKET=lottrace-dev/);
+  assert.ok(!backendEnvExample.includes('<minio-root-user>'));
+  assert.ok(!backendEnvExample.includes('<minio-root-password>'));
 });
 
 test('backend .env.example no longer ships default credentials', () => {

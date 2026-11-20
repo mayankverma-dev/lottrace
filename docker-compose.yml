@@ -47,6 +47,67 @@ services:
     volumes:
       - minio-data:/data
     command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-shot bootstrap. Root credentials stay admin-only; the API uses the
+  # scoped app user created here. Re-running is safe and rotates its secret.
+  minio-init:
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    container_name: lottrace-minio-init
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-lottrace-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in the root .env}
+      MINIO_BUCKET: ${MINIO_BUCKET:?Set MINIO_BUCKET in the root .env}
+      MINIO_APP_ACCESS_KEY: ${MINIO_APP_ACCESS_KEY:?Set MINIO_APP_ACCESS_KEY in the root .env}
+      MINIO_APP_SECRET_KEY: ${MINIO_APP_SECRET_KEY:?Set MINIO_APP_SECRET_KEY in the root .env}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "local/$$MINIO_BUCKET"
+
+        cat > /tmp/lottrace-app-policy.json <<EOF
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+              "Resource": ["arn:aws:s3:::$$MINIO_BUCKET"]
+            },
+            {
+              "Effect": "Allow",
+              "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+              "Resource": ["arn:aws:s3:::$$MINIO_BUCKET/*"]
+            }
+          ]
+        }
+        EOF
+
+        # Remove the user first: MinIO refuses to remove a policy that is
+        # still attached. Re-creating both also rotates a changed secret.
+        if mc admin user info local "$$MINIO_APP_ACCESS_KEY" >/dev/null 2>&1; then
+          mc admin user remove local "$$MINIO_APP_ACCESS_KEY"
+        fi
+        if mc admin policy info local lottrace-app >/dev/null 2>&1; then
+          mc admin policy remove local lottrace-app
+        fi
+        mc admin policy create local lottrace-app /tmp/lottrace-app-policy.json
+        mc admin user add local "$$MINIO_APP_ACCESS_KEY" "$$MINIO_APP_SECRET_KEY"
+        mc admin policy attach local lottrace-app --user "$$MINIO_APP_ACCESS_KEY"
+
+        echo "MinIO bucket and app user ready"
 
   pgadmin:
     image: dpage/pgadmin4@sha256:40fa840c5bb7c8463957f1255b01283732c2d8c9396a956d180f8e6c296753b3
