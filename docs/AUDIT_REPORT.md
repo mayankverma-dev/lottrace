@@ -135,7 +135,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Fixed (2026-11-15, 3915392) |
 | P2-04 | P2 | Trace product lookup is not organization-scoped | Open |
 | P2-05 | P2 | Event list search and filters are not indexed for scale | Fixed (2026-11-19, 2fd6c45) |
-| P2-06 | P2 | Local infrastructure uses default credentials and exposed consoles | Fixed (commit pending) |
+| P2-06 | P2 | Local infrastructure uses default credentials and exposed consoles | Fixed (2026-11-20, 1ea89bf) |
 | P2-07 | P2 | Frontend bundle is one large chunk; no error boundaries | Fixed (2026-11-19, d68cdd8) |
 | P2-08 | P2 | Documentation claims completion that the code does not deliver | Open |
 | P2-09 | P2 | Attachment upload flow leaves orphaned objects | Fixed (2026-11-18, ff07736) |
@@ -805,7 +805,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P2-06 — Local infrastructure uses default credentials and exposed consoles
 
-- **Severity:** P2 · **Area:** ops / dev environment · **Status:** Fixed (commit pending)
+- **Severity:** P2 · **Area:** ops / dev environment · **Status:** Fixed (2026-11-20, 1ea89bf)
 - **Evidence:** `docker-compose.yml:9-10` (`lottrace/lottrace`), `:42-43` (`minioadmin/minioadmin`), `:53-56` (`PGADMIN_DEFAULT_PASSWORD: admin123`), ports `5050`, `5540`, `9001` bound to `0.0.0.0`.
 - **What happens:** All dev services use well-known credentials and expose admin consoles on every network interface. If a developer runs this on a laptop on a shared network (or a cloud VM), the database, object storage, and pgAdmin are reachable with default passwords. The audit also claimed the seed creates `admin@lottrace.com` / `admin123`; that part is stale — the current seed generates a random super-admin password (P1-16).
 - **Real-world impact:** A dev machine becomes the easiest way into production data (especially if `.env` points at Neon and the laptop is compromised).
