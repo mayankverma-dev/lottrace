@@ -165,6 +165,12 @@ describe('env schema still coerces other types', () => {
 
     expect(loadEnv().PORT).toBe(4321);
   });
+
+  it('exposes an explicit API_HOST without changing its value', () => {
+    process.env.API_HOST = '127.0.0.1';
+
+    expect(loadEnv().API_HOST).toBe('127.0.0.1');
+  });
 });
 
 describe('hash chain keyring', () => {

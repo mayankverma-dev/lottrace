@@ -6,6 +6,7 @@ const logger = require('./utils/logger');
 // This will throw immediately if required vars are missing
 const env = require('./config/env');
 const { findCredentialIssues } = require('./config/credentialSafety');
+const { resolveApiHost } = require('./config/apiHost');
 const { initSentry } = require('./lib/sentry');
 
 initSentry();
@@ -14,16 +15,17 @@ const app = require('./app');
 const { startWorkers } = require('./jobs');
 
 const PORT = env.PORT;
-const HOST = '0.0.0.0'
+const HOST = resolveApiHost(env);
 
 const server = app.listen(PORT, HOST, () => {
   logger.info(
     {
+      host: HOST,
       emailDryRun: env.EMAIL_DRY_RUN,
       emailOverride: Boolean(env.DEV_EMAIL_OVERRIDE),
       trustProxy: env.TRUST_PROXY,
     },
-    `Server running on port ${PORT} in ${env.NODE_ENV} mode`
+    `Server listening on ${HOST}:${PORT} in ${env.NODE_ENV} mode`
   );
   if (env.NODE_ENV === 'development') {
     const credentialIssues = findCredentialIssues(env);

@@ -70,6 +70,9 @@ const envSchema = z.object({
   // App
   NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().default(3000),
+  // Listen address. When absent, development/test bind to loopback and
+  // staging/production bind to all interfaces so containers stay reachable.
+  API_HOST: z.string().optional(),
   FRONTEND_URL: z.string().default('http://localhost:3001'),
   SCAN_PWA_URL: z.string().default('http://localhost:3002'),
 
