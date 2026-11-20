@@ -31,8 +31,13 @@ docker compose up -d
 # MinIO:      127.0.0.1:9000  (console: 127.0.0.1:9001)
 ```
 
-Compose refuses to start when a required password is blank. Every port is
-bound to `127.0.0.1`. Start the optional admin consoles only when needed:
+Compose refuses to start when a required password or MinIO value is blank.
+Every port is bound to `127.0.0.1`, and every image is pinned to an immutable
+digest. The one-shot `minio-init` service waits for MinIO health, then creates
+`MINIO_BUCKET` and the least-privilege `MINIO_APP_ACCESS_KEY` /
+`MINIO_APP_SECRET_KEY` user. Root credentials stay admin-only and are never
+placed in backend configuration. Start the optional admin consoles only when
+needed:
 ```bash
 docker compose --profile tools up -d
 ```
@@ -109,10 +114,12 @@ HASH_CHAIN_SECRET=<64-char-random-hex>
 HASH_CHAIN_OLD_KEYS=
 
 # Object Storage (use local MinIO for dev, R2 for prod)
+# Use the least-privilege app user created by minio-init. Never use the
+# MINIO_ROOT_USER / MINIO_ROOT_PASSWORD pair here — those are admin-only.
 S3_ENDPOINT=http://127.0.0.1:9000
 S3_REGION=us-east-1
-S3_ACCESS_KEY_ID=<minio-root-user>
-S3_SECRET_ACCESS_KEY=<minio-root-password>
+S3_ACCESS_KEY_ID=<minio-app-access-key>
+S3_SECRET_ACCESS_KEY=<minio-app-secret-key>
 S3_BUCKET=lottrace-dev
 
 # Email (Resend for prod; EMAIL_DRY_RUN=true for local)
@@ -124,9 +131,13 @@ EMAIL_DRY_RUN=true
 # App
 NODE_ENV=development
 PORT=3000
+# Listen address. Defaults to 127.0.0.1 in development/test so the API is not
+# reachable from the LAN; staging/production default to 0.0.0.0 for containers.
+# API_HOST=127.0.0.1
 FRONTEND_URL=http://localhost:3001
 # Local PWA origin for credentialed CORS. Use the deployed PWA URL only in
-# deployment environments.
+# deployment environments. Development/test also accept the 127.0.0.1 form of
+# each origin; staging/production accept only the configured URLs.
 SCAN_PWA_URL=http://localhost:3002
 # Express `trust proxy` setting. Leave empty when the API is directly exposed.
 # Behind a proxy, set the exact hop count or a comma-separated trusted CIDR
@@ -180,6 +191,7 @@ Services:
 - **postgres** — primary database (`127.0.0.1:5432`)
 - **redis** — cache + BullMQ (`127.0.0.1:6379`, password required)
 - **minio** — local S3-compatible storage (`127.0.0.1:9000`, console: `127.0.0.1:9001`)
+- **minio-init** — one-shot bootstrap of the bucket and least-privilege app user
 - **pgadmin** — optional database console (`127.0.0.1:5050`, `--profile tools`)
 - **redisinsight** — optional Redis console (`127.0.0.1:5540`, `--profile tools`)
 

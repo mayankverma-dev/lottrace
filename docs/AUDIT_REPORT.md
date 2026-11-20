@@ -170,6 +170,13 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-39 | P2 | Receiving `locationId` doc/code mismatch | Fixed (2026-11-18, 3eae1b8) |
 | P2-40 | P2 | Product picker caps at 100 and has no search | Fixed (2026-11-18, 3eae1b8) |
 | P2-41 | P2 | Date-range event filter scans most of the tenant index | Fixed (2026-11-20, f6438a3) |
+| P2-42 | P2 | API listens on all interfaces in development and test | Fixed (2026-11-20, 811c2ff) |
+| P2-43 | P2 | Compose images use floating tags instead of immutable digests | Fixed (2026-11-20, 8f36468) |
+| P2-44 | P2 | MinIO bucket and least-privilege app user are not bootstrapped | Fixed (2026-11-20, 984a7d4) |
+| P2-45 | P2 | Migration CLI bypasses default-credential guard | Fixed (2026-11-20, 4f8ffa5) |
+| P2-46 | P2 | Runtime `APP_DATABASE_URL` bypasses env validation | Fixed (2026-11-20, a9f9c35) |
+| P2-47 | P2 | Backend `.env.example` instructs use of MinIO root credentials | Fixed (2026-11-20, 7555d14) |
+| P2-48 | P2 | Loopback CORS origins rejected in local development | Fixed (2026-11-20, 205da17) |
 
 ---
 
@@ -1109,6 +1116,69 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 - **Fix:** Kept the public order `(created_at DESC, chain_seq DESC)` and added two indexes: the base keyset index now `INCLUDE`s `event_datetime`, and `idx_events_org_datetime_created_seq` orders by `(organization_id, event_datetime DESC, created_at DESC, chain_seq DESC)`. The list now selects only `organization_id, created_at, chain_seq` in an inner page subquery, then joins event details by `(organization_id, chain_seq)`, so the keyset scan is index-only instead of one heap fetch per rejected row. For date filters, a bounded `matched` CTE (50,000 rows) uses the date index, sorts that set by the public order, and returns the page; when the cap is exceeded, the query falls back to the covering keyset path instead of sorting an unbounded result set. The date filter changes only membership, never order.
 - **Verification:** On a disposable local database with 1,000,000 synthetic events, after `VACUUM (ANALYZE)` so index-only scans had a current visibility map: a 10-second historical range matching 10,001 events ran the date-first path in 14.3 ms (pre-fix: ~2,749 ms and ~980,000 rows removed). The uncapped keyset path for that same range still scans 980,000 index entries and took 1,089 ms cold, which is why the service caps the date-first set. A full-range filter reaches the 50,000 cap, spends 68.7 ms building and probing the bounded set, then returns the keyset fallback page in 1.8 ms (~70.6 ms total). No date-list plan used `Seq Scan on events`; the date-first plan is an index-only scan on `idx_events_org_datetime_created_seq` with `Heap Fetches: 0`. Regression tests cover backdated events (the newest `created_at` inside the range must come first) and open-ended `dateFrom`/`dateTo` filters. Full backend suite: 65/65 suites, 562 passed, 4 skipped.
 
+## P2-42 — API listens on all interfaces in development and test
+
+- **Severity:** P2 · **Area:** backend / local security · **Status:** Fixed (2026-11-20, 811c2ff)
+- **Evidence:** `backend/src/server.js` hard-coded `const HOST = '0.0.0.0'`, so every environment — including a developer laptop on a shared network — exposed the API on all interfaces.
+- **What happens:** `app.listen(PORT, '0.0.0.0')` binds `0.0.0.0:3000`. Any host that can reach the machine can call the unauthenticated routes and probe the rest of the API.
+- **Real-world impact:** Local development leaks an admin-capable surface to the LAN; the risk is greatest on shared office or conference networks.
+- **Fix:** Added `backend/src/config/apiHost.js`. Development and test default to `127.0.0.1`; staging and production default to `0.0.0.0` because a container bound to loopback cannot be reached through its published port. An explicit `API_HOST` always wins after validation (literal IP or `localhost` only; DNS names and `host:port` are rejected). `env.js` declares the optional key, `server.js` uses the resolver and logs the bound host, and `backend/.env.example` documents the override.
+- **Verification:** 14 unit tests cover defaults, overrides, trimming, and invalid values. Live API logged `Server listening on 127.0.0.1:3000` and `ss -ltn` showed only `127.0.0.1:3000` with no wildcard bind. Full backend suite: 68/68 suites, 633 passed, 4 skipped.
+
+## P2-43 — Compose images use floating tags instead of immutable digests
+
+- **Severity:** P2 · **Area:** developer experience / supply chain · **Status:** Fixed (2026-11-20, 8f36468)
+- **Evidence:** `docker-compose.yml` used `postgres:16-alpine`, `redis:7-alpine`, `minio/minio:latest`, `dpage/pgadmin4`, and `redis/redisinsight:latest`. Mutable tags can resolve to different layers between runs.
+- **What happens:** A tag points at a moving target, so two `docker compose pull` calls days apart can produce different infrastructure without any repo change. Floating tags also make the exact runtime unrecordable in an audit.
+- **Real-world impact:** Non-reproducible local environments, surprise upgrades, and no immutable artifact to attest to during a compliance review.
+- **Fix:** Pinned all five images to the `@sha256:` digests captured from the running local registry. `scripts/verify-compose.test.mjs` asserts every compose image matches `name@sha256:<64 hex>` and contains no `:latest`.
+- **Verification:** `pnpm verify:compose` passes 11/11 including the new digest check; `docker compose config` resolved with zero unresolved interpolations.
+
+## P2-44 — MinIO bucket and least-privilege app user are not bootstrapped
+
+- **Severity:** P2 · **Area:** infrastructure / local security · **Status:** Fixed (2026-11-20, 984a7d4)
+- **Evidence:** Compose started MinIO with only root credentials; no service created the bucket or an app-scoped user, and the backend example file told developers to use the root key pair.
+- **What happens:** New environments start with an empty object store and no configured credentials. The only working S3 credentials are the admin root pair, so applications and operators share full control of the server.
+- **Real-world impact:** An application key leak becomes a full server compromise (user management, policy edits, bucket deletion), and setup depends on manual console steps that are easy to skip.
+- **Fix:** Added a MinIO healthcheck and a one-shot `minio-init` service that reuses the pinned MinIO image and its bundled `mc` client. It creates the bucket, a `lottrace-app` policy limited to one bucket (`ListBucket`/`GetBucketLocation` plus `GetObject`/`PutObject`/`DeleteObject` on its objects), the app user, and the policy attachment. Re-runs remove the existing user before the policy so a changed secret rotates cleanly and MinIO never blocks removal of an attached policy. Root credentials remain admin-only and never enter backend configuration.
+- **Verification:** `docker compose up minio-init` succeeded on a fresh bucket and again on re-run after the ordering fix. An `mc` smoke test as the app user passed list/put/get/delete and was denied `admin user list` and bucket deletion. Root `.env.example` now declares `MINIO_BUCKET` and the app key pair as required values.
+
+## P2-45 — Migration CLI bypasses default-credential guard
+
+- **Severity:** P2 · **Area:** backend / deployment safety · **Status:** Fixed (2026-11-20, 4f8ffa5)
+- **Evidence:** `backend/knexfile.js` loaded dotenv directly and never invoked the `assertNoDefaultCredentials` guard that `env.js` applies to the API process.
+- **What happens:** `pnpm migrate:*` and seeding ran with whatever `DATABASE_URL` was in the shell, so staging/production tooling could connect with a missing or development-default password while the API itself would have refused to boot.
+- **Real-world impact:** A misconfigured deploy can silently run schema changes against the wrong database or with shared credentials, defeating the safety check added for P2-06.
+- **Fix:** `credentialSafety.js` now exposes a database-only `findDatabaseCredentialIssues` and `assertNoDefaultDatabaseCredentials`; `knexfile.js` calls the assertion at load time for both `DATABASE_URL` and `APP_DATABASE_URL`.
+- **Verification:** Live check with `NODE_ENV=production` and a default password refused the command: `Refusing to run database tooling in production with default or missing credentials: DATABASE_URL uses a default password`. Development CLI still reports migration status normally. Unit tests cover the scoped guard in local and protected environments.
+
+## P2-46 — Runtime `APP_DATABASE_URL` bypasses env validation
+
+- **Severity:** P2 · **Area:** backend / configuration · **Status:** Fixed (2026-11-20, a9f9c35)
+- **Evidence:** `backend/src/db/knex.js` read `process.env.APP_DATABASE_URL` directly, so the optional non-owner runtime URL skipped the Zod schema and credential guard applied to every other connection setting.
+- **What happens:** A default or missing password in the runtime URL reached Knex unchanged; the API booted while the migration URL was correctly guarded.
+- **Real-world impact:** The least-privilege runtime role could quietly fall back to a shared development credential in a deployed environment.
+- **Fix:** `env.js` declares `APP_DATABASE_URL` as an optional validated string, `findCredentialIssues` folds it into the existing guard, and `db/knex.js` consumes `env.APP_DATABASE_URL` instead of the raw variable.
+- **Verification:** Unit tests assert the value is exposed and that a default runtime password is rejected in production. Full backend suite: 68/68 suites, 633 passed, 4 skipped.
+
+## P2-47 — Backend `.env.example` instructs use of MinIO root credentials
+
+- **Severity:** P2 · **Area:** documentation / local security · **Status:** Fixed (2026-11-20, 7555d14)
+- **Evidence:** `backend/.env.example` set `S3_ACCESS_KEY_ID=<minio-root-user>` and `S3_SECRET_ACCESS_KEY=<minio-root-password>`, and P2-44's verifier check for app credentials was added before the example file was corrected.
+- **What happens:** The documented setup path handed the application the MinIO admin key pair, which can manage users, policies, and buckets — far beyond upload/download needs.
+- **Real-world impact:** Copying the example into a real deployment grants the API full object-store admin rights and defeats the least-privilege user created by `minio-init`.
+- **Fix:** Replaced the placeholders with `<minio-app-access-key>` / `<minio-app-secret-key>` and an explicit note that root credentials are admin-only and must never be placed in backend config.
+- **Verification:** The compose verifier asserts the app placeholders are present and the root placeholders are gone. Live presigned URLs were signed with the `lottrace-app-...` credential; PUT, attachment confirm, and download all succeeded.
+
+## P2-48 — Loopback CORS origins rejected in local development
+
+- **Severity:** P2 · **Area:** backend / local developer experience · **Status:** Fixed (2026-11-20, 205da17)
+- **Evidence:** `backend/src/app.js` built the CORS allowlist from `process.env.FRONTEND_URL` and `SCAN_PWA_URL` only. With P2-42 binding the API to `127.0.0.1`, a browser opened at `http://127.0.0.1:3001` sent an origin absent from that list.
+- **What happens:** Credentialed requests from the loopback IP received no `Access-Control-Allow-Origin` header and failed in the browser, while the same app at `http://localhost:3001` worked. `localhost` and `127.0.0.1` are distinct origins.
+- **Real-world impact:** Developers who type the IP form of the local URL hit silent auth failures that look like a backend outage.
+- **Fix:** Added `backend/src/config/corsOrigins.js`. Development and test add `127.0.0.1` equivalents of the configured localhost:3001/3002 web and PWA origins (http and https); staging and production use only the configured URLs. Origins are trimmed, have trailing slashes removed, and are validated as `http(s)://host`.
+- **Verification:** 13 unit tests cover local equivalents, production isolation, de-duplication, and invalid origins. A Playwright login from `http://127.0.0.1:3001` reached the dashboard with zero console errors. Preflight from that origin returned the matching `Access-Control-Allow-Origin` and `Access-Control-Allow-Credentials: true`; `http://evil.example.com` received no allow-origin header.
+
 # Recommended fix order
 
 Do **not** fix issues strictly by ID. The order below minimizes rework and keeps the app demoable at every step. Each batch should be planned and approved separately.
@@ -1422,7 +1492,7 @@ Run this after every batch. Reset the development database from scratch first. N
 
 - **P0:** 14
 - **P1:** 33
-- **P2:** 21
-- **Total:** 68
+- **P2:** 28
+- **Total:** 75
 
 > This report is a snapshot. Re-verify each issue against the current working tree before fixing it, and update the status as you go.

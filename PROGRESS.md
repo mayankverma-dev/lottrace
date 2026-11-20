@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-20
-**Last Session:** 2026-11-20 — P2-06 fixed. Compose now requires infrastructure passwords from the untracked root `.env`, binds every published port to `127.0.0.1`, requires Redis auth, and keeps pgAdmin/RedisInsight behind the `tools` profile. Added a backend credential guard that refuses to start in `staging`/`production` with missing or known-default database, Redis, or S3 credentials, and removed the `mock` S3 fallback. Full backend suite passes (66 suites, 592 passed, 4 skipped); compose verifier 7/7; focused config tests 59/59; lint 0 errors; production boot rejects `lottrace:lottrace`.
+**Last Session:** 2026-11-20 — P2-42..P2-48 fixed and committed (7 commits, `811c2ff`..`205da17`). API binds to `127.0.0.1` in dev/test; compose images pinned to immutable digests; `minio-init` bootstraps the bucket and least-privilege app user; migration CLI and runtime `APP_DATABASE_URL` share the credential guard; backend env example uses app credentials; dev/test CORS accepts loopback origins. Audit report now lists 28 P2 / 75 total. Verification: full backend suite 68/68 suites, 633 passed, 4 skipped; `pnpm verify:compose` 11/11; lint 0 errors; live API, MinIO policy, CORS, and migration-guard checks passed. No commits pushed.
 
 ---
 
@@ -58,6 +58,16 @@ backend suite pass.
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P2-42..P2-48 — local API exposure, compose reproducibility, MinIO least privilege, credential guards, CORS, and audit bookkeeping:
+- `backend/src/config/apiHost.js`, `backend/src/server.js` (loopback default in dev/test, validated `API_HOST`, container-safe staging/production default)
+- `backend/src/config/corsOrigins.js`, `backend/src/app.js` (dev/test loopback CORS equivalents; production uses configured origins only)
+- `docker-compose.yml` (immutable image digests, MinIO healthcheck, one-shot `minio-init` with scoped policy, idempotent user rotation)
+- `.env.example`, `backend/.env.example` (MinIO bucket/app credentials, app-only S3 placeholders, `API_HOST` docs)
+- `backend/src/config/credentialSafety.js`, `backend/knexfile.js`, `backend/src/config/env.js`, `backend/src/db/knex.js` (migration CLI guard, validated `APP_DATABASE_URL`)
+- `scripts/verify-compose.test.mjs` (digest, bootstrap, and app-credential checks; 11/11)
+- Tests: `backend/src/config/apiHost.test.js`, `corsOrigins.test.js`, updated `env.test.js` and `credentialSafety.test.js`
+- Docs: `docs/AUDIT_REPORT.md` (P2-42..P2-48 rows/details, counts P2 28 / total 75), `docs/ENVIRONMENT_SETUP.md`, `docs/SECURITY.md`, `PROGRESS.md`
 
 P2-06 — local infrastructure credentials and exposed consoles:
 - `docker-compose.yml` (required secrets from root `.env`, loopback-only ports, Redis auth, `tools` profile for pgAdmin/RedisInsight)

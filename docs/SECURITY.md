@@ -117,11 +117,20 @@ if (!lot) throw new AppError('Lot not found', 'NOT_FOUND', 404);
 ### Local Infrastructure Credentials
 - `docker-compose.yml` is local-only. Every password comes from the untracked
   root `.env`, and Compose refuses to start when a required value is blank.
+  All images are pinned to immutable `sha256` digests; floating tags are rejected.
 - Every published port binds to `127.0.0.1`. pgAdmin and RedisInsight run only
-  with `--profile tools`, so they are not part of the default stack.
+  with `--profile tools`, so they are not part of the default stack. The API
+  also binds to `127.0.0.1` in development/test; only staging/production default
+  to `0.0.0.0` for container reachability.
+- `minio-init` creates the bucket and a least-privilege `lottrace-app` user
+  limited to object read/write/delete in that one bucket. Root credentials are
+  admin-only and never enter backend configuration. Backend S3 settings must use
+  the app key pair.
 - Never reuse local compose credentials in staging or production. The backend
   refuses to start in `staging` or `production` when `DATABASE_URL`,
-  `REDIS_URL`, or the S3 credentials are missing or use a known local default.
+  `APP_DATABASE_URL`, `REDIS_URL`, or the S3 credentials are missing or use a
+  known local default. The migration CLI applies the same database check at load
+  time, so `pnpm migrate:*` cannot bypass it.
 - Rotate any credential that has ever been used outside a disposable local
   environment.
 
@@ -149,14 +158,20 @@ const logger = pino({
 
 ### CORS
 ```javascript
-// Only allow known origins
+// Only allow known origins; resolved once from the validated env module
 cors({
-  origin: [process.env.FRONTEND_URL, process.env.SCAN_PWA_URL],
+  origin: resolveCorsOrigins(env),
   credentials: true,           // needed for httpOnly cookie refresh token
   methods: ['GET', 'POST', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
 })
 ```
+
+`resolveCorsOrigins` (`backend/src/config/corsOrigins.js`) accepts the exact
+configured web and PWA origins. Development and test additionally allow the
+`127.0.0.1` equivalent of each localhost origin, so the API binding to loopback
+does not break local sign-in. Staging and production use **only** configured
+origins — no loopback or wildcard entry can enter a deploy.
 
 ### Helmet Headers
 ```javascript
