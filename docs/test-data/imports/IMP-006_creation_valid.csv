@@ -1,0 +1,4 @@
+transaction_id,event_datetime,location_name,notes,traceability_lot_code,product_name,quantity,uom
+TRX-C6,2026-06-20T09:00:00.000Z,Main Farm,Third romaine planting block A,GV-ROM-0620-A,Romaine Hearts,120,kg
+TRX-C6,2026-06-20T09:00:00.000Z,Main Farm,Third romaine planting block A,GV-ROM-0620-B,Romaine Hearts,110,kg
+TRX-C6,2026-06-20T09:00:00.000Z,Main Farm,Third romaine planting block A,GV-ROM-0620-C,Romaine Hearts,95,kg

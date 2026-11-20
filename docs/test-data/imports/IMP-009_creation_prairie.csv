@@ -1,0 +1,4 @@
+transaction_id,event_datetime,location_name,notes,traceability_lot_code,product_name,quantity,uom
+TRX-P9,2026-06-24T06:00:00.000Z,Grain Elevator,Bulk wheat intake,PG-WHT-0624-A,Hard Red Wheat,12000,kg
+TRX-P9,2026-06-24T06:00:00.000Z,Grain Elevator,Bulk wheat intake,PG-WHT-0624-B,Hard Red Wheat,11500,kg
+TRX-P9,2026-06-24T06:00:00.000Z,Grain Elevator,Bulk oats intake,PG-OAT-0624-A,Rolled Oats,4000,kg

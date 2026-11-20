@@ -1,0 +1,2 @@
+transaction_id,event_datetime,location_name,notes,traceability_lot_code,product_name,quantity,uom
+TRX-KDE1,2026-06-27T06:00:00.000Z,Main Farm,Cilantro with required bunch_count omitted,GV-CIL-0627-A,Cilantro Bunch,300,units

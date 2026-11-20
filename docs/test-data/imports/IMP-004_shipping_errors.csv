@@ -1,0 +1,4 @@
+transaction_id,event_datetime,location_name,counterparty_name,notes,traceability_lot_code,product_name,quantity,uom
+TRX-S4-1,2026-06-24T09:00:00.000Z,,Bay Area Retail Depot,Missing location,GV-KAL-0621-A,Organic Kale,50,kg
+TRX-S4-2,not-a-date,Sacramento DC,Bay Area Retail Depot,Bad date,GV-ROM-0621-A,Romaine Hearts,40,kg
+TRX-S4-3,2026-06-24T09:30:00.000Z,Sacramento DC,Bay Area Retail Depot,Missing uom,GV-ROM-0621-A,Romaine Hearts,30,

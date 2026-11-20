@@ -1,0 +1,2 @@
+transaction_id,event_datetime,location_name,counterparty_name,notes,traceability_lot_code,product_name,quantity,uom,counterparty_lot_code
+TRX-N8,2026-06-25T07:45:00.000Z,Reno Cold Store,Northwind Berry Co,Received frozen pallet,NW-FRB-0625-A,Frozen Berry Blend,900,kg,NWB-4471

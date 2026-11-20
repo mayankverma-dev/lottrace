@@ -1,0 +1,3 @@
+transaction_id,event_datetime,location_name,notes,direction,traceability_lot_code,product_name,quantity,uom
+TRX-T10,2026-06-26T08:00:00.000Z,Grain Mill,Milling run with no output,input,PG-WHT-0624-A,Hard Red Wheat,6000,kg
+TRX-T10,2026-06-26T08:00:00.000Z,Grain Mill,Milling run with no output,input,PG-WHT-0624-B,Hard Red Wheat,5000,kg

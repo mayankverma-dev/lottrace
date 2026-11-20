@@ -1,0 +1,6 @@
+transaction_id,event_datetime,location_name,notes,direction,traceability_lot_code,product_name,quantity,uom
+TRX-T3A,2026-06-23T07:00:00.000Z,Packing House,Repack washed kale,input,GV-KAL-0621-A,Organic Kale,120,kg
+TRX-T3A,2026-06-23T07:00:00.000Z,Packing House,Repack washed kale,input,GV-KAL-0620-D,Organic Kale,60,kg
+TRX-T3A,2026-06-23T07:00:00.000Z,Packing House,Repack washed kale,output,GV-KAL-0623-A,Organic Kale,170,kg
+TRX-T3B,2026-06-23T08:00:00.000Z,Packing House,Retrim romaine,input,GV-ROM-0621-A,Romaine Hearts,90,kg
+TRX-T3B,2026-06-23T08:00:00.000Z,Packing House,Retrim romaine,output,GV-ROM-0623-A,Romaine Hearts,85,kg

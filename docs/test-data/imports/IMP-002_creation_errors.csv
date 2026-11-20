@@ -1,0 +1,5 @@
+transaction_id,event_datetime,location_name,notes,traceability_lot_code,product_name,quantity,uom
+TRX-C2-1,2026-06-20T10:00:00.000Z,Main Farm,Missing lot code,,Organic Kale,100,kg
+TRX-C2-2,2026-06-20T10:05:00.000Z,Main Farm,Bad quantity,GV-KAL-0620-B,Organic Kale,abc,kg
+TRX-C2-3,2026-06-20T10:10:00.000Z,Main Farm,Zero quantity,GV-KAL-0620-C,Organic Kale,0,kg
+TRX-C2-4,2026-06-20T10:15:00.000Z,Main Farm,Valid row,GV-KAL-0620-D,Organic Kale,80,kg

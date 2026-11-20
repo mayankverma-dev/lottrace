@@ -1,0 +1,4 @@
+transaction_id,event_datetime,location_name,notes,direction,traceability_lot_code,product_name,quantity,uom
+TRX-T7,2026-06-23T10:00:00.000Z,Packing House,No output row,input,GV-KAL-0623-A,Organic Kale,60,kg
+TRX-T7,2026-06-23T10:00:00.000Z,Packing House,No output row,input,GV-ROM-0623-A,Romaine Hearts,40,kg
+TRX-T7,2026-06-23T10:00:00.000Z,Packing House,No output row,input,GV-ROM-0620-A,Romaine Hearts,30,kg

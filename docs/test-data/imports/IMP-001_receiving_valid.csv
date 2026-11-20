@@ -1,0 +1,3 @@
+transaction_id,event_datetime,location_name,counterparty_name,notes,traceability_lot_code,product_name,quantity,uom,counterparty_lot_code
+TRX-R1,2026-06-21T08:00:00.000Z,Packing House,Riverside Partner Farm,"Received pallet 1, chilled",GV-KAL-0621-A,Organic Kale,240,kg,RPF-KAL-118
+TRX-R1B,2026-06-21T08:30:00.000Z,Packing House,Riverside Partner Farm,Received pallet 2,GV-ROM-0621-A,Romaine Hearts,180,kg,RPF-ROM-119
