@@ -1,4 +1,5 @@
 const knex = require('knex');
+const env = require('../config/env');
 const knexConfig = require('../../knexfile');
 const { getTenantTransaction } = require('./tenantContext');
 
@@ -11,7 +12,7 @@ const environment = process.env.NODE_ENV || 'development';
  */
 const runtimeConfig = {
   ...knexConfig[environment],
-  ...(process.env.APP_DATABASE_URL ? { connection: process.env.APP_DATABASE_URL } : {}),
+  ...(env.APP_DATABASE_URL ? { connection: env.APP_DATABASE_URL } : {}),
 };
 const baseDb = knex(runtimeConfig);
 

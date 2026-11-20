@@ -58,6 +58,16 @@ describe('findCredentialIssues', () => {
     expect(issues).toContain('DATABASE_URL uses a default password');
   });
 
+  it('flags the runtime app URL in the full guard', () => {
+    const issues = findCredentialIssues(
+      strongEnv({
+        APP_DATABASE_URL: 'postgresql://lottrace_app:lottrace@127.0.0.1:5432/lottrace',
+      }),
+    );
+
+    expect(issues).toContain('APP_DATABASE_URL uses a default password');
+  });
+
   it('flags a database URL without a password', () => {
     const issues = findCredentialIssues(
       strongEnv({ DATABASE_URL: 'postgresql://lottrace@127.0.0.1:5432/lottrace' }),

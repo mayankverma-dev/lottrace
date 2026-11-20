@@ -23,6 +23,8 @@ const REQUIRED_ENV = {
 
 const MANAGED_KEYS = [
   ...Object.keys(REQUIRED_ENV),
+  'APP_DATABASE_URL',
+  'API_HOST',
   'EMAIL_DRY_RUN',
   'HASH_CHAIN_OLD_KEYS',
   'PORT',
@@ -54,6 +56,8 @@ beforeEach(() => {
   Object.entries(REQUIRED_ENV).forEach(([key, value]) => {
     process.env[key] = value;
   });
+  delete process.env.APP_DATABASE_URL;
+  delete process.env.API_HOST;
   delete process.env.EMAIL_DRY_RUN;
   delete process.env.HASH_CHAIN_OLD_KEYS;
   delete process.env.PORT;
@@ -236,6 +240,21 @@ describe('default infrastructure credential guard', () => {
     process.env.DATABASE_URL = 'postgresql://lottrace:lottrace@127.0.0.1:5432/lottrace_test';
 
     expect(loadEnv).toThrow(/DATABASE_URL uses a default password/);
+  });
+
+  it('exposes an optional APP_DATABASE_URL', () => {
+    process.env.APP_DATABASE_URL = STRONG_DB;
+
+    expect(loadEnv().APP_DATABASE_URL).toBe(STRONG_DB);
+  });
+
+  it('rejects a default runtime app URL in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DATABASE_URL = STRONG_DB;
+    process.env.APP_DATABASE_URL =
+      'postgresql://lottrace_app:lottrace@127.0.0.1:5432/lottrace_test';
+
+    expect(loadEnv).toThrow(/APP_DATABASE_URL uses a default password/);
   });
 
   it('rejects a Redis URL without a password in production', () => {

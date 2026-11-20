@@ -37,6 +37,9 @@ const booleanEnv = (defaultValue = false) =>
 const envSchema = z.object({
   // Database
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  // Optional runtime URL using the non-owner app role. When present it must
+  // also pass the credential guard; migrations keep using DATABASE_URL.
+  APP_DATABASE_URL: z.string().optional(),
 
   // Redis
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
