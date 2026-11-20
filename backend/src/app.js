@@ -8,6 +8,7 @@ const cookieParser = require('cookie-parser');
 
 const logger = require('./utils/logger');
 const env = require('./config/env');
+const { resolveCorsOrigins } = require('./config/corsOrigins');
 const apiResponse = require('./utils/apiResponse');
 const requestId = require('./middleware/requestId');
 const noStore = require('./middleware/noStore');
@@ -35,7 +36,7 @@ app.use(requestId);
 // 2. CORS
 app.use(
   cors({
-    origin: [process.env.FRONTEND_URL || 'http://localhost:3001', process.env.SCAN_PWA_URL || 'http://localhost:3002'],
+    origin: resolveCorsOrigins(env),
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'ngrok-skip-browser-warning'],
