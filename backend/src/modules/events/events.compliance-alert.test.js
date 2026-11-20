@@ -8,7 +8,7 @@
  * Requires a disposable local PostgreSQL database whose name ends in `_test`:
  *
  *   RUN_DB_TESTS=1 \
- *   DATABASE_URL=postgresql://lottrace:lottrace@localhost:5432/lottrace_p004_test \
+ *   DATABASE_URL=postgresql://lottrace:REPLACE_WITH_LOCAL_PASSWORD@127.0.0.1:5432/lottrace_p004_test \
  *   npx jest --runInBand src/modules/events/events.compliance-alert.test.js
  *
  * Redis is replaced with an in-memory map and BullMQ with a mock queue, so the

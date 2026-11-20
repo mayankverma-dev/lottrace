@@ -24,7 +24,7 @@ jest.mock('./logger', () => ({
 }));
 
 const REQUIRED_ENV = {
-  DATABASE_URL: 'postgresql://lottrace:lottrace@localhost:5432/lottrace_test',
+  DATABASE_URL: 'postgresql://lottrace:REPLACE_WITH_LOCAL_PASSWORD@127.0.0.1:5432/lottrace_test',
   REDIS_URL: 'redis://localhost:6379',
   ACCESS_JWT_SECRET: 'a'.repeat(64),
   REFRESH_JWT_SECRET: 'b'.repeat(64),

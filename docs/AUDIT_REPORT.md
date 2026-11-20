@@ -135,7 +135,7 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 | P2-03 | P2 | Cache invalidation runs before transaction commit | Fixed (2026-11-15, 3915392) |
 | P2-04 | P2 | Trace product lookup is not organization-scoped | Open |
 | P2-05 | P2 | Event list search and filters are not indexed for scale | Fixed (2026-11-19, 2fd6c45) |
-| P2-06 | P2 | Local infrastructure uses default credentials and exposed consoles | Open |
+| P2-06 | P2 | Local infrastructure uses default credentials and exposed consoles | Fixed (commit pending) |
 | P2-07 | P2 | Frontend bundle is one large chunk; no error boundaries | Fixed (2026-11-19, d68cdd8) |
 | P2-08 | P2 | Documentation claims completion that the code does not deliver | Open |
 | P2-09 | P2 | Attachment upload flow leaves orphaned objects | Fixed (2026-11-18, ff07736) |
@@ -805,12 +805,13 @@ Do not onboard a customer until all P0 items are fixed and the smoke matrix at t
 
 ## P2-06 — Local infrastructure uses default credentials and exposed consoles
 
-- **Severity:** P2 · **Area:** ops / dev environment · **Status:** Open
+- **Severity:** P2 · **Area:** ops / dev environment · **Status:** Fixed (commit pending)
 - **Evidence:** `docker-compose.yml:9-10` (`lottrace/lottrace`), `:42-43` (`minioadmin/minioadmin`), `:53-56` (`PGADMIN_DEFAULT_PASSWORD: admin123`), ports `5050`, `5540`, `9001` bound to `0.0.0.0`.
-- **What happens:** All dev services use well-known credentials and expose admin consoles on every network interface. If a developer runs this on a laptop on a shared network (or a cloud VM), the database, object storage, and pgAdmin are reachable with default passwords. The seed also creates `admin@lottrace.com` / `admin123`.
+- **What happens:** All dev services use well-known credentials and expose admin consoles on every network interface. If a developer runs this on a laptop on a shared network (or a cloud VM), the database, object storage, and pgAdmin are reachable with default passwords. The audit also claimed the seed creates `admin@lottrace.com` / `admin123`; that part is stale — the current seed generates a random super-admin password (P1-16).
 - **Real-world impact:** A dev machine becomes the easiest way into production data (especially if `.env` points at Neon and the laptop is compromised).
 - **Fix direction:** Read secrets from `.env` with no defaults, bind dev ports to `127.0.0.1`, and document that compose is local-only. Never reuse these credentials in staging/production. Add a startup warning if `NODE_ENV=production` and a default credential is detected. Rotate any credential that has ever been used outside local.
-- **Verification:** `docker compose config` shows no hardcoded passwords; services are unreachable from another host; production boot rejects default credentials.
+- **Fix:** `docker-compose.yml` now requires `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `MINIO_ROOT_PASSWORD`, and `PGADMIN_DEFAULT_PASSWORD` from the untracked root `.env`; Compose refuses to start when one is blank. Every published port binds `127.0.0.1`, Redis requires `--requirepass`, and pgAdmin and RedisInsight run only behind the `tools` profile. Removed the `'mock'` S3 credential fallback so the AWS SDK default credential chain is used when static keys are absent. Added `backend/src/config/credentialSafety.js` and wired it into `env.js`: `staging`/`production` startup fails on missing or known-default database, Redis, or S3 credentials, development logs a warning, and S3 access/secret must be supplied together. Replaced the credential examples in both `.env.example` files and updated the environment and security docs.
+- **Verification:** `node --test scripts/verify-compose.test.mjs` (7 tests) and `backend/src/config/credentialSafety.test.js` plus `env.test.js` (59 tests) pass. Full backend suite: 66/66 suites, 592 passed, 4 skipped against disposable `127.0.0.1/lottrace_test`. `docker compose config` shows every required secret populated and every published port on `127.0.0.1`; `ss -ltn` confirms no `0.0.0.0`/`[::]` listeners on 5432, 6379, 9000, 9001, 5050, or 5540; Redis returns `NOAUTH` without a password and `PONG` with it; production boot rejects `lottrace:lottrace`. `pnpm lint` reports 0 errors (existing warnings only), and `node --check` passes for every changed backend file.
 
 ## P2-07 — Frontend bundle is one large chunk; no error boundaries
 

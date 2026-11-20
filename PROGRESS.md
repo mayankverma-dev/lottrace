@@ -3,7 +3,7 @@
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
 **Last Updated:** 2026-11-20
-**Last Session:** 2026-11-20 — P2-41 fixed. Date-range event lists keep the `(created_at DESC, chain_seq DESC)` order and cursor contract, but now page on keyset columns only (index-only scan), cover `event_datetime` on the base keyset index, and use a new `(organization_id, event_datetime DESC, created_at DESC, chain_seq DESC)` index. Date filters materialize at most 50,000 matches before sorting and fall back to the covering keyset path for broader ranges. On 1,000,000 synthetic events, a 10-second historical range dropped from ~2,749 ms to 14.3 ms; the full-range probe plus fallback takes ~70.6 ms, and no list plan used `Seq Scan on events`. Full backend suite passes (65 suites, 562 passed, 4 skipped); focused event tests 27/27; lint 0 errors.
+**Last Session:** 2026-11-20 — P2-06 fixed. Compose now requires infrastructure passwords from the untracked root `.env`, binds every published port to `127.0.0.1`, requires Redis auth, and keeps pgAdmin/RedisInsight behind the `tools` profile. Added a backend credential guard that refuses to start in `staging`/`production` with missing or known-default database, Redis, or S3 credentials, and removed the `mock` S3 fallback. Full backend suite passes (66 suites, 592 passed, 4 skipped); compose verifier 7/7; focused config tests 59/59; lint 0 errors; production boot rejects `lottrace:lottrace`.
 
 ---
 
@@ -58,6 +58,16 @@ backend suite pass.
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P2-06 — local infrastructure credentials and exposed consoles:
+- `docker-compose.yml` (required secrets from root `.env`, loopback-only ports, Redis auth, `tools` profile for pgAdmin/RedisInsight)
+- `.env.example` (new root infrastructure credential template with blank secrets)
+- `backend/.env.example` (credential placeholders; `127.0.0.1` infrastructure URLs)
+- `backend/src/config/credentialSafety.js`, `backend/src/config/env.js`, `backend/src/server.js` (staging/production guard, development warning, S3 pair validation)
+- `backend/src/lib/storage.js` (removed the `mock` S3 fallback; AWS SDK default credential chain)
+- `scripts/verify-compose.test.mjs`, root `package.json` (`verify:compose`)
+- Tests: `backend/src/config/credentialSafety.test.js`, `backend/src/config/env.test.js`, test header examples
+- Docs: `docs/ENVIRONMENT_SETUP.md`, `docs/SECURITY.md`, `docs/TESTING.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P2-41 — bounded date-range event lists:
 - `backend/src/modules/events/events.service.js` (shared filter builder, keyset-column page subquery, 50,000-row date-first CTE, keyset fallback)

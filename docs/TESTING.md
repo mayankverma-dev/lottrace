@@ -321,7 +321,7 @@ module.exports = {
 
 // backend/test/setup.js
 process.env.NODE_ENV = 'test';
-process.env.DATABASE_URL = 'postgresql://lottrace:lottrace@localhost:5432/lottrace_test';
+process.env.DATABASE_URL = 'postgresql://lottrace:REPLACE_WITH_LOCAL_PASSWORD@127.0.0.1:5432/lottrace_test';
 process.env.ACCESS_JWT_SECRET = 'test-secret-min-64-chars-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
 process.env.REFRESH_JWT_SECRET = 'test-refresh-min-64-chars-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
 ```

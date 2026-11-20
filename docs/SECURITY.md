@@ -114,6 +114,17 @@ if (!lot) throw new AppError('Lot not found', 'NOT_FOUND', 404);
 - Zero secrets in Git — `.env` is in `.gitignore`, only `.env.example` is committed
 - Rotate secrets without downtime: new secret added first, old accepted during transition
 
+### Local Infrastructure Credentials
+- `docker-compose.yml` is local-only. Every password comes from the untracked
+  root `.env`, and Compose refuses to start when a required value is blank.
+- Every published port binds to `127.0.0.1`. pgAdmin and RedisInsight run only
+  with `--profile tools`, so they are not part of the default stack.
+- Never reuse local compose credentials in staging or production. The backend
+  refuses to start in `staging` or `production` when `DATABASE_URL`,
+  `REDIS_URL`, or the S3 credentials are missing or use a known local default.
+- Rotate any credential that has ever been used outside a disposable local
+  environment.
+
 ### Required Secret Rotation Triggers
 - Suspected API key leak → revoke immediately, no downtime
 - Suspected database credential leak → rotate + audit all queries in last 24h

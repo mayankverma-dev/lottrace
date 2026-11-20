@@ -5,6 +5,7 @@ const logger = require('./utils/logger');
 // Validate environment variables before anything else
 // This will throw immediately if required vars are missing
 const env = require('./config/env');
+const { findCredentialIssues } = require('./config/credentialSafety');
 const { initSentry } = require('./lib/sentry');
 
 initSentry();
@@ -24,6 +25,15 @@ const server = app.listen(PORT, HOST, () => {
     },
     `Server running on port ${PORT} in ${env.NODE_ENV} mode`
   );
+  if (env.NODE_ENV === 'development') {
+    const credentialIssues = findCredentialIssues(env);
+    if (credentialIssues.length > 0) {
+      logger.warn(
+        { credentialIssues },
+        'Local infrastructure uses default or missing credentials — never reuse them outside local development',
+      );
+    }
+  }
   if (env.NODE_ENV === 'production' && env.TRUST_PROXY === false) {
     logger.warn(
       'TRUST_PROXY is disabled in production — if the API is behind a proxy, all clients share one rate-limit bucket'

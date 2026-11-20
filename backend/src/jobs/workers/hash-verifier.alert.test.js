@@ -8,7 +8,7 @@
  *
  *   cd backend
  *   RUN_DB_TESTS=1 \
- *   DATABASE_URL=postgresql://lottrace:lottrace@localhost:5432/lottrace_p118_test \
+ *   DATABASE_URL=postgresql://lottrace:REPLACE_WITH_LOCAL_PASSWORD@127.0.0.1:5432/lottrace_p118_test \
  *   npx jest --runInBand src/jobs/workers/hash-verifier.alert.test.js
  *
  * The suite drops and recreates the public schema in that database.

@@ -10,15 +10,22 @@ const {
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const env = require('../config/env');
 
-const s3 = new S3Client({
+const s3Config = {
   region: env.S3_REGION || 'us-east-1',
-  credentials: {
-    accessKeyId: env.S3_ACCESS_KEY_ID || 'mock',
-    secretAccessKey: env.S3_SECRET_ACCESS_KEY || 'mock',
-  },
   ...(env.S3_ENDPOINT && { endpoint: env.S3_ENDPOINT }),
   forcePathStyle: true,
-});
+};
+
+// Static keys are optional: when both are absent, the AWS SDK resolves
+// credentials from its default chain (IAM role, SSO, environment, etc.).
+if (env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY) {
+  s3Config.credentials = {
+    accessKeyId: env.S3_ACCESS_KEY_ID,
+    secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+  };
+}
+
+const s3 = new S3Client(s3Config);
 
 const BUCKET = env.S3_BUCKET || 'lottrace-attachments';
 

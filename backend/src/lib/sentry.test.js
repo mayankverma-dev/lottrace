@@ -8,7 +8,7 @@ jest.mock('@sentry/node', () => ({
 }));
 
 process.env.NODE_ENV = 'test';
-process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://lottrace:lottrace@localhost:5432/lottrace_test';
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://lottrace:REPLACE_WITH_LOCAL_PASSWORD@127.0.0.1:5432/lottrace_test';
 process.env.REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 process.env.ACCESS_JWT_SECRET = process.env.ACCESS_JWT_SECRET || 'a'.repeat(64);
 process.env.REFRESH_JWT_SECRET = process.env.REFRESH_JWT_SECRET || 'b'.repeat(64);

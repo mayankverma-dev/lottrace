@@ -6,7 +6,7 @@
  *   docker exec lottrace-postgres createdb -U lottrace lottrace_p006_test
  *   cd backend
  *   RUN_DB_TESTS=1 \
- *   DATABASE_URL=postgresql://lottrace:lottrace@localhost:5432/lottrace_p006_test \
+ *   DATABASE_URL=postgresql://lottrace:REPLACE_WITH_LOCAL_PASSWORD@127.0.0.1:5432/lottrace_p006_test \
  *   npx jest --runInBand src/middleware/idempotency.test.js
  *
  * The suite drops and recreates the public schema in that database.

@@ -9,7 +9,7 @@
  */
 
 const REQUIRED_ENV = {
-  DATABASE_URL: 'postgresql://lottrace:lottrace@localhost:5432/lottrace_test',
+  DATABASE_URL: 'postgresql://lottrace:REPLACE_WITH_LOCAL_PASSWORD@127.0.0.1:5432/lottrace_test',
   REDIS_URL: 'redis://localhost:6379',
   ACCESS_JWT_SECRET: 'a'.repeat(64),
   REFRESH_JWT_SECRET: 'b'.repeat(64),
@@ -26,6 +26,8 @@ const MANAGED_KEYS = [
   'EMAIL_DRY_RUN',
   'HASH_CHAIN_OLD_KEYS',
   'PORT',
+  'S3_ACCESS_KEY_ID',
+  'S3_SECRET_ACCESS_KEY',
   'TRUST_PROXY',
 ];
 const ORIGINAL = {};
@@ -55,6 +57,8 @@ beforeEach(() => {
   delete process.env.EMAIL_DRY_RUN;
   delete process.env.HASH_CHAIN_OLD_KEYS;
   delete process.env.PORT;
+  delete process.env.S3_ACCESS_KEY_ID;
+  delete process.env.S3_SECRET_ACCESS_KEY;
   delete process.env.TRUST_PROXY;
 });
 
@@ -208,5 +212,63 @@ describe('hash chain keyring', () => {
     delete process.env.HASH_CHAIN_OLD_KEYS;
 
     expect(loadEnv().HASH_CHAIN_OLD_KEYS).toEqual({});
+  });
+});
+
+describe('default infrastructure credential guard', () => {
+  const STRONG_DB = 'postgresql://lottrace:4f8a2c9e7b1d6a3f@127.0.0.1:5432/lottrace_test';
+  const STRONG_REDIS = 'redis://:9c2e5a7b1f4d8c6e@127.0.0.1:6379';
+
+  it('allows local defaults in development', () => {
+    process.env.NODE_ENV = 'development';
+
+    expect(loadEnv().NODE_ENV).toBe('development');
+  });
+
+  it('rejects a default database password in staging', () => {
+    process.env.NODE_ENV = 'staging';
+    process.env.DATABASE_URL = 'postgresql://lottrace:lottrace@127.0.0.1:5432/lottrace_test';
+
+    expect(loadEnv).toThrow(/DATABASE_URL uses a default password/);
+  });
+
+  it('rejects a Redis URL without a password in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DATABASE_URL = STRONG_DB;
+    process.env.REDIS_URL = 'redis://127.0.0.1:6379';
+
+    expect(loadEnv).toThrow(/REDIS_URL has no password/);
+  });
+
+  it('rejects default S3 credentials in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DATABASE_URL = STRONG_DB;
+    process.env.REDIS_URL = STRONG_REDIS;
+    process.env.S3_ACCESS_KEY_ID = 'minioadmin';
+    process.env.S3_SECRET_ACCESS_KEY = 'minioadmin';
+
+    expect(loadEnv).toThrow(/S3_ACCESS_KEY_ID uses a default value/);
+  });
+
+  it('accepts strong credentials in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DATABASE_URL = STRONG_DB;
+    process.env.REDIS_URL = STRONG_REDIS;
+    process.env.S3_ACCESS_KEY_ID = 'lottrace-minio';
+    process.env.S3_SECRET_ACCESS_KEY = '8d1f4b7a2c5e9f3a';
+
+    expect(loadEnv().NODE_ENV).toBe('production');
+  });
+
+  it('requires the S3 access key and secret together', () => {
+    process.env.S3_ACCESS_KEY_ID = 'lottrace-minio';
+
+    expect(loadEnv).toThrow(/S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be set together/);
+  });
+
+  it('requires the S3 secret when only the access key is absent', () => {
+    process.env.S3_SECRET_ACCESS_KEY = '8d1f4b7a2c5e9f3a';
+
+    expect(loadEnv).toThrow(/S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be set together/);
   });
 });

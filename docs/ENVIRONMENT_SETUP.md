@@ -20,11 +20,21 @@ cd lottrace
 pnpm install         # installs all workspaces (backend + frontend + scan-pwa)
 ```
 
-### 2. Start infrastructure (PostgreSQL + Redis)
+### 2. Start infrastructure (PostgreSQL + Redis + MinIO)
 ```bash
-docker-compose up -d
-# PostgreSQL: localhost:5432  (user: lottrace, pass: lottrace, db: lottrace)
-# Redis:      localhost:6379
+cp .env.example .env
+# Fill every blank secret in .env, for example:
+#   openssl rand -hex 24
+docker compose up -d
+# PostgreSQL: 127.0.0.1:5432  (credentials from .env)
+# Redis:      127.0.0.1:6379  (password from .env)
+# MinIO:      127.0.0.1:9000  (console: 127.0.0.1:9001)
+```
+
+Compose refuses to start when a required password is blank. Every port is
+bound to `127.0.0.1`. Start the optional admin consoles only when needed:
+```bash
+docker compose --profile tools up -d
 ```
 
 ### 3. Set up environment variables
@@ -32,7 +42,8 @@ docker-compose up -d
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 cp scan-pwa/.env.example scan-pwa/.env
-# Edit backend/.env with your values
+# Edit backend/.env with your values. The PostgreSQL, Redis, and MinIO
+# credentials must match the root .env used by docker-compose.yml.
 ```
 
 ### 4. Run database migrations + seeds
@@ -73,7 +84,7 @@ pnpm dev
 ### `backend/.env`
 ```bash
 # Database
-DATABASE_URL=postgresql://lottrace:lottrace@localhost:5432/lottrace
+DATABASE_URL=postgresql://lottrace:<postgres-password>@127.0.0.1:5432/lottrace
 # TLS is controlled by DATABASE_URL: use ?sslmode=require (or ?ssl=true) to enable it.
 # Certificate verification is ON by default. Provide the provider CA if it is not
 # in Node's trust store. Set only one of these:
@@ -83,7 +94,7 @@ DATABASE_URL=postgresql://lottrace:lottrace@localhost:5432/lottrace
 # DB_TLS_INSECURE=false
 
 # Redis
-REDIS_URL=redis://localhost:6379
+REDIS_URL=redis://:<redis-password>@127.0.0.1:6379
 
 # JWT (generate with: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))")
 ACCESS_JWT_SECRET=<64-char-random-hex>
@@ -98,10 +109,10 @@ HASH_CHAIN_SECRET=<64-char-random-hex>
 HASH_CHAIN_OLD_KEYS=
 
 # Object Storage (use local MinIO for dev, R2 for prod)
-S3_ENDPOINT=http://localhost:9000
+S3_ENDPOINT=http://127.0.0.1:9000
 S3_REGION=us-east-1
-S3_ACCESS_KEY_ID=minioadmin
-S3_SECRET_ACCESS_KEY=minioadmin
+S3_ACCESS_KEY_ID=<minio-root-user>
+S3_SECRET_ACCESS_KEY=<minio-root-password>
 S3_BUCKET=lottrace-dev
 
 # Email (Resend for prod; EMAIL_DRY_RUN=true for local)
@@ -137,6 +148,11 @@ SENTRY_DSN=
 > are required. The backend validates them at startup and refuses to run when
 > they are missing or too short. Keep the real values in the ignored
 > `backend/.env`; never commit them.
+>
+> The database, Redis, and MinIO placeholders must match the values in the root
+> `.env`. In `staging` and `production`, the backend also refuses to start when
+> `DATABASE_URL`, `REDIS_URL`, or the S3 credentials are missing or still use a
+> known local default.
 
 ### `frontend/.env`
 ```bash
@@ -156,14 +172,19 @@ VITE_API_BASE_URL=http://localhost:3000
 
 ## Docker Compose (`docker-compose.yml`)
 
-All services defined in the root `docker-compose.yml`.
-Run `docker-compose up -d` to start all infrastructure.
+All services are defined in the root `docker-compose.yml`. Compose reads
+credentials from the untracked root `.env`; copy `.env.example` first and fill
+every blank secret.
 
 Services:
-- **postgres** — primary database (port 5432)
-- **redis** — cache + BullMQ (port 6379)
-- **minio** — local S3-compatible storage (port 9000, console: 9001)
-- **mailpit** — local email catch (SMTP: 1025, UI: 8025)
+- **postgres** — primary database (`127.0.0.1:5432`)
+- **redis** — cache + BullMQ (`127.0.0.1:6379`, password required)
+- **minio** — local S3-compatible storage (`127.0.0.1:9000`, console: `127.0.0.1:9001`)
+- **pgadmin** — optional database console (`127.0.0.1:5050`, `--profile tools`)
+- **redisinsight** — optional Redis console (`127.0.0.1:5540`, `--profile tools`)
+
+Every published port is bound to `127.0.0.1`. The compose stack is for local
+development only; never reuse its credentials in staging or production.
 
 ---
 
@@ -199,10 +220,10 @@ pnpm format        # format all workspaces
 pnpm lint:fix      # auto-fix lint issues
 
 # Docker
-docker-compose up -d              # start infrastructure
-docker-compose down               # stop infrastructure
-docker-compose logs -f postgres   # watch postgres logs
-docker-compose exec postgres psql -U lottrace  # open psql
+docker compose up -d              # start infrastructure
+docker compose down               # stop infrastructure
+docker compose logs -f postgres   # watch postgres logs
+docker compose exec postgres psql -U lottrace  # open psql
 
 # Add a shadcn component (run inside /frontend or /scan-pwa)
 pnpm --filter frontend dlx shadcn@latest add button
@@ -256,9 +277,9 @@ password unless `SEED_SUPER_ADMIN_PASSWORD` is set.
 | API | http://localhost:3000 | — |
 | Frontend | http://localhost:3001 | — |
 | Scan PWA | http://localhost:3002 | — |
-| MinIO Console | http://localhost:9001 | minioadmin / minioadmin |
-| Mailpit (emails) | http://localhost:8025 | — |
-| Redis Insight (optional) | http://localhost:8001 | — |
+| MinIO Console | http://127.0.0.1:9001 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` from root `.env` |
+| pgAdmin (optional) | http://127.0.0.1:5050 | `PGADMIN_DEFAULT_EMAIL` / `PGADMIN_DEFAULT_PASSWORD` from root `.env` |
+| Redis Insight (optional) | http://127.0.0.1:5540 | Connect with `REDIS_PASSWORD` from root `.env` |
 
 ---
 
@@ -278,8 +299,8 @@ kill -9 <PID>
 
 ### Database connection refused
 ```bash
-docker-compose ps          # check postgres is running
-docker-compose up -d postgres
+docker compose ps          # check postgres is running
+docker compose up -d postgres
 ```
 
 ### Migrations fail

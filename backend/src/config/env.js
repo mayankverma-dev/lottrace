@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { parseTrustProxy } = require('./trustProxy');
+const { assertNoDefaultCredentials } = require('./credentialSafety');
 
 const TRUE_VALUES = ['true', '1'];
 const FALSE_VALUES = ['false', '0'];
@@ -82,6 +83,17 @@ const envSchema = z.object({
 
   // Sentry
   SENTRY_DSN: z.string().optional(),
+}).superRefine((value, ctx) => {
+  const hasAccessKey = Boolean(value.S3_ACCESS_KEY_ID);
+  const hasSecretKey = Boolean(value.S3_SECRET_ACCESS_KEY);
+
+  if (hasAccessKey !== hasSecretKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [hasAccessKey ? 'S3_SECRET_ACCESS_KEY' : 'S3_ACCESS_KEY_ID'],
+      message: 'S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be set together',
+    });
+  }
 });
 
 /**
@@ -117,6 +129,7 @@ const parseOldKeys = (raw) => {
 // Validated environment variables.
 // Access all env vars through this module — never use process.env.X directly.
 const parsedEnv = envSchema.parse(process.env);
+assertNoDefaultCredentials(parsedEnv);
 
 module.exports = {
   ...parsedEnv,

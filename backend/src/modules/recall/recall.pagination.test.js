@@ -4,7 +4,7 @@
  * Requires a disposable local PostgreSQL database whose name ends in `_test`:
  *
  *   RUN_DB_TESTS=1 \
- *   DATABASE_URL=postgresql://lottrace:lottrace@localhost:5432/lottrace_p105_p106_test \
+ *   DATABASE_URL=postgresql://lottrace:REPLACE_WITH_LOCAL_PASSWORD@127.0.0.1:5432/lottrace_p105_p106_test \
  *   npx jest --runInBand src/modules/recall/recall.pagination.test.js
  */
 
