@@ -2,8 +2,8 @@
 
 ## Current Status
 **Phase:** Phase 2 — Field-Ready
-**Last Updated:** 2026-11-19
-**Last Session:** 2026-11-19 — P2-05 fixed. `GET /api/v1/events` now uses keyset cursor pagination on `(created_at DESC, chain_seq DESC)`, returns `{ limit, hasNextPage, nextCursor }`, and rejects `page` with 422. Added five composite event-list indexes, replaced `idx_ell_lot` with `(lot_id, event_id)`, and removed the superseded indexes. Web and PWA event pagers follow opaque cursors. On 1,000,000 synthetic events, first page ran in 0.66 ms and the deep cursor page in 0.99 ms; no plan used `Seq Scan on events`. Backend suite passes (65 suites, 557 passed, 4 skipped), as do fixed tests, frontend tests (58), PWA tests (24), both production builds, and lint with 0 errors.
+**Last Updated:** 2026-11-20
+**Last Session:** 2026-11-20 — P2-41 fixed. Date-range event lists keep the `(created_at DESC, chain_seq DESC)` order and cursor contract, but now page on keyset columns only (index-only scan), cover `event_datetime` on the base keyset index, and use a new `(organization_id, event_datetime DESC, created_at DESC, chain_seq DESC)` index. Date filters materialize at most 50,000 matches before sorting and fall back to the covering keyset path for broader ranges. On 1,000,000 synthetic events, a 10-second historical range dropped from ~2,749 ms to 14.3 ms; the full-range probe plus fallback takes ~70.6 ms, and no list plan used `Seq Scan on events`. Full backend suite passes (65 suites, 562 passed, 4 skipped); focused event tests 27/27; lint 0 errors.
 
 ---
 
@@ -58,6 +58,14 @@ backend suite pass.
 ---
 
 ## 🔗 Key Files Modified Last Session
+
+P2-41 — bounded date-range event lists:
+- `backend/src/modules/events/events.service.js` (shared filter builder, keyset-column page subquery, 50,000-row date-first CTE, keyset fallback)
+- `backend/src/db/migrations/20240101000007_create_events.js` (covering base keyset index; date-ordered composite index replaces `idx_events_org_datetime`)
+- `backend/src/modules/events/events.pagination.test.js` (backdated-order and open-ended date filters)
+- `backend/src/modules/events/events.indexes.test.js` (`INCLUDE (event_datetime)`, date composite, removed old date index)
+- `backend/scripts/benchmark-events-list.js` (keyset page shape, date-first SQL, 1M date-range cases, post-seed `VACUUM ANALYZE`)
+- Docs: `docs/API_STANDARDS.md`, `docs/DATABASE_SCHEMA.md`, `docs/AUDIT_REPORT.md`, `PROGRESS.md`
 
 P2-05 — keyset event-list pagination and scale indexes:
 - `backend/src/utils/cursor.js` (opaque base64url cursor; exact microseconds and bigint chain positions)
